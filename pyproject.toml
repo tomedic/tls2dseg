@@ -1,0 +1,58 @@
+[build-system]
+requires = ["setuptools", "setuptools_scm"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tls2dseg"
+dynamic = ["version", "readme"]
+authors = [
+    {name = "Nicholas Meyer", email = "nixton.meyer@gmail.com"},
+    {name = "Another person without mail address"},
+    {email = "another.different.person.that.only.has.email@example.com"},
+]
+maintainers = [
+    {name = "Nicholas Meyer", email = "nixton.meyer@gmail.com"},
+]
+description = "Description of ModuleA"
+requires-python = ">=3.11"
+keywords = ["ONE", "TWO"]
+license = {text = "Proprietary"} # To be changed once released
+classifiers = [ # https://packaging.python.org/en/latest/guides/writing-pyproject-toml/#classifiers
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+
+    "Private :: Do Not Upload" # REMOVE BEFORE FLIGHT -- PyPI will always reject packages with classifiers beginning with Private ::
+]
+
+dependencies = [ # https://packaging.python.org/en/latest/specifications/dependency-specifiers/#dependency-specifiers
+                # https://packaging.python.org/en/latest/specifications/version-specifiers/#id5
+    "numpy ~= 1.24",
+]
+
+[tool.setuptools.dynamic]
+readme = {file = ["README.md"]}
+
+[tool.setuptools_scm]
+write_to = "src/tls2dseg/_version.py"
+local_scheme = "no-local-version"
+version_scheme = "post-release"
+
+[project.urls]
+Homepage = "https://example.com"
+Documentation = "https://readthedocs.org"
+Repository = "https://github.com/gseg-ethz/PythonTemplate.git"
+Issues = "https://github.com/gseg-ethz/PythonTemplate/issues"
+Changelog = "https://github.com/gseg-ethz/PythonTemplate/blob/main/CHANGELOG.md"
+
+[project.optional-dependencies]
+doc = ["sphinx"]
+dev = [
+    "black",  # Code formatter to make it consistant with PEP rules
+    "flake8", # Code linter: Analyzes source code for errors, vulnerabilities, and stylistic issues
+]
+
+# [project.scripts]
+# moduleA-cli = "ModuleA.cli:main_cli"

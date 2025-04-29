@@ -1,0 +1,28 @@
+Metadata-Version: 2.4
+Name: tls2dseg
+Version: 0.0.post4
+Summary: Description of ModuleA
+Author: Another person without mail address
+Author-email: Nicholas Meyer <nixton.meyer@gmail.com>, another.different.person.that.only.has.email@example.com
+Maintainer-email: Nicholas Meyer <nixton.meyer@gmail.com>
+License: Proprietary
+Project-URL: Homepage, https://example.com
+Project-URL: Documentation, https://readthedocs.org
+Project-URL: Repository, https://github.com/gseg-ethz/PythonTemplate.git
+Project-URL: Issues, https://github.com/gseg-ethz/PythonTemplate/issues
+Project-URL: Changelog, https://github.com/gseg-ethz/PythonTemplate/blob/main/CHANGELOG.md
+Keywords: ONE,TWO
+Classifier: Development Status :: 3 - Alpha
+Classifier: Intended Audience :: Developers
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Private :: Do Not Upload
+Requires-Python: >=3.11
+Description-Content-Type: text/x-rst
+Requires-Dist: numpy~=1.24
+Provides-Extra: doc
+Requires-Dist: sphinx; extra == "doc"
+Provides-Extra: dev
+Requires-Dist: black; extra == "dev"
+Requires-Dist: flake8; extra == "dev"
