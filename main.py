@@ -15,7 +15,7 @@ from pchandler.data_io import load_e57
 
 # TOMISLAV:
 import torch
-from src.tls2dseg.pc2img_utils import pc2img_run
+from src.tls2dseg.pc2img_utils import *
 from src.tls2dseg.grounded_sam2 import (initialize_gdino, initialize_sam2, run_grounded_sam2, save_gsam2_results,
                                         make_output_folders)
 
@@ -26,12 +26,38 @@ output_dir = "./results"  # Set path for storing the results
 save_intermediate_results = True  # Save intensity images, gDINO and SAM2 outputs
 
 # Image generation parameters:
-# TODO: make a dictionary with all hyperparameters (incl. ones hidden in pc2img_run() function)
-rotate_pcd = False  # Should I rotate point cloud before generating an image?
-theta = 0  # Rotate point cloud around Z-axis for theta degrees
-image_width = 2000  # Image width in pixels (height adjusted according to aspect ratio)
-rasterization_method: str = 'nanconv'
-features: list = ["intensity"]
+
+# image width - width in pixels (height adjusted according to aspect ratio); - accepts:
+#               1) int - number of pixels,
+#               2) str "scan_resolution" - matches scan resolution,
+#               3) str e.g."0.2-scan_resolution" - a fraction, here 1/5, of scan resolution
+
+# scan_resolution - point spacing in spherical coordinates (angular encoder increments during measurements) - accepts:
+#               1) str "auto" - compute from point cloud data,
+#               2) str of formant "X.Xmm@Ym", e.g. "1.6mm@10m", computes angles from there
+#               3) float - angular increment in degrees
+
+# scan_pattern - used to correctly calculate scan_resolution if "auto", accepted inputs:
+#                str "regular_axis_equal", "regular_axis_unequal", or "random"
+
+# rotate_pcd   - rotate point cloud around z-axis to change horizontal borders of spherical image
+#                (e.g. if border cuts object/region of interest); - accepts:
+#               1) str "auto" - compute from point cloud data to avoid cutting any object (if possible)
+#               2) float - angular increment in degrees
+#               3) bool False - if no rotation required
+
+# rasterization_method - how to rasterize the point cloud / do interpolation (see pc2img library for details); accepts
+#                        str "raw" (no interpolation), "nancov", "bary_delaunay", "bary_knn"
+
+# features - list of point cloud features used to generate images - default "intensity"
+
+# TODO: extend to all hyperparameters (incl. ones hidden in pc2img_run() function)
+image_generation_parameters = {'image_width': "scan_resolution",
+                               'scan_resolution': "auto",
+                               'rotate_pcd': "auto",
+                               'rasterization_method': 'nancov',
+                               'features': ["intensity"],
+                               }
 
 # Prompt object detection / segmentation
 # TODO: VERY important: text prompts need to be lowercase + end with a dot
@@ -51,10 +77,18 @@ def main():
     # Load data and auto update input parameters
     pcd_path_pathlib = Path(pcd_path)  # Create pathlib path
     pcd: PointCloudData = load_e57(pcd_path_pathlib, stay_global=False)  # Load point cloud
-    image_height = int(image_width // pcd.fov.ratio())  # set image height w.r.t. image_width
     output_dir_pathlib = Path(output_dir)   # Create pathlib path
     device = "cuda" if torch.cuda.is_available() else "cpu"  # Set inference hardware
     inference_models_parameters['device'] = device  # Add to model parameters dictionary
+
+    # Compute image dimensions (width and height)
+
+    image_width, image_height = compute_image_dimensions(pcd, image_generation_parameters)
+
+    testis = 1
+
+
+    image_height = int(image_width // pcd.fov.ratio())  # set image height w.r.t. image_width
 
 
     # Create folders for intermediate results (if necessary)
