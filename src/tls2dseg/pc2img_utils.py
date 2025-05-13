@@ -12,18 +12,20 @@ from numpy.typing import NDArray
 from sklearn.neighbors import NearestNeighbors
 import re
 from itertools import groupby
+from pc2img import ImageData, ImageStack
 
 
 def pc2img_run(pcd: PointCloudData, pcd_path: Path, image_generation_parameters: dict,
-               image_width: int = 2000, image_height: int = 1000) -> [(str, NDArray[np.uint8], Path)]:
+               image_width: int = 2000, image_height: int = 0) -> [(str, NDArray[np.uint8], Path)]:
 
     # Unpack necessary variables
     rasterization_method = image_generation_parameters["rasterization_method"]
     features = image_generation_parameters["features"]
 
     # Create Point Cloud and Spherical Image link:
-    image_width = 2000
-    image_height = int(image_width // pcd.fov.ratio())
+    # image_width = 2000
+    if image_height == 0:
+        image_height = int(image_width // pcd.fov.ratio())
     pcd_image_link = PCDImageLink(pcd, [partial(SphericalImageGeneratorFromPCD,
                                                 image_resolution=(image_height, image_width),
                                                 rasterization_method=rasterization_method, minimum_nb_points=0)])
@@ -387,6 +389,123 @@ def resolve_rotate_pcd_parameter(pcd, image_generation_parameters) -> float:
 
     # Return the rotation angle in degrees (so it can be reversed later)
     return theta_deg
+
+
+def get_instance_and_semantic_mask(results: dict, text_prompt) -> tuple[np.ndarray, np.ndarray, dict]:
+    """
+    Creates 1 representative instance and 1 semantic segmentation mask from N individual object masks.
+
+    Args:
+        results: A dictionary with grounded_sam2 results containing all instance/semantics segmentation info
+                'masks' with M x w x h (M = mask number, w = width, h = height),
+                'input_boxes' with input bounding boxes (results of object detection),
+                'confidences' with confidence scores,
+                'class_names', 'class_ids', ...
+        text_prompt: a string with text prompts used for object detection with GroundedDINO
+                     (each "object" separated by a dot ".")
+    Returns:
+        instance_mask: A NumPy array of shape (H, W) with unique labels for each instance.
+        semantic_mask: A NumPy array of shape (H, W) with labels for each semantic class.
+        class_ids: A dictionary with str class_name int class_id value-pairs
+    """
+    H, W = results["masks"].shape[1:3]  # Mask/image size
+    N = results["masks"].shape[0]  # Number of detections
+
+    # Get dictionary mapping "semantic classes" to unique IDs
+    keys = text_prompt.split('.')  # → ['house','window','bicycle','door','grass','leaf']
+    id_map = {k: i + 1 for i, k in enumerate(keys)}  # → {'house':1, 'window':2, ..., 'leaf':6}
+    class_ids = [id_map[q] for q in results["class_names"]]  # a list of corresponding class IDs
+    results["class_ids"] = class_ids  # Store real class IDs corresponding to detected classes, not range(#C)
+
+    # Sorting masks from biggest to smallest, so if overlapping, the big ones do not superimpose the small ones
+    mask_sizes = np.zeros(N, dtype=int)
+    for i in range(N):
+        mask_sizes[i] = np.sum(results["masks"][i])
+    # Get indices sorted from biggest to smallest
+    sorted_indices = np.argsort(mask_sizes)[::-1]
+
+    # Initialize masks with zeros (background)
+    instance_mask = np.zeros((H, W), dtype=np.int32)
+    semantic_mask = np.zeros((H, W), dtype=np.int32)
+
+    for i in range(N):
+        # Get the instance mask
+        mask_i = results["masks"][sorted_indices[i]].astype(bool)  # Shape: (H, W), dtype: bool
+        # Assign a unique label to each instance in the instance mask
+        # Labels start from 1 (to have 0 for background)
+        instance_label = i + 1
+        instance_mask[mask_i] = instance_label
+
+        # Assign the semantic label to the semantic mask
+        # Labels are class_id + 1 to avoid using 0
+        semantic_mask[mask_i] = class_ids[i]
+
+    return instance_mask, semantic_mask, id_map
+
+
+def project_masks2pcd_as_scalarfields(pcd: PointCloudData, instance_mask, semantic_mask) -> None:
+    """
+    Assigns segmentation labels from an image to each point in the point cloud based on spherical coordinates.
+
+    Parameters:
+    - point_cloud: PointCloudData object.
+    - instance/semantic mask: np.ndarray with instance and class labels (dtype= np.int32)
+
+    Modifies:
+    - point_cloud.scalar_fields
+    """
+
+    # Unpack variables
+    image_height, image_width = instance_mask.shape
+
+    # 1: Extract spherical coordinates
+    azimuth = pcd.spherical_coordinates[:, 2]
+    elevation = pcd.spherical_coordinates[:, 1]
+
+    # 2: Map spherical coordinates to normalized coordinates based on FOV
+    # Extract FOV values in radians from image_stack.fov
+    azimuth_min, elevation_min, azimuth_max, elevation_max = pcd.fov.as_numpy(unit="rad")
+
+    # Normalize azimuth and elevation to [0, 1]
+    normalized_azimuth = (azimuth - azimuth_min) / (azimuth_max - azimuth_min)
+    normalized_elevation = (elevation - elevation_min) / (elevation_max - elevation_min)
+
+
+    # 3: Map normalized coordinates to pixel coordinates
+    u = normalized_azimuth * (image_width - 1)
+    v = normalized_elevation * (image_height - 1)
+
+    # Round and clip to valid indices
+    u_int = np.clip(np.round(u).astype(int), 0, image_width - 1)
+    v_int = np.clip(np.round(v).astype(int), 0, image_height - 1)
+
+    # Handle edge cases: points outside FOV
+    valid_indices = (
+        (normalized_azimuth >= 0) & (normalized_azimuth <= 1) &
+        (normalized_elevation >= 0) & (normalized_elevation <= 1)
+    )
+
+    # Initialize labels array with a default value (e.g., -1 for invalid points)
+    all_labels_semantics = np.full(azimuth.shape, fill_value=-1, dtype=instance_mask.dtype)
+    all_labels_instances = np.full(azimuth.shape, fill_value=-1, dtype=instance_mask.dtype)
+
+    # Proceed only with valid points
+    if np.any(valid_indices):
+        valid_u_int = u_int[valid_indices]
+        valid_v_int = v_int[valid_indices]
+        labels_semantics = semantic_mask[valid_v_int, valid_u_int]
+        labels_instances = instance_mask[valid_v_int, valid_u_int]
+
+        all_labels_semantics[valid_indices] = labels_semantics
+        all_labels_instances[valid_indices] = labels_instances
+
+    # Step 5: Store instance and class labels into a scalar field
+    pcd.scalar_fields.__setitem__('instances',all_labels_instances)
+    pcd.scalar_fields.__setitem__('classes',all_labels_semantics)
+
+    return None
+
+
 
 
 

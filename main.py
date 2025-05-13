@@ -11,13 +11,14 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 # NICHOLAS:
 from pathlib import Path
 from pchandler.geometry import PointCloudData
-from pchandler.data_io import load_e57
+from pchandler.data_io import load_e57, save_ply
 
 # TOMISLAV:
 import torch
 from src.tls2dseg.pc2img_utils import *
 from src.tls2dseg.grounded_sam2 import *
 from src.tls2dseg.utils import *
+import json
 
 
 # I/0 parameters:
@@ -118,6 +119,30 @@ def main():
         if save_intermediate_results:
             save_gsam2_results(image=image_j, results=results, inference_models_parameters=inference_models_parameters)
 
+        # From individual per-object bool masks get:
+        #   - 1 instance mask (each instance having one int ID),
+        #   - 1 semantic mask (each class having one ing ID),
+        #   - class_id_map which maps semantic classes provided in text_prompt to semantic class IDs
+        instance_mask, semantic_mask, class_id_map = get_instance_and_semantic_mask(results, text_prompt)
+
+        # Add the generated masks to ImageStack related to the point cloud pcd
+        project_masks2pcd_as_scalarfields(pcd, instance_mask, semantic_mask)
+
+        # Save segmented point cloud and related transformation parameters
+        output_pcd_name = pcd_path_pathlib.stem + "_seg.ply"  # _seg for segmented
+        output_pcd_path = output_dir / Path(output_pcd_name)
+        save_ply(output_pcd_path, pcd, retain_colors=True, retain_normals=True, scalar_fields=None)
+        
+        # Save related transformation matrix (for local-to-global conversion)
+        transformation_matrix_output_path = output_dir / Path(pcd_path_pathlib.stem + '_T.txt')
+        np.savetxt(transformation_matrix_output_path, pcd.transformation_matrix, fmt="%.8f", delimiter=" ")
+
+        # Save class name - to - class id map in ascii
+        class_id_map["background"] = 0
+        inverted_map = {v: k for k, v in class_id_map.items()}
+        inverted_map_path = output_dir / Path('class_names_id_map.txt')
+        with open(str(inverted_map_path), 'w', encoding='ascii') as f:
+            json.dump(inverted_map, f, ensure_ascii=True)
 
 
 
