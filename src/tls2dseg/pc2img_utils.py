@@ -1,3 +1,5 @@
+from typing import Tuple
+
 import numpy as np
 from pchandler.geometry.core import PointCloudData
 from functools import partial
@@ -9,18 +11,19 @@ import imageio.v3 as iio
 from numpy.typing import NDArray
 from sklearn.neighbors import NearestNeighbors
 import re
+from itertools import groupby
 
-def pc2img_run(pcd:PointCloudData, pcd_path: Path, out_path:Path, save_results: bool = True,
-               rotate_pcd: bool = False, theta: float|int = 0, image_height: int = 1000, image_width: int = 1000,
-               rasterization_method: str = 'nanconv',
-               features: list = ["intensity"]) -> [(str, NDArray[np.uint8], Path)]:
 
-    # Rotate point cloud (if needed):
-    if rotate_pcd is True:
-        rotate_pcd_around_z(pcd, theta)
+def pc2img_run(pcd: PointCloudData, pcd_path: Path, image_generation_parameters: dict,
+               image_width: int = 2000, image_height: int = 1000) -> [(str, NDArray[np.uint8], Path)]:
 
+    # Unpack necessary variables
+    rasterization_method = image_generation_parameters["rasterization_method"]
+    features = image_generation_parameters["features"]
 
     # Create Point Cloud and Spherical Image link:
+    image_width = 2000
+    image_height = int(image_width // pcd.fov.ratio())
     pcd_image_link = PCDImageLink(pcd, [partial(SphericalImageGeneratorFromPCD,
                                                 image_resolution=(image_height, image_width),
                                                 rasterization_method=rasterization_method, minimum_nb_points=0)])
@@ -33,15 +36,17 @@ def pc2img_run(pcd:PointCloudData, pcd_path: Path, out_path:Path, save_results: 
         spherical_image_data = pcd_image_link.get_image_data(pcd_image_link.available_stacks[0], f,
                                                              normalize=True,
                                                              normilization_percentiles=(5, 95))
+
         # Convert to RGB image
         spherical_image = convert_to_image(spherical_image_data, "max", normalize=True, colormap='gray')
         # Save image in results
-        save_image_file = "no Path - images not saved"
-        if save_results:
-            save_image_dir = out_path / Path("images")
-            save_image_dir.mkdir(parents=True, exist_ok=True)
+        if "output_dir_images" in image_generation_parameters:
+            save_image_dir = image_generation_parameters["output_dir_images"]
             save_image_file = save_image_dir / f"{pcd_path.stem}_Spherical_{f}.png"
             iio.imwrite(save_image_file, spherical_image)
+        else:
+            save_image_file = "no Path - images not saved"
+        # Return tuple with (str: feature_name, ndarray: image, Path: path_to_saved_image)
         images_i.append((f, spherical_image, save_image_file))
     return images_i
 
@@ -185,7 +190,7 @@ def resolve_scanning_resolution_parameter(pcd: PointCloudData,
         raise ValueError(f"Unsupported scanning_resolution: {scanning_resolution}")
 
 
-def compute_image_dimensions(pcd: PointCloudData, image_generation_parameters: dict) -> tuple[int, int]:
+def compute_image_dimensions(pcd: PointCloudData, image_generation_parameters: dict) -> tuple[int, int, float, float]:
     """
     Compute image width and height (in pixels)
     Input:
@@ -204,7 +209,7 @@ def compute_image_dimensions(pcd: PointCloudData, image_generation_parameters: d
     azim_span = pcd.fov.horizontal_max - pcd.fov.horizontal_min
 
     # Conditionally resolving image_width and image_height
-
+    d_azim = d_elev = np.NaN
     # parse image_width parameter
     if isinstance(image_width, int):
         # Image width already given in pixels
@@ -239,6 +244,149 @@ def compute_image_dimensions(pcd: PointCloudData, image_generation_parameters: d
     # set image_height to preserve angular aspect ratio
     height_px = int(np.ceil(width_px * (elev_span / azim_span)))
 
-    # Return image_width and image_height in pixels
-    return width_px, height_px
+    # Return image_width and image_height in pixels, scan resolution in degrees
+    d_azim_deg = np.rad2deg(d_azim)
+    d_elev_deg = np.rad2deg(d_elev)
+    return width_px, height_px, d_azim_deg, d_elev_deg
+
+
+def rotate_pcd_to_azimuth_gap(pcd, image_generation_parameters) -> float:
+    """
+    Rotate the point cloud so that a “gap” (bin/azimuth direction with 0 -or- few points) is centred at 0°.
+    Goal: Avoid spherical image edges cutting the object/region of interest.
+
+    Parameters
+    ----------
+    pcd : PointCloudData
+    image_generation_parameters: dict
+
+    Returns
+    -------
+    theta_deg : float
+        Rotation angle around Z-axis in degrees.
+    """
+
+    # Unpack necessary variables:
+    #   - subsampling fraction (random subsample percentage of original pcd)
+    subsample_frac = image_generation_parameters["subsampling_fraction"]
+    #   - bin width (in deg) for searching the gap in FoV along horizon
+    bin_width_deg = image_generation_parameters["bin_width_for_theta_search_deg"]
+
+    # 1) Sub-sample the cloud
+    azim = pcd.spherical_coordinates[:, 2]           # (azim in rad)
+    N = azim.shape[0]
+    M = int(N * subsample_frac)
+    idx = np.random.choice(N, size=M, replace=False)
+    azim = azim[idx]                         # radians → degrees in (-180,180]
+
+    # 2) 1-D histogram  (-π..π with 1° bins)
+    bin_width_rad = np.deg2rad(bin_width_deg)  # bin width by default 1 degree (converted in radians)
+    edges = np.arange(-np.pi, np.pi, bin_width_rad)  # Should be 360 edges
+    if edges[-1] != np.pi:
+        edges = np.concatenate([edges, [np.pi]])   # make sure edges includes +π
+    counts, _ = np.histogram(azim, bins=edges)
+    centres = edges[:-1] + bin_width_rad * 0.5  # bin centres (radians)
+
+    # 3) If the ±1° bins around 0 have no points → nothing to do
+    edge_zone = np.zeros_like(counts, dtype=bool)
+    edge_zone[0] = True  # the bin covering [-π, -π+1°)
+    edge_zone[-1] = True  # the bin covering [π−1°, π)
+
+    if counts[edge_zone].sum() == 0:
+        theta_deg = 0.0
+        return theta_deg  # no rotation applied
+
+    # 4) Find best “gap” bin to re-centre
+    #    • Prefer bins with 0 points.
+    #    • If none has 0 points, take bins with the minimum point count.
+    #    • For ties, choose the middle of the longest consecutive run of zero or small count bins.
+
+    # Define a helper function
+    def _best_run(mask: np.ndarray) -> int:
+        """Return centre-index of the longest consecutive True-run."""
+        best_len = best_start = cur_len = cur_start = 0
+        for i, v in enumerate(mask):
+            if v:
+                if cur_len == 0:
+                    cur_start = i
+                cur_len += 1
+            else:
+                if cur_len > best_len:
+                    best_len, best_start = cur_len, cur_start
+                cur_len = 0
+        if cur_len > best_len:                        # tail run
+            best_len, best_start = cur_len, cur_start
+        return best_start + best_len // 2             # middle index
+
+    # Try zero-count bins first, then search for bin with minimal point count
+    zero_mask = counts == 0
+    if np.any(zero_mask):
+        chosen_idx = _best_run(zero_mask)
+    else:
+        min_mask = counts == counts.min()
+        chosen_idx = _best_run(min_mask)
+
+    theta_rad = -np.pi - centres[chosen_idx]
+    theta_deg = np.rad2deg(theta_rad)
+
+    # -------------------------------------------------
+    # 5. Rotate point cloud so that this gap’s centre → 0 °
+    #    (i.e. rotate by -gap_center_deg)
+    # -------------------------------------------------
+    rotate_pcd_around_z(pcd, theta=theta_deg)
+    return theta_deg
+
+
+def resolve_rotate_pcd_parameter(pcd, image_generation_parameters) -> float:
+    """
+    Parse image_generation_parameters['rotate_pcd'] and rotate the point cloud about +Z, if necessary.
+
+    Parameters
+    ----------
+    pcd : PointCloudData
+    image_generation_parameters: dict, with ['rotate_pcd'] key, with one of the following values:
+        'rotate_pcd' : {"auto", float|str-float, False}
+            • "auto"  → call rotate_pcd_to_azimuth_gap to find a gap and rotate.
+            • float   → rotate by that many degrees (CCW seen from +Z).
+            • False   → do nothing.
+
+    Returns
+    -------
+    theta_deg : float
+        Applied rotation in degrees. 0.0 if no rotation.
+    """
+    # Unpack necessary variables
+    rotate_pcd = image_generation_parameters['rotate_pcd']
+
+    # 1) If no rotation wanted
+    if rotate_pcd is False:
+        theta_deg = 0.0
+        return theta_deg
+
+    # 2) If rotate_pcd = "auto" (search for a gap with no/small number of points in FoV along horizon)
+    elif isinstance(rotate_pcd, str) and rotate_pcd.strip().lower() == "auto":
+        # Set new hyperparameters (used for computational efficiency, should not impact the results)
+        #   - subsampling fraction (random subsample percentage of original pcd)
+        image_generation_parameters["subsampling_fraction"] = 0.01
+        #   - bin width (in deg) for searching the gap in FoV along horizon
+        image_generation_parameters["bin_width_for_theta_search_deg"] = 1.0
+        # Get the best theta_deg automatically
+        theta_deg = rotate_pcd_to_azimuth_gap(pcd, image_generation_parameters)
+        return theta_deg
+
+    else:
+        # 3) Explicit numeric rotation (accept int/float or numeric str)
+        try:
+            theta_deg = float(rotate_pcd)
+            if theta_deg != 0.0:
+                rotate_pcd_around_z(pcd, theta=theta_deg)
+        except (TypeError, ValueError):
+            raise ValueError(
+                "image_generation_parameters['rotate_pcd'] must be 'auto', a numeric value (in deg), or False"
+            )
+
+    # Return the rotation angle in degrees (so it can be reversed later)
+    return theta_deg
+
+
 

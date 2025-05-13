@@ -106,25 +106,6 @@ def run_grounded_sam2(image: Path | np.ndarray, text_prompt: str,
     return results
 
 
-def make_output_folders(output_dir_pathlib: Path, inference_models_parameters: dict) -> None:
-    # Set intermediate results directory (parent)
-    output_dir_intermediate = output_dir_pathlib / "intermediate"  # Create output_dir for intermediate results
-    inference_models_parameters['output_dir_intermediate'] = output_dir_intermediate  # Add to model parameters dictionary
-    # Set gdino and SAM2 results directories (children)
-    object_detection_output_dir = inference_models_parameters['output_dir_intermediate'] / Path("object_detection")
-    sam2_output_dir = inference_models_parameters['output_dir_intermediate'] / Path("sam2")
-    output_dir_masks_json = output_dir_intermediate / Path("masks_json")
-    inference_models_parameters['output_dir_masks_json'] = output_dir_masks_json
-    inference_models_parameters['output_dir_od'] = object_detection_output_dir
-    inference_models_parameters['output_dir_sam2'] = sam2_output_dir
-    # Make directories (if not existing)
-    output_dir_intermediate.mkdir(parents=True, exist_ok=True)
-    object_detection_output_dir.mkdir(parents=True, exist_ok=True)
-    sam2_output_dir.mkdir(parents=True, exist_ok=True)
-    output_dir_masks_json.mkdir(parents=True, exist_ok=True)
-    return None
-
-
 def mask_to_rle(mask):
     # Convert binary masks into RLE (Run-Length Encoding) - common for e.g. COCO-style datasets
     rle = mask_util.encode(np.array(mask[:, :, None], order="F", dtype="uint8"))[0]

@@ -16,8 +16,8 @@ from pchandler.data_io import load_e57
 # TOMISLAV:
 import torch
 from src.tls2dseg.pc2img_utils import *
-from src.tls2dseg.grounded_sam2 import (initialize_gdino, initialize_sam2, run_grounded_sam2, save_gsam2_results,
-                                        make_output_folders)
+from src.tls2dseg.grounded_sam2 import *
+from src.tls2dseg.utils import *
 
 
 # I/0 parameters:
@@ -37,9 +37,6 @@ save_intermediate_results = True  # Save intensity images, gDINO and SAM2 output
 #               2) str of formant "X.Xmm@Ym", e.g. "1.6mm@10m", computes angles from there
 #               3) float - angular increment in degrees
 
-# scan_pattern - used to correctly calculate scan_resolution if "auto", accepted inputs:
-#                str "regular_axis_equal", "regular_axis_unequal", or "random"
-
 # rotate_pcd   - rotate point cloud around z-axis to change horizontal borders of spherical image
 #                (e.g. if border cuts object/region of interest); - accepts:
 #               1) str "auto" - compute from point cloud data to avoid cutting any object (if possible)
@@ -47,7 +44,7 @@ save_intermediate_results = True  # Save intensity images, gDINO and SAM2 output
 #               3) bool False - if no rotation required
 
 # rasterization_method - how to rasterize the point cloud / do interpolation (see pc2img library for details); accepts
-#                        str "raw" (no interpolation), "nancov", "bary_delaunay", "bary_knn"
+#                        str "raw" (no interpolation), "nanconv", "bary_delaunay", "bary_knn"
 
 # features - list of point cloud features used to generate images - default "intensity"
 
@@ -55,22 +52,20 @@ save_intermediate_results = True  # Save intensity images, gDINO and SAM2 output
 image_generation_parameters = {'image_width': "scan_resolution",
                                'scan_resolution': "auto",
                                'rotate_pcd': "auto",
-                               'rasterization_method': 'nancov',
+                               'rasterization_method': 'nanconv',
                                'features': ["intensity"],
                                }
 
 # Prompt object detection / segmentation
 # TODO: VERY important: text prompts need to be lowercase + end with a dot
-text_prompt = "house.window.bicycle.wall.grass.leaf"
+text_prompt = "house.window.bicycle.door.grass.leaf"
 
 # Inference model parameters:
 inference_models_parameters = {'bbox_model_id': 'IDEA-Research/grounding-dino-base',
                                'box_threshold': 0.35,
                                'text_threshold': 0.25,
                                'sam2-model-config': 'configs/sam2.1/sam2.1_hiera_l.yaml',
-                               'sam2-checkpoint': '/scratch/projects/sam2/checkpoints/sam2.1_hiera_large.pt',
-                               'device': 'cpu',
-                               'dump_json_results': True}
+                               'sam2-checkpoint': '/scratch/projects/sam2/checkpoints/sam2.1_hiera_large.pt'}
 
 def main():
 
@@ -80,25 +75,20 @@ def main():
     output_dir_pathlib = Path(output_dir)   # Create pathlib path
     device = "cuda" if torch.cuda.is_available() else "cpu"  # Set inference hardware
     inference_models_parameters['device'] = device  # Add to model parameters dictionary
+    inference_models_parameters['dump_json_results'] = True if save_intermediate_results else False
 
-    # Compute image dimensions (width and height)
+    # Rotate point cloud around z (if necessary), return rotation angle theta in degrees
+    theta_deg = resolve_rotate_pcd_parameter(pcd, image_generation_parameters)
 
-    image_width, image_height = compute_image_dimensions(pcd, image_generation_parameters)
-
-    testis = 1
-
-
-    image_height = int(image_width // pcd.fov.ratio())  # set image height w.r.t. image_width
-
+    # Compute image dimensions (width and height) in pixels and scan resolution (azimuth and elevation) in radians
+    image_width, image_height, d_azim_deg, d_elev_deg = compute_image_dimensions(pcd, image_generation_parameters)
 
     # Create folders for intermediate results (if necessary)
     if save_intermediate_results:
-        make_output_folders(output_dir_pathlib, inference_models_parameters)
+        make_output_folders(output_dir_pathlib, image_generation_parameters, inference_models_parameters)
 
     # Generate images of point cloud i
-    images_pcd_i = pc2img_run(pcd, pcd_path_pathlib, inference_models_parameters['output_dir_intermediate'],
-                              save_intermediate_results, rotate_pcd,
-                              theta, image_height, image_width, rasterization_method, features)
+    images_pcd_i = pc2img_run(pcd, pcd_path_pathlib, image_generation_parameters, image_width, image_height)
 
     # Initialize Grounded SAM2 (Grounded DINO + SAM2)
     gdino_model, gdino_processor = initialize_gdino(inference_models_parameters)
@@ -116,6 +106,10 @@ def main():
     # Run Grounded SAM2 inference (for all images of a point cloud pcd_i)
     for image_j in images_pcd_i:
         image_j_numpy = image_j[1]  # Get data (8bit np.ndarray) from "image object"
+        # RESULTS CONTAIN: 'masks' with M x w x h (M = mask number, w = width, h = height),
+        #                  'input_boxes' with input boinding boxes,
+        #                  'confidences' with confidence scores,
+        #                  'class_names', class ids, ...
         results = run_grounded_sam2(image=image_j_numpy, text_prompt=text_prompt, gdino_model=gdino_model,
                                     gdino_processor=gdino_processor, sam2_predictor=sam2_predictor,
                                     inference_models_parameters=inference_models_parameters)
