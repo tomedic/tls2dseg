@@ -408,8 +408,9 @@ def get_instance_and_semantic_mask(results: dict, text_prompt) -> tuple[np.ndarr
         semantic_mask: A NumPy array of shape (H, W) with labels for each semantic class.
         class_ids: A dictionary with str class_name int class_id value-pairs
     """
-    H, W = results["masks"].shape[1:3]  # Mask/image size
-    N = results["masks"].shape[0]  # Number of detections
+
+    H, W = results["masks"][0].shape  # Mask/image size
+    N = len(results["masks"])  # Number of detections
 
     # Get dictionary mapping "semantic classes" to unique IDs
     keys = text_prompt.split('.')  # → ['house','window','bicycle','door','grass','leaf']
@@ -420,7 +421,7 @@ def get_instance_and_semantic_mask(results: dict, text_prompt) -> tuple[np.ndarr
     # Sorting masks from biggest to smallest, so if overlapping, the big ones do not superimpose the small ones
     mask_sizes = np.zeros(N, dtype=int)
     for i in range(N):
-        mask_sizes[i] = np.sum(results["masks"][i])
+        mask_sizes[i] = results["masks"][i].nnz
     # Get indices sorted from biggest to smallest
     sorted_indices = np.argsort(mask_sizes)[::-1]
 
@@ -430,7 +431,7 @@ def get_instance_and_semantic_mask(results: dict, text_prompt) -> tuple[np.ndarr
 
     for i in range(N):
         # Get the instance mask
-        mask_i = results["masks"][sorted_indices[i]].astype(bool)  # Shape: (H, W), dtype: bool
+        mask_i = results["masks"][sorted_indices[i]].toarray().astype(bool)  # Shape: (H, W), dtype: bool
         # Assign a unique label to each instance in the instance mask
         # Labels start from 1 (to have 0 for background)
         instance_label = i + 1
@@ -438,7 +439,7 @@ def get_instance_and_semantic_mask(results: dict, text_prompt) -> tuple[np.ndarr
 
         # Assign the semantic label to the semantic mask
         # Labels are class_id + 1 to avoid using 0
-        semantic_mask[mask_i] = class_ids[i]
+        semantic_mask[mask_i] = class_ids[sorted_indices[i]]
 
     return instance_mask, semantic_mask, id_map
 

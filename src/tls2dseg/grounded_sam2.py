@@ -1,18 +1,25 @@
 # Imports
-from transformers import AutoProcessor, AutoModelForZeroShotObjectDetection
-import torch
-import numpy as np
+import gc
+import json
+import os
+from functools import partial
 from pathlib import Path
+from typing import List
+from typing import Tuple
+
+import cv2
+import numpy as np
+import pycocotools.mask as mask_util
+import supervision as sv
+import torch
+from PIL import Image
 from sam2.build_sam import build_sam2
 from sam2.sam2_image_predictor import SAM2ImagePredictor
-from typing import Tuple
-from PIL import Image
-import os
-import cv2
-import json
-import supervision as sv
-import pycocotools.mask as mask_util
 from supervision.draw.color import ColorPalette
+from transformers import AutoProcessor, AutoModelForZeroShotObjectDetection
+from scipy.sparse import csr_matrix
+import random
+
 from src.tls2dseg.supervision_utils import CUSTOM_COLOR_MAP
 
 
@@ -35,13 +42,91 @@ def initialize_sam2(inference_models_parameters: dict) -> SAM2ImagePredictor:
     return sam2_predictor
 
 
+def resolve_class_names(class_names: List[str], valid_keys: List[str]) -> List[str]:
+    """
+    Resolves a list of class names to valid keys.
+    If class_name is directly in valid_keys, keep it, else, search for the first valid_key that is a substring of
+     class_name.
+
+    Args:
+        class_names: List of predicted or raw class names.
+        valid_keys: List of valid class labels.
+
+    Returns:
+        List of resolved class names.
+    """
+    resolved = []
+    for name in class_names:
+        if name in valid_keys:
+            resolved.append(name)
+        else:
+            match = next((key for key in valid_keys if key in name), None)
+            resolved.append(match)
+    return resolved
+
+
+def callback(image_slice: np.ndarray, text_prompt: str, device: str, gdino_processor: AutoProcessor,
+             gdino_model: AutoModelForZeroShotObjectDetection, inference_models_parameters: dict) -> sv.Detections:
+    '''
+    Do inference on a slice - supporting function for run_grounded_sam2_with_sahi()
+
+    Parameters
+    ----------
+    image_slice
+    text_prompt
+    device
+    gdino_processor
+    gdino_model
+    inference_models_parameters
+    slice_inference_parameters
+
+    Returns
+    -------
+    Detections (supervision library object with detected bounding boxes)
+    '''
+
+    slice_height, slice_width = image_slice.shape[:2]
+    # Run Grounded DINO
+    #   - Preprocess data: normalize and rescale images, tokenize text, transform into tensor
+    inputs = gdino_processor(images=image_slice, text=text_prompt, return_tensors="pt").to(device)
+    #   - Run inference
+    with torch.no_grad():
+        outputs = gdino_model(**inputs)
+
+    # Postprocess Grounded DINO results
+    # - Likely post-processing steps (need to check it) -> Filters out bounding boxes and text predictions with low
+    #   confidence scores, resizes the predictions to original size
+    gdino_results = gdino_processor.post_process_grounded_object_detection(
+        outputs,
+        inputs.input_ids,
+        box_threshold=inference_models_parameters['box_threshold'],
+        text_threshold=inference_models_parameters['text_threshold'],
+        target_sizes=[(slice_height, slice_width)]
+    )
+
+    # Prepare results for supervision library Detections object:
+    input_boxes = gdino_results[0]["boxes"].cpu().numpy()  # get the bounding box prompts for SAM2
+    confidences = gdino_results[0]["scores"].cpu().numpy()  # tensor -> ndarray
+    class_names = gdino_results[0]["labels"]  # get class names
+    # Get class_ids corresponding defined relative to the original text_prompt and corresponding to class_names
+    keys = text_prompt.split('.')  # → ['house','window','bicycle','door','grass','leaf']
+    class_names = resolve_class_names(class_names, keys)  # if class name corresponds to 2 valid classes - pick 1
+    id_map = {k: i + 1 for i, k in enumerate(keys)}  # → {'house':1, 'window':2, ..., 'leaf':6}
+    class_ids = np.array([id_map[q] for q in class_names])  # a list of corresponding class IDs
+
+    # 5. Cleanup GPU/CPU memory
+    del inputs, outputs, gdino_results
+    torch.cuda.empty_cache()
+    gc.collect()
+
+    return sv.Detections(xyxy=input_boxes, confidence=confidences, class_id=class_ids)
+
+
 def run_grounded_sam2(image: Path | np.ndarray, text_prompt: str,
                       gdino_model: AutoModelForZeroShotObjectDetection,
                       gdino_processor: AutoProcessor,
                       sam2_predictor: SAM2ImagePredictor,
                       inference_models_parameters: dict) -> dict:
-
-
     # Set inference hardware
     device = inference_models_parameters['device']
 
@@ -72,25 +157,148 @@ def run_grounded_sam2(image: Path | np.ndarray, text_prompt: str,
         target_sizes=[image.size[::-1]]
     )
 
+    # Create main outputs (to be saved in a dictionary 'results')
+    input_boxes = gdino_results[0]["boxes"].cpu().numpy()  # get the bounding box prompts for SAM2
+    confidences = gdino_results[0]["scores"].cpu().numpy().tolist()  # tensor -> ndarray
+    class_names = gdino_results[0]["labels"]  # get class names
+    # Get class_ids corresponding defined relative to the original text_prompt and corresponding to class_names
+    keys = text_prompt.split('.')  # → ['house','window','bicycle','door','grass','leaf']
+    class_names = resolve_class_names(class_names, keys)  # if class name corresponds to 2 valid classes - pick 1
+    id_map = {k: i + 1 for i, k in enumerate(keys)}  # → {'house':1, 'window':2, ..., 'leaf':6}
+    class_ids = np.array([id_map[q] for q in class_names])  # a list of corresponding class IDs
+
+    # Create mask labels (class name + confidence scores)
+    labels = [
+        f"{class_name} {confidence:.2f}"
+        for class_name, confidence
+        in zip(class_names, confidences)
+    ]
+
+    # Cleanup GPU/CPU memory
+    del inputs, outputs, gdino_results
+    torch.cuda.empty_cache()
+    gc.collect()
+
     # Set input for SAM2
     sam2_predictor.set_image(np.array(image.convert("RGB")))  # Assure np.ndarray with RGB channels
-    input_boxes = gdino_results[0]["boxes"].cpu().numpy()  # get the bounding box prompts for SAM2
 
     # Run SAM2
-    masks, scores, logits = sam2_predictor.predict(
+    masks_np, _, _ = sam2_predictor.predict(
         point_coords=None,
         point_labels=None,
         box=input_boxes,
         multimask_output=False,
     )
 
-    # Move results in readable formats (tensor -> numpy, lists) and adjust them
-    if masks.ndim == 4:
-        masks = masks.squeeze(1)  # convert the shape to (n, H, W)
+    # Squeeze out unnecessary dimensions and convert into a list of sparse matrices
+    masks = []
+    if masks_np.ndim == 4:
+        masks_np = masks_np.squeeze(1)  # convert the shape to (n, H, W)
+    # Store individual masks j of batch i as sparse booleans
+    for mask_j in masks_np:
+        masks.append(csr_matrix(mask_j.astype(bool), dtype=bool))
 
-    confidences = gdino_results[0]["scores"].cpu().numpy().tolist()  # tensor -> ndarray
-    class_names = gdino_results[0]["labels"]  # get class names
-    class_ids = np.array(list(range(len(class_names))))  # get class ids
+    # Store results in a dictionary
+    #   masks - list of sparse bool matrices with 1 mask per matrice (N_boxes,_)
+    #   input_boxes - np.ndarray of input boxes (N_boxes x 4)
+    #   confidences - list of confidences per box (N_boxes,_)
+    #   class_names - list of strings with class names per box (N_boxes,_)
+    #   class_ids - np.ndarray of class_ids per box (N_boxes,_)
+    #   mask_labels - list of strings with labels, name + confidence (N_boxes,_)
+    results = {"masks": masks, "input_boxes": input_boxes, "confidences": confidences, "class_names": class_names,
+               "class_ids": class_ids, "mask_labels": labels}
+
+    return results
+
+
+def run_grounded_sam2_with_sahi(image: Path | np.ndarray, text_prompt: str,
+                                gdino_model: AutoModelForZeroShotObjectDetection,
+                                gdino_processor: AutoProcessor,
+                                sam2_predictor: SAM2ImagePredictor,
+                                inference_models_parameters: dict,
+                                slice_inference_parameters: dict) -> dict:
+
+    # Set inference hardware
+    device = inference_models_parameters['device']
+
+    # Set image as Pillow (PIL) library object
+    if isinstance(image, np.ndarray):
+        # Transform np.ndarray to RGB pillow image
+        image_pil = Image.fromarray(image)
+        # image = image
+    elif isinstance(image, Path):
+        image_pil = Image.open(image)  # Load image as PIL Image
+        image = np.array(image_pil)
+    else:
+        print("Image passed to run_grounded_sam2() has to be np.ndarray or Path object")
+
+    # Unpack variables defining image slicing process
+    slice_wh = slice_inference_parameters["slice_width_height"]
+    overlap_ratio = slice_inference_parameters["overlap_ratio_in_width_height"]
+    iou_threshold = slice_inference_parameters["iou_threshold"]
+    filter_strategy = slice_inference_parameters["overlap_filter_strategy"]
+    if filter_strategy.lower() == 'nms':
+        filter_strategy = sv.OverlapFilter.NON_MAX_SUPPRESSION
+    else:
+        print("Unsupported filter strategy provided - currently only NMS!")
+
+    # Partially initialize the function - populate all inputs in advance besides "image", which is populated
+    #   iteratively within sv.InferenceSlicer with image slices
+    callback_fn = partial(callback, text_prompt=text_prompt, device=device, gdino_processor=gdino_processor,
+                          gdino_model=gdino_model, inference_models_parameters=inference_models_parameters)
+
+    # Create a slicer object
+    slicer = sv.InferenceSlicer(
+        callback=callback_fn,
+        slice_wh=slice_wh,
+        overlap_ratio_wh=overlap_ratio,
+        iou_threshold=iou_threshold,
+        overlap_filter=filter_strategy
+    )
+
+    # Run slicer (do detection on different slices)
+    detections = slicer(image)
+
+    # Get class_ids corresponding defined relative to the original text_prompt and corresponding to class_names
+    keys = text_prompt.split('.')  # → ['house','window','bicycle','door','grass','leaf']
+    class_id_map = {k: i + 1 for i, k in enumerate(keys)}  # → {'house':1, 'window':2, ..., 'leaf':6}
+    inverted_map = {v: k for k, v in class_id_map.items()}
+
+    class_names = [inverted_map[id] for id in detections.class_id]
+    confidences = detections.confidence.tolist()
+    class_ids = detections.class_id
+    input_boxes = detections.xyxy
+
+    # Set input for SAM2
+    sam2_predictor.set_image(np.array(image_pil.convert("RGB")))  # Assure np.ndarray with RGB channels
+
+    # Batch detected bounding boxes to avoid memory explosion when running inference with SAM!
+    # When storing masks separate them and store as a list of individual masks as sparse arrays!
+    max_boxes_per_batch = 16  # conservative default
+    masks = []
+
+    for batch_i in range(0, len(input_boxes), max_boxes_per_batch):
+        batch_boxes = input_boxes[batch_i:batch_i + max_boxes_per_batch]
+
+        # Run SAM2
+        masks_i, _, _ = sam2_predictor.predict(
+            point_coords=None,
+            point_labels=None,
+            box=batch_boxes,
+            multimask_output=False,
+        )
+
+        # Squeeze out unnecessary dimensions
+        if masks_i.ndim == 4:
+            masks_i = masks_i.squeeze(1)  # convert the shape to (n, H, W)
+            # Store individual masks j of batch i as sparse booleans
+            for mask_j in masks_i:
+                masks.append(csr_matrix(mask_j.astype(bool), dtype=bool))
+
+    # Clear GPU memory
+    torch.cuda.empty_cache()
+    gc.collect()
+
 
     # Create mask labels (class name + confidence scores)
     labels = [
@@ -100,6 +308,13 @@ def run_grounded_sam2(image: Path | np.ndarray, text_prompt: str,
     ]
 
     # Store results in a dictionary
+    #   masks - list of sparse matrices
+    #   input_boxes - np.ndarray of input boxes (N_boxes x 4)
+    #   confidences - list of confidences per box (N_boxes,_)
+    #   class_names - list of strings with class names per box (N_boxes,_)
+    #   class_ids - np.ndarray of class_ids per box (N_boxes,_)
+    #   mask_labels - list of strings with labels, name + confidence (N_boxes,_)
+
     results = {"masks": masks, "input_boxes": input_boxes, "confidences": confidences, "class_names": class_names,
                "class_ids": class_ids, "mask_labels": labels}
 
@@ -126,7 +341,6 @@ def rle_to_mask(rle):
 
 def save_gsam2_results(image: tuple[str, np.ndarray, Path], results: dict,
                        inference_models_parameters) -> None:
-
     # 1. Create JPEG files
     # --------------------
 
@@ -141,6 +355,22 @@ def save_gsam2_results(image: tuple[str, np.ndarray, Path], results: dict,
     # Get values from image tuple:
     image_data = image[1]
     image_path = image[2]
+
+    # Select only a few masks in the case of many:
+    subsampled_masks_flag = False
+    n_masks = len(masks)
+    if n_masks > 16:
+        subsampled_masks_flag = True
+        indices = random.sample(range(n_masks), k=16)
+        masks = [masks[i] for i in indices]
+        class_names = [class_names[i] for i in indices]
+        labels = [labels[i] for i in indices]
+        input_boxes = input_boxes[indices, :]
+        class_ids = class_ids[indices]
+        scores = [scores[i] for i in indices]
+
+    # Transform a list of sparse masks into a numpy array
+    masks = np.stack([sparse.toarray() for sparse in masks])
 
     # Create detection objects for "supervision useful API"
     detections = sv.Detections(
@@ -160,7 +390,10 @@ def save_gsam2_results(image: tuple[str, np.ndarray, Path], results: dict,
 
     #   - set output directory and file names for object detection
     output_dir_od = inference_models_parameters['output_dir_od']
-    output_jpg_od = f"{image_path.stem}_od.jpg"
+    if subsampled_masks_flag:
+        output_jpg_od = f"{image_path.stem}_od_RANDOM_SUBSAMPLE_16.jpg"
+    else:
+        output_jpg_od = f"{image_path.stem}_od.jpg"
     cv2.imwrite(os.path.join(output_dir_od, output_jpg_od), annotated_frame)
 
     # Save .jpg images of SAM masks (mask, semantic label, score)
@@ -169,7 +402,10 @@ def save_gsam2_results(image: tuple[str, np.ndarray, Path], results: dict,
     annotated_frame = mask_annotator.annotate(scene=annotated_frame, detections=detections)
     #   - set output directory and file names for object detection
     output_dir_sam2 = inference_models_parameters['output_dir_sam2']
-    output_jpg_sam2 = f"{image_path.stem}_sam2.jpg"
+    if subsampled_masks_flag:
+        output_jpg_sam2 = f"{image_path.stem}_sam2_RANDOM_SUBSAMPLE_16.jpg"
+    else:
+        output_jpg_sam2 = f"{image_path.stem}_sam2.jpg"
     cv2.imwrite(os.path.join(output_dir_sam2, output_jpg_sam2), annotated_frame)
 
     # 2. Create JSON file
@@ -180,7 +416,8 @@ def save_gsam2_results(image: tuple[str, np.ndarray, Path], results: dict,
         mask_rles = [mask_to_rle(mask) for mask in masks]
         # convert bounding boxes and scores (confidences) to lists
         input_boxes = input_boxes.tolist()
-        # scores = scores
+        if isinstance(scores, np.ndarray):
+            scores = scores.tolist()
 
         # save the results in standard format
         results = {
@@ -206,10 +443,3 @@ def save_gsam2_results(image: tuple[str, np.ndarray, Path], results: dict,
             json.dump(results, f, indent=4)
 
     return None
-
-
-
-
-
-
-

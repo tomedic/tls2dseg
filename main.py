@@ -59,14 +59,21 @@ image_generation_parameters = {'image_width': "scan_resolution",
 
 # Prompt object detection / segmentation
 # TODO: VERY important: text prompts need to be lowercase + end with a dot
-text_prompt = "house.window.bicycle.door.grass.leaf"
+text_prompt = "house.window.bicycle.door.grass.grass leaf.shoot.tiller.wheat.wheat head.wheat ear.wheat spike.wheat spikelet.wheat grain.wheat fruit"
 
 # Inference model parameters:
-inference_models_parameters = {'bbox_model_id': 'IDEA-Research/grounding-dino-base',
+inference_models_parameters = {'with_slice_inference': True,
+                               'bbox_model_id': 'IDEA-Research/grounding-dino-base',
                                'box_threshold': 0.35,
                                'text_threshold': 0.25,
                                'sam2-model-config': 'configs/sam2.1/sam2.1_hiera_l.yaml',
                                'sam2-checkpoint': '/scratch/projects/sam2/checkpoints/sam2.1_hiera_large.pt'}
+
+# Additional parameters for slice inference (necessary only if inference with SAHI)
+slice_inference_parameters = {'slice_width_height': (240, 240),
+                              'overlap_ratio_in_width_height': (0.0, 0.0),
+                              'iou_threshold': 0.8,
+                              'overlap_filter_strategy': 'nms'}
 
 def main():
 
@@ -111,9 +118,18 @@ def main():
         #                  'input_boxes' with input boinding boxes,
         #                  'confidences' with confidence scores,
         #                  'class_names', class ids, ...
-        results = run_grounded_sam2(image=image_j_numpy, text_prompt=text_prompt, gdino_model=gdino_model,
-                                    gdino_processor=gdino_processor, sam2_predictor=sam2_predictor,
-                                    inference_models_parameters=inference_models_parameters)
+
+        if inference_models_parameters["with_slice_inference"] is True:
+            print("Grounded Dino - Inference on image slices")
+            results = run_grounded_sam2_with_sahi(image=image_j_numpy, text_prompt=text_prompt, gdino_model=gdino_model,
+                                        gdino_processor=gdino_processor, sam2_predictor=sam2_predictor,
+                                        inference_models_parameters=inference_models_parameters,
+                                        slice_inference_parameters=slice_inference_parameters)
+        else:
+            print("Grounded Dino - Inference on a whole image")
+            results = run_grounded_sam2(image=image_j_numpy, text_prompt=text_prompt, gdino_model=gdino_model,
+                                        gdino_processor=gdino_processor, sam2_predictor=sam2_predictor,
+                                        inference_models_parameters=inference_models_parameters)
 
         # Save object detection (gdino) and segmentation (SAM2) results as .jpeg images and corresponding data in .json:
         if save_intermediate_results:
