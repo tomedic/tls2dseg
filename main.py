@@ -18,13 +18,27 @@ import torch
 from src.tls2dseg.pc2img_utils import *
 from src.tls2dseg.grounded_sam2 import *
 from src.tls2dseg.utils import *
+from src.tls2dseg.sam_everything import *
 import json
 
 
 # I/0 parameters:
-pcd_path = "./data/test_small.e57"  # Set path to point cloud
+pcd_path = "./data/wheat_heads_small.e57"  # Set path to point cloud
 output_dir = "./results"  # Set path for storing the results
 save_intermediate_results = True  # Save intensity images, gDINO and SAM2 outputs
+
+# Task & output format:
+
+task_parameters = {'task': "object_detection",  # Task choice
+                   'results_aggregation_strategy': "object_memory_bank"  # memory bank vs. voxel-grid
+                   }
+
+
+# PointCloud processing parameters
+pcp_parameters = {'pc_subsampling': 0.50,  # Subsample point cloud
+                  'range_limit': 15.0,  # All points further then will be discarded
+                  'bbox_roi': []  # only region of interest (3D bounding box) is to be analyzed
+                  }
 
 # Image generation parameters:
 
@@ -50,27 +64,30 @@ save_intermediate_results = True  # Save intensity images, gDINO and SAM2 output
 # features - list of point cloud features used to generate images - default "intensity"
 
 # TODO: extend to all hyperparameters (incl. ones hidden in pc2img_run() function)
-image_generation_parameters = {'image_width': "scan_resolution",
+image_generation_parameters = {'image_width': 2500,  # Scan-resolution
                                'scan_resolution': "auto",
                                'rotate_pcd': "auto",
                                'rasterization_method': 'nanconv',
-                               'features': ["intensity"],
+                               'features': ["intensity", "range"],
                                }
 
 # Prompt object detection / segmentation
 # TODO: VERY important: text prompts need to be lowercase + end with a dot
-text_prompt = "house.window.bicycle.door.grass.grass leaf.shoot.tiller.wheat.wheat head.wheat ear.wheat spike.wheat spikelet.wheat grain.wheat fruit"
+#text_prompt = "house.window.bicycle.door.grass.pipe"
+#text_prompt = "house.window.wall.door.roof.brick.ground.fence.person"
+#text_prompt = "wall.ceiling.plants.plant pot.leaf.leaves.desk.chair.bag.table.keyboard.floor.window.monitor"
+text_prompt = "wheat.wheat head.wheat ear.wheat spike.wheat spikelet.wheat grain.wheat fruit"
 
 # Inference model parameters:
 inference_models_parameters = {'with_slice_inference': True,
                                'bbox_model_id': 'IDEA-Research/grounding-dino-base',
-                               'box_threshold': 0.35,
-                               'text_threshold': 0.25,
+                               'box_threshold': 0.30,  # 0.35
+                               'text_threshold': 0.15,  # 0.25
                                'sam2-model-config': 'configs/sam2.1/sam2.1_hiera_l.yaml',
                                'sam2-checkpoint': '/scratch/projects/sam2/checkpoints/sam2.1_hiera_large.pt'}
 
 # Additional parameters for slice inference (necessary only if inference with SAHI)
-slice_inference_parameters = {'slice_width_height': (240, 240),
+slice_inference_parameters = {'slice_width_height': (960, 960),
                               'overlap_ratio_in_width_height': (0.0, 0.0),
                               'iou_threshold': 0.8,
                               'overlap_filter_strategy': 'nms'}
@@ -80,6 +97,7 @@ def main():
     # Load data and auto update input parameters
     pcd_path_pathlib = Path(pcd_path)  # Create pathlib path
     pcd: PointCloudData = load_e57(pcd_path_pathlib, stay_global=False)  # Load point cloud
+
     output_dir_pathlib = Path(output_dir)   # Create pathlib path
     device = "cuda" if torch.cuda.is_available() else "cpu"  # Set inference hardware
     inference_models_parameters['device'] = device  # Add to model parameters dictionary
@@ -90,19 +108,29 @@ def main():
 
     # Compute image dimensions (width and height) in pixels and scan resolution (azimuth and elevation) in radians
     image_width, image_height, d_azim_deg, d_elev_deg = compute_image_dimensions(pcd, image_generation_parameters)
+    print(f"Image height x width: {image_height} x {image_width}")
 
     # Create folders for intermediate results (if necessary)
     if save_intermediate_results:
         make_output_folders(output_dir_pathlib, image_generation_parameters, inference_models_parameters)
 
     # Generate images of point cloud i
+    print("Generating desired image(s)")
     images_pcd_i = pc2img_run(pcd, pcd_path_pathlib, image_generation_parameters, image_width, image_height)
+    print("Image(s) succefully genrated!")
+
+    # Initialize SAM2 everything
+
+    image_test = images_pcd_i[0][1][700:, 750:1750]
+    sam2_everything = initialize_sam2_everyting(inference_models_parameters)
+    masks = run_sam2_everything(image_test, sam2_everything, inference_models_parameters)
+    testis = 1
 
     # Initialize Grounded SAM2 (Grounded DINO + SAM2)
     gdino_model, gdino_processor = initialize_gdino(inference_models_parameters)
     sam2_predictor = initialize_sam2(inference_models_parameters)
 
-    # Set the environment settings
+    # Set the environment settings (this is necessary for SAM)
     # use bfloat16 where ok, otherwise float32
     torch.autocast(device_type=device, dtype=torch.bfloat16).__enter__()
     if torch.cuda.get_device_properties(0).major >= 8:
@@ -133,18 +161,22 @@ def main():
 
         # Save object detection (gdino) and segmentation (SAM2) results as .jpeg images and corresponding data in .json:
         if save_intermediate_results:
+            print("Saving intermediate results")
             save_gsam2_results(image=image_j, results=results, inference_models_parameters=inference_models_parameters)
 
         # From individual per-object bool masks get:
         #   - 1 instance mask (each instance having one int ID),
         #   - 1 semantic mask (each class having one ing ID),
         #   - class_id_map which maps semantic classes provided in text_prompt to semantic class IDs
+        print("Getting unified instance and semantic mask from individual masks")
         instance_mask, semantic_mask, class_id_map = get_instance_and_semantic_mask(results, text_prompt)
 
         # Add the generated masks to ImageStack related to the point cloud pcd
+        print("Lifting 2d masks to 3d")
         project_masks2pcd_as_scalarfields(pcd, instance_mask, semantic_mask)
 
         # Save segmented point cloud and related transformation parameters
+        print("Saving results")
         output_pcd_name = pcd_path_pathlib.stem + "_seg.ply"  # _seg for segmented
         output_pcd_path = output_dir / Path(output_pcd_name)
         save_ply(output_pcd_path, pcd, retain_colors=True, retain_normals=True, scalar_fields=None)

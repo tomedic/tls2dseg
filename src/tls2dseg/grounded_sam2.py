@@ -111,6 +111,14 @@ def callback(image_slice: np.ndarray, text_prompt: str, device: str, gdino_proce
     # Get class_ids corresponding defined relative to the original text_prompt and corresponding to class_names
     keys = text_prompt.split('.')  # → ['house','window','bicycle','door','grass','leaf']
     class_names = resolve_class_names(class_names, keys)  # if class name corresponds to 2 valid classes - pick 1
+    # Removing eventual detections that are not related to any of the valid categories
+    none_indices = [i for i, name in enumerate(class_names) if name is None]
+    class_names = [elem for i, elem in enumerate(class_names) if i not in none_indices]
+    mask = np.ones(confidences.shape[0], dtype=bool)
+    mask[none_indices] = False
+    input_boxes = input_boxes[mask]
+    confidences = confidences[mask]
+    # Create dictionary mapping class names to class IDs
     id_map = {k: i + 1 for i, k in enumerate(keys)}  # → {'house':1, 'window':2, ..., 'leaf':6}
     class_ids = np.array([id_map[q] for q in class_names])  # a list of corresponding class IDs
 

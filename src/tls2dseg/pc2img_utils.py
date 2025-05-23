@@ -40,7 +40,7 @@ def pc2img_run(pcd: PointCloudData, pcd_path: Path, image_generation_parameters:
                                                              normilization_percentiles=(5, 95))
 
         # Convert to RGB image
-        spherical_image = convert_to_image(spherical_image_data, "max", normalize=True, colormap='gray')
+        spherical_image = convert_to_image(spherical_image_data, "max", normalize=True, colormap='gray') #gray
         # Save image in results
         if "output_dir_images" in image_generation_parameters:
             save_image_dir = image_generation_parameters["output_dir_images"]
