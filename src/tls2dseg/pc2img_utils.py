@@ -40,7 +40,7 @@ def pc2img_run(pcd: PointCloudData, pcd_path: Path, image_generation_parameters:
                                                              normilization_percentiles=(5, 95))
 
         # Convert to RGB image
-        spherical_image = convert_to_image(spherical_image_data, "max", normalize=True, colormap='gray') #gray
+        spherical_image = convert_to_image(spherical_image_data, "max", normalize=True, colormap='plasma') #gray
         # Save image in results
         if "output_dir_images" in image_generation_parameters:
             save_image_dir = image_generation_parameters["output_dir_images"]
@@ -49,7 +49,7 @@ def pc2img_run(pcd: PointCloudData, pcd_path: Path, image_generation_parameters:
         else:
             save_image_file = "no Path - images not saved"
         # Return tuple with (str: feature_name, ndarray: image, Path: path_to_saved_image)
-        images_i.append((f, spherical_image, save_image_file))
+        images_i.append((f, spherical_image_data, save_image_file))
     return images_i
 
 
@@ -75,7 +75,7 @@ def estimate_scanning_resolution(pcd, image_generation_parameters) -> tuple[floa
     1. Randomly subsample `subsample_frac` of the full cloud’s points.
     2. Build a 2D histogram over (elevation, azimuth) with
        bins = floor(1/patch_frac) along each axis.
-    3. Pick the bin with the highest count → that patch’s angular bounds.
+    3. Pick the bin with the median count of points → that patch’s angular bounds.
     4. Extract the full, ORIGINAL points lying in that patch.
     5. Estimate median 2D nearest-neighbor distance → d_azim = d_elev
 
@@ -116,8 +116,9 @@ def estimate_scanning_resolution(pcd, image_generation_parameters) -> tuple[floa
                                                range=[[fov.elevation_min, fov.elevation_max],
                                                       [fov.horizontal_min, fov.horizontal_max]])
 
-    # 3) find the densest bin
-    idx_flat = np.argmax(H)
+    # 3) find the bin with the median point density (the most representative one)
+    #idx_flat = np.argmax(H)
+    idx_flat = np.argmin((np.abs(H - np.median(H))))  # Find the bin with the median number of points!
     i_e, i_a = np.unravel_index(idx_flat, H.shape)
     elev_min_p = elev_edges[i_e]
     elev_max_p = elev_edges[i_e + 1]

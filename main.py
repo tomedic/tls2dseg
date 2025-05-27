@@ -4,6 +4,9 @@
 # TODO: THIS IS A QUICK-FIX -> remove and do everything properly for pip installable project!
 import sys
 import os
+
+import numpy as np
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
 # Load libraries:
@@ -64,7 +67,7 @@ pcp_parameters = {'pc_subsampling': 0.50,  # Subsample point cloud
 # features - list of point cloud features used to generate images - default "intensity"
 
 # TODO: extend to all hyperparameters (incl. ones hidden in pc2img_run() function)
-image_generation_parameters = {'image_width': 2500,  # Scan-resolution
+image_generation_parameters = {'image_width': "scan_resolution",  # Scan-resolution
                                'scan_resolution': "auto",
                                'rotate_pcd': "auto",
                                'rasterization_method': 'nanconv',
@@ -110,6 +113,9 @@ def main():
     image_width, image_height, d_azim_deg, d_elev_deg = compute_image_dimensions(pcd, image_generation_parameters)
     print(f"Image height x width: {image_height} x {image_width}")
 
+    # scan_res_test = np.sin(np.deg2rad(d_azim_deg)) * 10 * 1000
+    # print(f"Guessed scan resolution: {scan_res_test} mm @ 10 m")
+
     # Create folders for intermediate results (if necessary)
     if save_intermediate_results:
         make_output_folders(output_dir_pathlib, image_generation_parameters, inference_models_parameters)
@@ -119,9 +125,14 @@ def main():
     images_pcd_i = pc2img_run(pcd, pcd_path_pathlib, image_generation_parameters, image_width, image_height)
     print("Image(s) succefully genrated!")
 
-    # Initialize SAM2 everything
+    testis =1
 
-    image_test = images_pcd_i[0][1][700:, 750:1750]
+    # Initialize SAM2 everything
+    # TODO: I HAVE MESSED UP THE OUTPUT OF PC2IMG_RUN -> GIVES RAW NUMPY NOT RGB IMAGE ANYMORE!
+    # image_test = images_pcd_i[1][1][700:, 750:1750]
+    image_test = images_pcd_i[0][1][8500:9000, 1100:11500]
+    testis = 1
+    image_test = convert_to_image(image_test, "max", normalize=True, colormap='gray')  # gray
     sam2_everything = initialize_sam2_everyting(inference_models_parameters)
     masks = run_sam2_everything(image_test, sam2_everything, inference_models_parameters)
     testis = 1

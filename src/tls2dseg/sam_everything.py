@@ -39,11 +39,29 @@ def initialize_sam2_everyting(inference_models_parameters: dict) -> SAM2Automati
     sam2_checkpoint = inference_models_parameters['sam2-checkpoint']
     model_cfg = inference_models_parameters['sam2-model-config']
     device = inference_models_parameters['device']
-    sam2_model = build_sam2(model_cfg, sam2_checkpoint, device=device, apply_postprocessing=False, points_per_side=128,
-                             pred_iou_thresh=0.5, stability_score_thresh=0.8, crop_n_layers=2,
-                             crop_n_points_downscale_factor=1, use_m2m=False)
-    #sam2_model = build_sam2(model_cfg, sam2_checkpoint, device=device, apply_postprocessing=False, points_per_side=128)
-    sam2_everything = SAM2AutomaticMaskGenerator(sam2_model)
+    sam2_model = build_sam2(model_cfg, sam2_checkpoint, device=device, apply_postprocessing=False)
+    #sam2_everything = SAM2AutomaticMaskGenerator(sam2_model)
+
+    sam2_everything = SAM2AutomaticMaskGenerator(
+        model=sam2_model,
+        points_per_side=128,
+        points_per_batch=128,
+        pred_iou_thresh=0.6,
+        stability_score_thresh=0.8,
+        stability_score_offset=0.7,
+        crop_n_layers=1,
+        box_nms_thresh=0.8,
+        crop_n_points_downscale_factor=2,
+        min_mask_region_area=250.0,
+        use_m2m=True,
+    )
+
+    #sam2_everything = SAM2AutomaticMaskGenerator(sam2_model, points_per_side=128,
+    #                         pred_iou_thresh=0.5, stability_score_thresh=0.7, crop_n_layers=1, box_nms_thresh=0.7,
+    #                         crop_n_points_downscale_factor=2, min_mask_region_area=100.0, use_m2m=True)
+
+
+
     return sam2_everything
 
 
