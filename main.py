@@ -22,28 +22,25 @@ from src.tls2dseg.pc2img_utils import *
 from src.tls2dseg.grounded_sam2 import *
 from src.tls2dseg.utils import *
 from src.tls2dseg.sam_everything import *
-import json
-import pyvips
-
-# TODO: move to pc_preprocessing.py
-from pchandler.geometry.filters import RangeFilter, BoxFilter, VoxelDownsample
 from src.tls2dseg.pc_preprocessing import *
-
+from src.tls2dseg.parameters_check import *
+import json
 
 # I/0 parameters:
-pcd_path = "./data/wheat_heads_small.e57"  # Set path to point cloud
-output_dir = "./results"  # Set path for storing the results
-save_intermediate_results = True  # Save intensity images, gDINO and SAM2 outputs
+# pcd_path = "./data/wheat_heads_small.e57"  # Set path to point cloud
+# output_dir = "./results"  # Set path for storing the results
+# save_intermediate_results = True  # Save intensity images, gDINO and SAM2 outputs
 
-# Task & output format:
-
-task_parameters = {'task': "object_detection",  # Task choice
-                   'results_aggregation_strategy': "object_memory_bank"  # memory bank vs. voxel-grid
+# Task & I/0 parameters:
+task_parameters = {'input_path': "./data/wheat_heads_small.e57",  # Set path to input point cloud
+                   'output_path': "./results",   # Set path for storing the results
+                   'save_intermediate_results': True,   # Save intensity images, gDINO and SAM2 outputs
+                   'task': "object_detection",  # Task choice
+                   'results_aggregation_strategy': "object_memory_bank"  # OUT type choice: memory bank vs. voxel-grid
                    }
 
 
 # PointCloud processing parameters
-# TODO: Implement operations based on these parameters
 pcp_parameters = {'output_resolution': 0.003,  # Subsample point cloud
                   'range_limits': [0., 5.],  # All points further then will be discarded
                   'roi_limits': [-12.5, -0.8, 491.7, 0.3, 7.5, 493.7]  # only region of interest (3D bounding box) is to be analyzed
@@ -103,127 +100,30 @@ slice_inference_parameters = {'slice_width_height': (960, 960),
 
 def main():
 
+    # 0. Initial set-up
+    # __________________________________________________________________________________________________________________
+
+    # Check input parameters (Type and Value checks)
+    check_all_parameters(task_parameters, pcp_parameters, image_generation_parameters,
+                         inference_models_parameters, slice_inference_parameters, text_prompt)
+
     # Load data and auto update input parameters
-    pcd_path_pathlib = Path(pcd_path)  # Create pathlib path
+    pcd_path_pathlib = Path(task_parameters['input_path'])  # Create pathlib path
     pcd: PointCloudData = load_e57(pcd_path_pathlib, stay_global=False)  # Load point cloud
 
-    output_dir_pathlib = Path(output_dir)   # Create pathlib path
-    device = "cuda" if torch.cuda.is_available() else "cpu"  # Set inference hardware
-    inference_models_parameters['device'] = device  # Add to model parameters dictionary
-    inference_models_parameters['dump_json_results'] = True if save_intermediate_results else False
+    # Set output path
+    output_dir = task_parameters['output_path']
+    output_dir_pathlib = Path(task_parameters['output_path'])   # Create pathlib path
 
-    # Create folders for intermediate results (if necessary)
+    # Create folders and set flags to True for intermediate results (if necessary)
+    save_intermediate_results = task_parameters['save_intermediate_results']
+    inference_models_parameters['dump_json_results'] = True if save_intermediate_results else False
     if save_intermediate_results:
         make_output_folders(output_dir_pathlib, image_generation_parameters, inference_models_parameters)
 
-    # 1. Point Cloud Processing
-    # -------------------------
-
-    # Remove points outside RoI and range limits (focus on relevant, speed up computations)
-    if pcp_parameters['range_limits']:
-        range_limits = pcp_parameters['range_limits']
-        # Check if parameters correct:
-        # TODO: move all checks of original inputs in separate script! (using pydantic?)
-        if len(range_limits) != 2:
-            raise ValueError(f"Range limits provided, but not specifying both min and max range!")
-        if not all(isinstance(x, (int, float)) for x in range_limits):
-            raise TypeError("Both elements of range_limits must be numbers (int or float)!")
-
-        # Reduce point cloud for ranges:
-        range_min: float = range_limits[0]  # Minimal range
-        range_max: float = range_limits[1]  # Maximal range
-        range_filter = RangeFilter(low=range_min, high=range_max)
-        mask = range_filter.mask(pcd)
-        pcd.reduce(mask)
-
-    if pcp_parameters['roi_limits']:
-        roi_limits = pcp_parameters['roi_limits']
-        # TODO: move all checks of original inputs in separate script! (using pydantic?)
-        if len(roi_limits) != 6:
-            raise ValueError(f"RoI limits provided, but len() != 6, not specifying min and max of X,Y and Z!")
-        if not all(isinstance(x, (int, float)) for x in roi_limits):
-            raise TypeError("All elements of roi_limits must be numbers (int or float)!")
-
-        # Transform roi_limits from PRCS to SOCS
-        #   - take minimum and maximum corner
-        minimum_corner = np.asarray(roi_limits[:3])
-        maximum_corner = np.asarray(roi_limits[3:])
-        #   - get all 8 corners of an axis aligned bounding box
-        all_8_corners_PRCS = get_all_bbox_corners_from_min_max_corners(minimum_corner, maximum_corner)
-        #   - numpy to PointCloudData object
-        roi_pcd = PointCloudData(xyz=all_8_corners_PRCS)
-        #   - apply transformation from PRCS_2_SOCS (inverse of SOCS_2_PRCS stored in pcd.transformation_matrix)
-        roi_pcd.transform(transformation_matrix=np.linalg.inv(pcd.transformation_matrix))
-        #   - pointCloudData object to numpy
-        all_8_corners_SOCS = roi_pcd.xyz
-        #   - get new min and max corners in SOCS from all 8 corners
-        minimum_corner, maximum_corner = get_min_max_corners_from_all_bbox_corners(all_8_corners_SOCS)
-        #   - numpy to tuple
-        minimum_corner = tuple(minimum_corner.tolist())
-        maximum_corner = tuple(maximum_corner.tolist())
-        # -reduce point cloud for roi:
-        roi_filter = BoxFilter(minimum_corner=minimum_corner, maximum_corner=maximum_corner)
-        mask = roi_filter.mask(pcd)
-        pcd.reduce(mask)
-
-    # if pcp_parameters['output_resolution'] is not None:
-    #     voxel_size = pcp_parameters['output_resolution']
-    #     voxel_downsampler = VoxelDownsample(voxel_size=voxel_size, weigthing_method='linear')
-    #     pcd = voxel_downsampler.sample(pcd)
-
-    # Rotate point cloud around z (if necessary), return rotation angle theta in degrees
-    theta_deg = resolve_rotate_pcd_parameter(pcd, image_generation_parameters)
-
-    # Compute image dimensions (width and height) in pixels and scan resolution (azimuth and elevation) in radians
-    image_width, image_height, d_azim_deg, d_elev_deg = compute_image_dimensions(pcd, image_generation_parameters)
-    print(f"Image height x width: {image_height} x {image_width}")
-
-    # scan_res_test = np.sin(np.deg2rad(d_azim_deg)) * 10 * 1000
-    # print(f"Guessed scan resolution: {scan_res_test} mm @ 10 m")
-
-    # Resolve necessary image resolution:
-    range_max = np.max(pcd.spherical_coordinates[:, 0])
-    output_resolution = pcp_parameters['output_resolution']
-    required_ang_res = np.arcsin(output_resolution/range_max)
-    scanning_resolution = np.deg2rad(d_azim_deg)
-    reduction_coefficient = np.round(scanning_resolution / required_ang_res, 2)
-
-
-    # Generate images of point cloud i
-    print("Generating desired image(s)")
-    images_pcd_i = pc2img_run(pcd, pcd_path_pathlib, image_generation_parameters, image_width, image_height)
-    print("Image(s) succefully genrated!")
-
-    if reduction_coefficient < 1:
-        image_i = images_pcd_i[0][1].astype(np.float32)
-        image_i = np.nan_to_num(image_i, nan=np.nanmax(image_i))
-        im_vips = pyvips.Image.new_from_array(image_i)
-
-
-        im_small = im_vips.resize(reduction_coefficient, kernel='lanczos3')
-
-        height, width = im_small.height, im_small.width
-        np_array = np.frombuffer(im_small.write_to_memory(), dtype=np.float32)
-        np_array = np_array.reshape((height, width))
-        image_test = convert_to_image(np_array, "max", normalize=True, colormap='gray')
-        import imageio.v3 as iio
-        iio.imwrite("results/intermediate/images/test_resize.png", image_test)
-    testis = 1
-
-
-    # Initialize SAM2 everything
-    # TODO: I HAVE MESSED UP THE OUTPUT OF PC2IMG_RUN -> GIVES RAW NUMPY NOT RGB IMAGE ANYMORE!
-
-    image_test = images_pcd_i[0][1]
-    image_test = convert_to_image(np_array, "max", normalize=True, colormap='gray')  # gray
-    testis = 1
-    sam2_everything = initialize_sam2_everyting(inference_models_parameters)
-    masks = run_sam2_everything(image_test, sam2_everything, inference_models_parameters)
-    testis = 1
-
-    # Initialize Grounded SAM2 (Grounded DINO + SAM2)
-    gdino_model, gdino_processor = initialize_gdino(inference_models_parameters)
-    sam2_predictor = initialize_sam2(inference_models_parameters)
+    # Set device
+    device = "cuda" if torch.cuda.is_available() else "cpu"  # Set inference hardware
+    inference_models_parameters['device'] = device  # Add to model parameters dictionary
 
     # Set the environment settings (this is necessary for SAM)
     # use bfloat16 where ok, otherwise float32
@@ -233,6 +133,50 @@ def main():
         # (https://pytorch.org/docs/stable/notes/cuda.html#tensorfloat-32-tf32-on-ampere-devices)
         torch.backends.cuda.matmul.allow_tf32 = True
         torch.backends.cudnn.allow_tf32 = True
+
+    # 1. Point Cloud Processing
+    # __________________________________________________________________________________________________________________
+
+    # Filter point cloud for ranges and RoI (region of interest)
+    filter_pcd_roi_range(pcd, pcp_parameters)
+
+    # Rotate point cloud around z (if necessary), return rotation angle theta in degrees
+    theta_deg = resolve_rotate_pcd_parameter(pcd, image_generation_parameters)
+
+    # Compute image dimensions (width and height) in pixels and scan resolution (azimuth and elevation) in radians
+    image_width, image_height, d_azim_deg, d_elev_deg = compute_image_dimensions(pcd, image_generation_parameters)
+    print(f"Image height x width: {image_height} x {image_width}")
+
+    # Resolve necessary image resolution
+    reduction_coefficient = resolve_necessary_image_resolution(pcd, pcp_parameters, d_azim_deg)
+
+    # Generate images of point cloud i
+    print("Generating desired image(s)")
+    images_pcd_i = pc2img_run(pcd, pcd_path_pathlib, image_generation_parameters, image_width, image_height)
+
+    # Reducing image resolution (if necessary)
+    if reduction_coefficient < 1:
+        print("Reducing image resolution")
+        images_pcd_i = reduce_image_resolution(images_pcd_i, reduction_coefficient, image_generation_parameters,
+                                               pcd_path_pathlib)
+        # Get new image width and height
+        image_height, image_width = images_pcd_i[0][1].shape
+
+    # Initialize SAM2 everything
+    # TODO: I HAVE MESSED UP THE OUTPUT OF PC2IMG_RUN -> GIVES RAW NUMPY NOT RGB IMAGE ANYMORE!
+    testis = 1
+    image_test = images_pcd_i[0][1]
+    image_test = convert_to_image(image_test, "max", normalize=True, colormap='gray')  # gray
+    testis = 1
+    sam2_everything = initialize_sam2_everyting(inference_models_parameters)
+    masks = run_sam2_everything(image_test, sam2_everything, inference_models_parameters)
+    testis = 1
+
+    # Initialize Grounded SAM2 (Grounded DINO + SAM2)
+    gdino_model, gdino_processor = initialize_gdino(inference_models_parameters)
+    sam2_predictor = initialize_sam2(inference_models_parameters)
+
+
 
     # Run Grounded SAM2 inference (for all images of a point cloud pcd_i)
     for image_j in images_pcd_i:

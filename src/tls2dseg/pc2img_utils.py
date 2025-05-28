@@ -1,5 +1,4 @@
 from typing import Tuple
-
 import numpy as np
 from pchandler.geometry.core import PointCloudData
 from functools import partial
@@ -11,8 +10,7 @@ import imageio.v3 as iio
 from numpy.typing import NDArray
 from sklearn.neighbors import NearestNeighbors
 import re
-from itertools import groupby
-from pc2img import ImageData, ImageStack
+import pyvips
 
 
 def pc2img_run(pcd: PointCloudData, pcd_path: Path, image_generation_parameters: dict,
@@ -40,7 +38,7 @@ def pc2img_run(pcd: PointCloudData, pcd_path: Path, image_generation_parameters:
                                                              normilization_percentiles=(5, 95))
 
         # Convert to RGB image
-        spherical_image = convert_to_image(spherical_image_data, "max", normalize=True, colormap='plasma') #gray
+        spherical_image = convert_to_image(spherical_image_data, "max", normalize=True, colormap='gray') #gray
         # Save image in results
         if "output_dir_images" in image_generation_parameters:
             save_image_dir = image_generation_parameters["output_dir_images"]
@@ -508,6 +506,59 @@ def project_masks2pcd_as_scalarfields(pcd: PointCloudData, instance_mask, semant
     return None
 
 
+def resolve_necessary_image_resolution(pcd: PointCloudData, pcp_parameters: dict, d_azim_deg: float) -> float:
+    """
+    Function computes reduction_coefficient for down scaling the spherical image resolution based on the original scan
+    resolution, maximum range, and desired output point cloud resolution (in meters)
+    """
+    # get max range in the point cloud
+    range_max = np.max(pcd.spherical_coordinates[:, 0])
+    # get desired resolution (euclidean / metric space) for the output point cloud
+    output_resolution = pcp_parameters['output_resolution']
+    # compute corresponding required angular resolution
+    required_ang_res = np.arcsin(output_resolution/range_max)
+    # get scanning resolution in rad
+    scanning_resolution = np.deg2rad(d_azim_deg)
+    # compute image size (image_height and image_width) reduction coefficient
+    reduction_coefficient = np.round(scanning_resolution / required_ang_res, 2)
+    return reduction_coefficient
+
+
+def reduce_image_resolution(set_of_images: list, reduction_coefficient: float, image_generation_parameters: dict,
+                            pcd_path: Path) -> list:
+
+    # Get image i of currently processed point cloud j
+    for i, image_tuple_i in enumerate(set_of_images):
+        # Get image feature name
+        feature = image_tuple_i[0]
+        # Get image data (ndarray) from image tuple and cast to float32 (required by pyvips)
+        image_data_i = image_tuple_i[1].astype(np.float32)
+        # Remove all nan-values with max value
+        image_data_i = np.nan_to_num(image_data_i, nan=np.nanmax(image_data_i))
+        # Create pyvips object
+        image_data_i = pyvips.Image.new_from_array(image_data_i)
+        # Resize image
+        image_data_i = image_data_i.resize(reduction_coefficient, kernel='lanczos3')
+        # Get new image height and width
+        height, width = image_data_i.height, image_data_i.width
+        # Convert pyvis object back to numpy
+        image_data_i = np.frombuffer(image_data_i.write_to_memory(), dtype=np.float32)
+        image_data_i = image_data_i.reshape((height, width))
+
+        # Save image in intermediate results
+        if "output_dir_images" in image_generation_parameters:
+            # Convert to RGB image
+            image_data_rgb_i = convert_to_image(image_data_i, "max", normalize=True, colormap='gray')  # gray
+            # Set saving parameters and save image
+            save_image_dir = image_generation_parameters["output_dir_images"]
+            save_image_file_i = save_image_dir / f"{pcd_path.stem}_Spherical_{feature}_reduced.png"
+            iio.imwrite(save_image_file_i, image_data_rgb_i)
+        else:
+            save_image_file_i = "no Path - images not saved"
+        # Return tuple with (str: feature_name, ndarray: image, Path: path_to_saved_image)
+        set_of_images[i] = (feature, image_data_i, save_image_file_i)
+
+    return set_of_images
 
 
 
