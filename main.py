@@ -23,6 +23,11 @@ from src.tls2dseg.grounded_sam2 import *
 from src.tls2dseg.utils import *
 from src.tls2dseg.sam_everything import *
 import json
+import pyvips
+
+# TODO: move to pc_preprocessing.py
+from pchandler.geometry.filters import RangeFilter, BoxFilter, VoxelDownsample
+from src.tls2dseg.pc_preprocessing import *
 
 
 # I/0 parameters:
@@ -38,9 +43,10 @@ task_parameters = {'task': "object_detection",  # Task choice
 
 
 # PointCloud processing parameters
-pcp_parameters = {'pc_subsampling': 0.50,  # Subsample point cloud
-                  'range_limit': 15.0,  # All points further then will be discarded
-                  'bbox_roi': []  # only region of interest (3D bounding box) is to be analyzed
+# TODO: Implement operations based on these parameters
+pcp_parameters = {'output_resolution': 0.003,  # Subsample point cloud
+                  'range_limits': [0., 5.],  # All points further then will be discarded
+                  'roi_limits': [-12.5, -0.8, 491.7, 0.3, 7.5, 493.7]  # only region of interest (3D bounding box) is to be analyzed
                   }
 
 # Image generation parameters:
@@ -106,6 +112,65 @@ def main():
     inference_models_parameters['device'] = device  # Add to model parameters dictionary
     inference_models_parameters['dump_json_results'] = True if save_intermediate_results else False
 
+    # Create folders for intermediate results (if necessary)
+    if save_intermediate_results:
+        make_output_folders(output_dir_pathlib, image_generation_parameters, inference_models_parameters)
+
+    # 1. Point Cloud Processing
+    # -------------------------
+
+    # Remove points outside RoI and range limits (focus on relevant, speed up computations)
+    if pcp_parameters['range_limits']:
+        range_limits = pcp_parameters['range_limits']
+        # Check if parameters correct:
+        # TODO: move all checks of original inputs in separate script! (using pydantic?)
+        if len(range_limits) != 2:
+            raise ValueError(f"Range limits provided, but not specifying both min and max range!")
+        if not all(isinstance(x, (int, float)) for x in range_limits):
+            raise TypeError("Both elements of range_limits must be numbers (int or float)!")
+
+        # Reduce point cloud for ranges:
+        range_min: float = range_limits[0]  # Minimal range
+        range_max: float = range_limits[1]  # Maximal range
+        range_filter = RangeFilter(low=range_min, high=range_max)
+        mask = range_filter.mask(pcd)
+        pcd.reduce(mask)
+
+    if pcp_parameters['roi_limits']:
+        roi_limits = pcp_parameters['roi_limits']
+        # TODO: move all checks of original inputs in separate script! (using pydantic?)
+        if len(roi_limits) != 6:
+            raise ValueError(f"RoI limits provided, but len() != 6, not specifying min and max of X,Y and Z!")
+        if not all(isinstance(x, (int, float)) for x in roi_limits):
+            raise TypeError("All elements of roi_limits must be numbers (int or float)!")
+
+        # Transform roi_limits from PRCS to SOCS
+        #   - take minimum and maximum corner
+        minimum_corner = np.asarray(roi_limits[:3])
+        maximum_corner = np.asarray(roi_limits[3:])
+        #   - get all 8 corners of an axis aligned bounding box
+        all_8_corners_PRCS = get_all_bbox_corners_from_min_max_corners(minimum_corner, maximum_corner)
+        #   - numpy to PointCloudData object
+        roi_pcd = PointCloudData(xyz=all_8_corners_PRCS)
+        #   - apply transformation from PRCS_2_SOCS (inverse of SOCS_2_PRCS stored in pcd.transformation_matrix)
+        roi_pcd.transform(transformation_matrix=np.linalg.inv(pcd.transformation_matrix))
+        #   - pointCloudData object to numpy
+        all_8_corners_SOCS = roi_pcd.xyz
+        #   - get new min and max corners in SOCS from all 8 corners
+        minimum_corner, maximum_corner = get_min_max_corners_from_all_bbox_corners(all_8_corners_SOCS)
+        #   - numpy to tuple
+        minimum_corner = tuple(minimum_corner.tolist())
+        maximum_corner = tuple(maximum_corner.tolist())
+        # -reduce point cloud for roi:
+        roi_filter = BoxFilter(minimum_corner=minimum_corner, maximum_corner=maximum_corner)
+        mask = roi_filter.mask(pcd)
+        pcd.reduce(mask)
+
+    # if pcp_parameters['output_resolution'] is not None:
+    #     voxel_size = pcp_parameters['output_resolution']
+    #     voxel_downsampler = VoxelDownsample(voxel_size=voxel_size, weigthing_method='linear')
+    #     pcd = voxel_downsampler.sample(pcd)
+
     # Rotate point cloud around z (if necessary), return rotation angle theta in degrees
     theta_deg = resolve_rotate_pcd_parameter(pcd, image_generation_parameters)
 
@@ -116,23 +181,42 @@ def main():
     # scan_res_test = np.sin(np.deg2rad(d_azim_deg)) * 10 * 1000
     # print(f"Guessed scan resolution: {scan_res_test} mm @ 10 m")
 
-    # Create folders for intermediate results (if necessary)
-    if save_intermediate_results:
-        make_output_folders(output_dir_pathlib, image_generation_parameters, inference_models_parameters)
+    # Resolve necessary image resolution:
+    range_max = np.max(pcd.spherical_coordinates[:, 0])
+    output_resolution = pcp_parameters['output_resolution']
+    required_ang_res = np.arcsin(output_resolution/range_max)
+    scanning_resolution = np.deg2rad(d_azim_deg)
+    reduction_coefficient = np.round(scanning_resolution / required_ang_res, 2)
+
 
     # Generate images of point cloud i
     print("Generating desired image(s)")
     images_pcd_i = pc2img_run(pcd, pcd_path_pathlib, image_generation_parameters, image_width, image_height)
     print("Image(s) succefully genrated!")
 
-    testis =1
+    if reduction_coefficient < 1:
+        image_i = images_pcd_i[0][1].astype(np.float32)
+        image_i = np.nan_to_num(image_i, nan=np.nanmax(image_i))
+        im_vips = pyvips.Image.new_from_array(image_i)
+
+
+        im_small = im_vips.resize(reduction_coefficient, kernel='lanczos3')
+
+        height, width = im_small.height, im_small.width
+        np_array = np.frombuffer(im_small.write_to_memory(), dtype=np.float32)
+        np_array = np_array.reshape((height, width))
+        image_test = convert_to_image(np_array, "max", normalize=True, colormap='gray')
+        import imageio.v3 as iio
+        iio.imwrite("results/intermediate/images/test_resize.png", image_test)
+    testis = 1
+
 
     # Initialize SAM2 everything
     # TODO: I HAVE MESSED UP THE OUTPUT OF PC2IMG_RUN -> GIVES RAW NUMPY NOT RGB IMAGE ANYMORE!
-    # image_test = images_pcd_i[1][1][700:, 750:1750]
-    image_test = images_pcd_i[0][1][8500:9000, 1100:11500]
+
+    image_test = images_pcd_i[0][1]
+    image_test = convert_to_image(np_array, "max", normalize=True, colormap='gray')  # gray
     testis = 1
-    image_test = convert_to_image(image_test, "max", normalize=True, colormap='gray')  # gray
     sam2_everything = initialize_sam2_everyting(inference_models_parameters)
     masks = run_sam2_everything(image_test, sam2_everything, inference_models_parameters)
     testis = 1
