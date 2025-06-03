@@ -21,7 +21,7 @@ def filter_pcd_roi_range(pcd: PointCloudData, pcp_parameters: dict) -> None:
     # Remove points outside RoI and range limits (focus on relevant, speed up computations)
 
     # Filter ranges:
-    if pcp_parameters['range_limits']:
+    if pcp_parameters['range_limits'] is not None:
         range_limits = pcp_parameters['range_limits']
         range_min, range_max = range_limits[0], range_limits[1]  # min and max range
         range_filter = RangeFilter(low=range_min, high=range_max)
@@ -29,7 +29,7 @@ def filter_pcd_roi_range(pcd: PointCloudData, pcp_parameters: dict) -> None:
         pcd.reduce(mask)
 
     # Filter ROI:
-    if pcp_parameters['roi_limits']:
+    if pcp_parameters['roi_limits'] is not None:
         roi_limits = pcp_parameters['roi_limits']
         # Transform roi_limits from PRCS to SOCS
         #   - take minimum and maximum corner

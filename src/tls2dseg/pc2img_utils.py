@@ -11,11 +11,11 @@ from numpy.typing import NDArray
 from sklearn.neighbors import NearestNeighbors
 import re
 import pyvips
+from typing import Union, Literal
 
 
 def pc2img_run(pcd: PointCloudData, pcd_path: Path, image_generation_parameters: dict,
                image_width: int = 2000, image_height: int = 0) -> [(str, NDArray[np.uint8], Path)]:
-
     # Unpack necessary variables
     rasterization_method = image_generation_parameters["rasterization_method"]
     features = image_generation_parameters["features"]
@@ -37,10 +37,10 @@ def pc2img_run(pcd: PointCloudData, pcd_path: Path, image_generation_parameters:
                                                              normalize=True,
                                                              normilization_percentiles=(5, 95))
 
-        # Convert to RGB image
-        spherical_image = convert_to_image(spherical_image_data, "max", normalize=True, colormap='gray') #gray
         # Save image in results
         if "output_dir_images" in image_generation_parameters:
+            # Convert to RGB image
+            spherical_image = convert_to_image(spherical_image_data, "max", normalize=True, colormap='gray')  # gray
             save_image_dir = image_generation_parameters["output_dir_images"]
             save_image_file = save_image_dir / f"{pcd_path.stem}_Spherical_{f}.png"
             iio.imwrite(save_image_file, spherical_image)
@@ -52,7 +52,6 @@ def pc2img_run(pcd: PointCloudData, pcd_path: Path, image_generation_parameters:
 
 
 def rotate_pcd_around_z(pcd: PointCloudData, theta: float = 0.0) -> None:
-
     theta = np.deg2rad(theta)  # Convert degrees to radians
 
     rotation_matrix = np.array([
@@ -115,7 +114,7 @@ def estimate_scanning_resolution(pcd, image_generation_parameters) -> tuple[floa
                                                       [fov.horizontal_min, fov.horizontal_max]])
 
     # 3) find the bin with the median point density (the most representative one)
-    #idx_flat = np.argmax(H)
+    # idx_flat = np.argmax(H)
     idx_flat = np.argmin((np.abs(H - np.median(H))))  # Find the bin with the median number of points!
     i_e, i_a = np.unravel_index(idx_flat, H.shape)
     elev_min_p = elev_edges[i_e]
@@ -125,10 +124,10 @@ def estimate_scanning_resolution(pcd, image_generation_parameters) -> tuple[floa
 
     # 4) extract full original points falling within that patch
     mask = (
-        (elev >= elev_min_p)
-        & (elev <= elev_max_p)
-        & (azim >= azim_min_p)
-        & (azim <= azim_max_p)
+            (elev >= elev_min_p)
+            & (elev <= elev_max_p)
+            & (azim >= azim_min_p)
+            & (azim <= azim_max_p)
     )
     elev_p = elev[mask]  # Elevation (extracted points)
     azim_p = azim[mask]  # Azimuth (extracted points)
@@ -240,7 +239,8 @@ def compute_image_dimensions(pcd: PointCloudData, image_generation_parameters: d
                 else:
                     raise ValueError(f"Invalid image_width format: {image_width!r}")
     else:
-        raise TypeError(f"image_width must be int or str (of type scan_resolution or frac-scan_resolution, got {type(image_width)}")
+        raise TypeError(
+            f"image_width must be int or str (of type scan_resolution or frac-scan_resolution, got {type(image_width)}")
 
     # set image_height to preserve angular aspect ratio
     height_px = int(np.ceil(width_px * (elev_span / azim_span)))
@@ -274,17 +274,17 @@ def rotate_pcd_to_azimuth_gap(pcd, image_generation_parameters) -> float:
     bin_width_deg = image_generation_parameters["bin_width_for_theta_search_deg"]
 
     # 1) Sub-sample the cloud
-    azim = pcd.spherical_coordinates[:, 2]           # (azim in rad)
+    azim = pcd.spherical_coordinates[:, 2]  # (azim in rad)
     N = azim.shape[0]
     M = int(N * subsample_frac)
     idx = np.random.choice(N, size=M, replace=False)
-    azim = azim[idx]                         # radians → degrees in (-180,180]
+    azim = azim[idx]  # radians → degrees in (-180,180]
 
     # 2) 1-D histogram  (-π..π with 1° bins)
     bin_width_rad = np.deg2rad(bin_width_deg)  # bin width by default 1 degree (converted in radians)
     edges = np.arange(-np.pi, np.pi, bin_width_rad)  # Should be 360 edges
     if edges[-1] != np.pi:
-        edges = np.concatenate([edges, [np.pi]])   # make sure edges includes +π
+        edges = np.concatenate([edges, [np.pi]])  # make sure edges includes +π
     counts, _ = np.histogram(azim, bins=edges)
     centres = edges[:-1] + bin_width_rad * 0.5  # bin centres (radians)
 
@@ -315,9 +315,9 @@ def rotate_pcd_to_azimuth_gap(pcd, image_generation_parameters) -> float:
                 if cur_len > best_len:
                     best_len, best_start = cur_len, cur_start
                 cur_len = 0
-        if cur_len > best_len:                        # tail run
+        if cur_len > best_len:  # tail run
             best_len, best_start = cur_len, cur_start
-        return best_start + best_len // 2             # middle index
+        return best_start + best_len // 2  # middle index
 
     # Try zero-count bins first, then search for bin with minimal point count
     zero_mask = counts == 0
@@ -470,7 +470,6 @@ def project_masks2pcd_as_scalarfields(pcd: PointCloudData, instance_mask, semant
     normalized_azimuth = (azimuth - azimuth_min) / (azimuth_max - azimuth_min)
     normalized_elevation = (elevation - elevation_min) / (elevation_max - elevation_min)
 
-
     # 3: Map normalized coordinates to pixel coordinates
     u = normalized_azimuth * (image_width - 1)
     v = normalized_elevation * (image_height - 1)
@@ -481,8 +480,8 @@ def project_masks2pcd_as_scalarfields(pcd: PointCloudData, instance_mask, semant
 
     # Handle edge cases: points outside FOV
     valid_indices = (
-        (normalized_azimuth >= 0) & (normalized_azimuth <= 1) &
-        (normalized_elevation >= 0) & (normalized_elevation <= 1)
+            (normalized_azimuth >= 0) & (normalized_azimuth <= 1) &
+            (normalized_elevation >= 0) & (normalized_elevation <= 1)
     )
 
     # Initialize labels array with a default value (e.g., -1 for invalid points)
@@ -500,8 +499,8 @@ def project_masks2pcd_as_scalarfields(pcd: PointCloudData, instance_mask, semant
         all_labels_instances[valid_indices] = labels_instances
 
     # Step 5: Store instance and class labels into a scalar field
-    pcd.scalar_fields.__setitem__('instances',all_labels_instances)
-    pcd.scalar_fields.__setitem__('classes',all_labels_semantics)
+    pcd.scalar_fields.__setitem__('instances', all_labels_instances)
+    pcd.scalar_fields.__setitem__('classes', all_labels_semantics)
 
     return None
 
@@ -516,7 +515,7 @@ def resolve_necessary_image_resolution(pcd: PointCloudData, pcp_parameters: dict
     # get desired resolution (euclidean / metric space) for the output point cloud
     output_resolution = pcp_parameters['output_resolution']
     # compute corresponding required angular resolution
-    required_ang_res = np.arcsin(output_resolution/range_max)
+    required_ang_res = np.arcsin(output_resolution / range_max)
     # get scanning resolution in rad
     scanning_resolution = np.deg2rad(d_azim_deg)
     # compute image size (image_height and image_width) reduction coefficient
@@ -526,7 +525,6 @@ def resolve_necessary_image_resolution(pcd: PointCloudData, pcp_parameters: dict
 
 def reduce_image_resolution(set_of_images: list, reduction_coefficient: float, image_generation_parameters: dict,
                             pcd_path: Path) -> list:
-
     # Get image i of currently processed point cloud j
     for i, image_tuple_i in enumerate(set_of_images):
         # Get image feature name
@@ -561,4 +559,100 @@ def reduce_image_resolution(set_of_images: list, reduction_coefficient: float, i
     return set_of_images
 
 
+def img_1to3_channels_encoding(img: np.ndarray, output_dtype: Union[str, np.dtype, None] = "float32",
+                               replace_nan_with: Union[Literal["max", "min", "random", "zero"], float] = "max",
+                               normalize: Union[Literal["0-1", "0-255"], None] = "0-1",
+                               broadcast: bool = True) -> np.ndarray:
+    """
+    Convert a H×W×, channel grayscale array with arbitrary value range and dtype into a H×W×3 channel grayscale array
+    of selected dtype with 0-255 value range. Goal: Preparing image data for deep learning frameworks
+    (e.g. HuggingFace transformers library, SAM/SAM2 by Facebook/Meta).
 
+    Parameters
+    ----------
+    img : np.ndarray
+        Input image 2-D array of Shape (H, W, ), dtype any, may contain NaNs.
+    output_dtype : {'uint8', 'float32', None}
+        Desired dtype of the output 3 channel image.
+    replace_nan_with : {'max', 'min', 'random', 'zero'} or float
+        Strategy for filling NaNs *before* further processing.
+    normalize: {'0-1', '0-255'} or None
+        If '0-1' or '0-255', normalize data to 0-1 or 0-255 values
+        If None - do nothing.
+    broadcast : bool
+        If True return an O(1) broadcast view
+        instead of materialising three copies.
+
+    Returns
+    -------
+    img : np.ndarray
+        Shape (H, W, 3) array of the requested dtype.
+    """
+
+    # Early stopping: if image already a 3 channel image with 0-255 value range, do nothing
+    if img.ndim == 3 and img.shape[2] == 3:
+        img_min, img_max = float(img.min()), float(img.max())
+        if img_min >= 0.0 and img_max <= 255.0:
+            return img
+
+    # Checks for other cases:
+    if img.ndim != 2:
+        raise ValueError("Input must be a 2-D array, check if your image is not already"
+                         " 3 channel image with 0-255 value range!")
+
+    if output_dtype not in ("uint8", "float32", None):
+        raise ValueError("dtype must be 'uint8', 'float32', or None")
+
+    # Make a copy to de-attach the image from the original ndarray
+    img = img.copy()
+
+    # ---- 1) handle NaNs ----------------------------------------------------
+    nan_mask = np.isnan(img)
+    img_min, img_max = np.nanmin(img), np.nanmax(img)
+    if nan_mask.any():
+        # Get values to replace nan with
+        if replace_nan_with == "max":
+            fill_val = img_max
+        elif replace_nan_with == "min":
+            fill_val = img_min
+        elif replace_nan_with == "random":
+            rng = np.random.default_rng()
+            fill_val = rng.uniform(img_min, img_max, size=img.shape[:2])
+        elif replace_nan_with == "zero":
+            fill_val = 0.0
+        elif isinstance(replace_nan_with, (int, float)):
+            fill_val = float(replace_nan_with)
+            img_max = max(replace_nan_with, img_max)
+        else:
+            raise ValueError("Invalid replace_nan_with option")
+        # Replace values
+        if replace_nan_with == "random":
+            img[nan_mask] = fill_val[nan_mask]
+        else:
+            img[nan_mask] = fill_val
+
+    # ---- 2) normalise slice-wise ------------------------------------------
+    if normalize is not None and normalize in ("0-1", "0-255"):
+        if img_max == img_min:  # constant slice
+            img = np.zeros_like(img, dtype=np.float32)
+        else:
+            img = (img - img_min) / (img_max - img_min)
+        if normalize == "0-255":
+            img = img * 255.0
+    elif normalize is None:
+        pass
+    else:
+        raise ValueError("normalize must have one of the 3 following values: '0-1', '0-255', None")
+
+    # ---- 3) cast to requested dtype ---------------------------------------
+    if output_dtype is not None:
+        output_dtype_np = np.dtype(output_dtype)
+        img = img.astype(output_dtype_np)
+
+    # ---- 4) replicate channels ---------------------------------------
+    if broadcast:
+        img = np.broadcast_to(img[..., None], (*img.shape, 3))
+    else:
+        img = np.repeat(img[..., None], 3, axis=2)
+
+    return img

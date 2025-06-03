@@ -32,7 +32,7 @@ import json
 # save_intermediate_results = True  # Save intensity images, gDINO and SAM2 outputs
 
 # Task & I/0 parameters:
-task_parameters = {'input_path': "./data/wheat_heads_small.e57",  # Set path to input point cloud
+task_parameters = {'input_path': "./data/bafu_small_trees.e57",  # Set path to input point cloud
                    'output_path': "./results",   # Set path for storing the results
                    'save_intermediate_results': True,   # Save intensity images, gDINO and SAM2 outputs
                    'task': "object_detection",  # Task choice
@@ -41,10 +41,14 @@ task_parameters = {'input_path': "./data/wheat_heads_small.e57",  # Set path to 
 
 
 # PointCloud processing parameters
-pcp_parameters = {'output_resolution': 0.003,  # Subsample point cloud
-                  'range_limits': [0., 5.],  # All points further then will be discarded
-                  'roi_limits': [-12.5, -0.8, 491.7, 0.3, 7.5, 493.7]  # only region of interest (3D bounding box) is to be analyzed
+pcp_parameters = {'output_resolution': 0.5,  # Subsample point cloud
+                  'range_limits': None,  # All points further then will be discarded
+                  'roi_limits': None  # only region of interest (3D bounding box) is to be analyzed
                   }
+# pcp_parameters = {'output_resolution': 0.003,  # Subsample point cloud
+#                   'range_limits': [0., 5.],  # All points further then will be discarded
+#                   'roi_limits': [-12.5, -0.8, 491.7, 0.3, 7.5, 493.7]  # only region of interest (3D bounding box) is to be analyzed
+#                   }
 
 # Image generation parameters:
 
@@ -82,25 +86,26 @@ image_generation_parameters = {'image_width': "scan_resolution",  # Scan-resolut
 #text_prompt = "house.window.bicycle.door.grass.pipe"
 #text_prompt = "house.window.wall.door.roof.brick.ground.fence.person"
 #text_prompt = "wall.ceiling.plants.plant pot.leaf.leaves.desk.chair.bag.table.keyboard.floor.window.monitor"
-text_prompt = "wheat.wheat head.wheat ear.wheat spike.wheat spikelet.wheat grain.wheat fruit"
+text_prompt = "tree.trees.forest.forest trees.tree trunk.tree crown"
+#text_prompt = "wheat.wheat head.wheat ear.wheat spike.wheat spikelet.wheat grain.wheat fruit"
 
 # Inference model parameters:
-inference_models_parameters = {'with_slice_inference': True,
+inference_models_parameters = {'with_slice_inference': False,
                                'bbox_model_id': 'IDEA-Research/grounding-dino-base',
-                               'box_threshold': 0.30,  # 0.35
+                               'box_threshold': 0.15,  # 0.35
                                'text_threshold': 0.15,  # 0.25
                                'sam2-model-config': 'configs/sam2.1/sam2.1_hiera_l.yaml',
                                'sam2-checkpoint': '/scratch/projects/sam2/checkpoints/sam2.1_hiera_large.pt'}
 
 # Additional parameters for slice inference (necessary only if inference with SAHI)
-slice_inference_parameters = {'slice_width_height': (960, 960),
-                              'overlap_ratio_in_width_height': (0.0, 0.0),
-                              'iou_threshold': 0.8,
+slice_inference_parameters = {'slice_width_height': (200, 200),
+                              'overlap_ratio_in_width_height': (0.2, 0.2),
+                              'iou_threshold': 0.85,
                               'overlap_filter_strategy': 'nms'}
 
 def main():
 
-    # 0. Initial set-up
+    # 0. Initial Set-up
     # __________________________________________________________________________________________________________________
 
     # Check input parameters (Type and Value checks)
@@ -162,15 +167,11 @@ def main():
         # Get new image width and height
         image_height, image_width = images_pcd_i[0][1].shape
 
-    # Initialize SAM2 everything
-    # TODO: I HAVE MESSED UP THE OUTPUT OF PC2IMG_RUN -> GIVES RAW NUMPY NOT RGB IMAGE ANYMORE!
-    testis = 1
-    image_test = images_pcd_i[0][1]
-    image_test = convert_to_image(image_test, "max", normalize=True, colormap='gray')  # gray
-    testis = 1
-    sam2_everything = initialize_sam2_everyting(inference_models_parameters)
-    masks = run_sam2_everything(image_test, sam2_everything, inference_models_parameters)
-    testis = 1
+    # TODO: Initializing and testing SAM2 everything -> nicely incorporate in the code
+    image_test = images_pcd_i[1][1]
+    # sam2_everything = initialize_sam2_everyting(inference_models_parameters)
+    # masks = run_sam2_everything(image_test, sam2_everything, inference_models_parameters)
+    # testis = 1
 
     # Initialize Grounded SAM2 (Grounded DINO + SAM2)
     gdino_model, gdino_processor = initialize_gdino(inference_models_parameters)
@@ -179,29 +180,34 @@ def main():
 
 
     # Run Grounded SAM2 inference (for all images of a point cloud pcd_i)
-    for image_j in images_pcd_i:
-        image_j_numpy = image_j[1]  # Get data (8bit np.ndarray) from "image object"
-        # RESULTS CONTAIN: 'masks' with M x w x h (M = mask number, w = width, h = height),
+    for i, image_j in enumerate(images_pcd_i):
+        image_j_numpy = image_j[1]
+        # Transform 1 channel (float) ndarray into 3channel (8bit) - "grayscale" to "rgb"
+        # image_j_numpy = convert_to_image(image_j_numpy, "max", normalize=True, colormap='gray')
+
+        # results [dict]: 'masks' with M x w x h (M = mask number, w = width, h = height),
         #                  'input_boxes' with input boinding boxes,
         #                  'confidences' with confidence scores,
         #                  'class_names', class ids, ...
 
         if inference_models_parameters["with_slice_inference"] is True:
-            print("Grounded Dino - Inference on image slices")
+            print("Grounded SAM2 - Inference on image slices")
             results = run_grounded_sam2_with_sahi(image=image_j_numpy, text_prompt=text_prompt, gdino_model=gdino_model,
                                         gdino_processor=gdino_processor, sam2_predictor=sam2_predictor,
                                         inference_models_parameters=inference_models_parameters,
                                         slice_inference_parameters=slice_inference_parameters)
         else:
-            print("Grounded Dino - Inference on a whole image")
+            print("Grounded SAM2 - Inference on a whole image")
             results = run_grounded_sam2(image=image_j_numpy, text_prompt=text_prompt, gdino_model=gdino_model,
                                         gdino_processor=gdino_processor, sam2_predictor=sam2_predictor,
                                         inference_models_parameters=inference_models_parameters)
 
+        images_pcd_i[i] = (images_pcd_i[i][0], image_j_numpy, images_pcd_i[i][2])
+
         # Save object detection (gdino) and segmentation (SAM2) results as .jpeg images and corresponding data in .json:
         if save_intermediate_results:
             print("Saving intermediate results")
-            save_gsam2_results(image=image_j, results=results, inference_models_parameters=inference_models_parameters)
+            save_gsam2_results(image=images_pcd_i[i], results=results, inference_models_parameters=inference_models_parameters)
 
         # From individual per-object bool masks get:
         #   - 1 instance mask (each instance having one int ID),
@@ -216,7 +222,8 @@ def main():
 
         # Save segmented point cloud and related transformation parameters
         print("Saving results")
-        output_pcd_name = pcd_path_pathlib.stem + "_seg.ply"  # _seg for segmented
+        feature_name = "_" + image_j[0]
+        output_pcd_name = pcd_path_pathlib.stem + feature_name + "_seg.ply"  # _seg for segmented
         output_pcd_path = output_dir / Path(output_pcd_name)
         save_ply(output_pcd_path, pcd, retain_colors=True, retain_normals=True, scalar_fields=None)
         
