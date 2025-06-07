@@ -19,6 +19,7 @@ from supervision.draw.color import ColorPalette
 from transformers import AutoProcessor, AutoModelForZeroShotObjectDetection
 from scipy.sparse import csr_matrix
 import random
+from itertools import compress
 
 from src.tls2dseg.supervision_utils import CUSTOM_COLOR_MAP
 from src.tls2dseg.pc2img_utils import img_1to3_channels_encoding
@@ -66,7 +67,7 @@ def resolve_class_names(class_names: List[str], valid_keys: List[str]) -> List[s
 
 
 def callback(image_slice: np.ndarray, text_prompt: str, device: str, gdino_processor: AutoProcessor,
-             gdino_model: AutoModelForZeroShotObjectDetection, inference_models_parameters: dict) -> sv.Detections:
+             gdino_model: AutoModelForZeroShotObjectDetection, inference_models_parameters: dict, slice_inference_parameters: dict) -> sv.Detections:
     '''
     Do inference on a slice - supporting function for run_grounded_sam2_with_sahi()
 
@@ -91,6 +92,10 @@ def callback(image_slice: np.ndarray, text_prompt: str, device: str, gdino_proce
                                              replace_nan_with='max', broadcast=True)
 
     slice_height, slice_width = image_slice.shape[:2]
+    slice_height_expected, slice_width_expected = slice_inference_parameters["slice_width_height"]
+    if slice_height != slice_height_expected and slice_width != slice_width_expected:
+        return sv.Detections(xyxy=np.empty((0, 4)), confidence=np.array([]), class_id=np.array([]))
+
     # Run Grounded DINO
     #   - Preprocess data: normalize and rescale images, tokenize text, transform into tensor
     inputs = gdino_processor(images=image_slice, text=text_prompt, return_tensors="pt", do_rescale=False).to(device)
@@ -113,9 +118,11 @@ def callback(image_slice: np.ndarray, text_prompt: str, device: str, gdino_proce
     input_boxes = gdino_results[0]["boxes"].cpu().numpy()  # get the bounding box prompts for SAM2
     confidences = gdino_results[0]["scores"].cpu().numpy()  # tensor -> ndarray
     class_names = gdino_results[0]["labels"]  # get class names
+
     # Get class_ids corresponding defined relative to the original text_prompt and corresponding to class_names
     keys = text_prompt.split('.')  # → ['house','window','bicycle','door','grass','leaf']
     class_names = resolve_class_names(class_names, keys)  # if class name corresponds to 2 valid classes - pick 1
+
     # Removing eventual detections that are not related to any of the valid categories
     none_indices = [i for i, name in enumerate(class_names) if name is None]
     class_names = [elem for i, elem in enumerate(class_names) if i not in none_indices]
@@ -123,6 +130,7 @@ def callback(image_slice: np.ndarray, text_prompt: str, device: str, gdino_proce
     mask[none_indices] = False
     input_boxes = input_boxes[mask]
     confidences = confidences[mask]
+
     # Create dictionary mapping class names to class IDs
     id_map = {k: i + 1 for i, k in enumerate(keys)}  # → {'house':1, 'window':2, ..., 'leaf':6}
     class_ids = np.array([id_map[q] for q in class_names])  # a list of corresponding class IDs
@@ -252,9 +260,10 @@ def run_grounded_sam2_with_sahi(image: Path | np.ndarray, text_prompt: str,
 
     # Unpack variables defining image slicing process
     slice_wh = slice_inference_parameters["slice_width_height"]
-    overlap_ratio = slice_inference_parameters["overlap_ratio_in_width_height"]
+    overlap_width_height = slice_inference_parameters["overlap_width_height"]
     iou_threshold = slice_inference_parameters["iou_threshold"]
     filter_strategy = slice_inference_parameters["overlap_filter_strategy"]
+    thread_workers = slice_inference_parameters["thread_workers"]
     if filter_strategy.lower() == 'nms':
         filter_strategy = sv.OverlapFilter.NON_MAX_SUPPRESSION
     else:
@@ -263,30 +272,48 @@ def run_grounded_sam2_with_sahi(image: Path | np.ndarray, text_prompt: str,
     # Partially initialize the function - populate all inputs in advance besides "image", which is populated
     #   iteratively within sv.InferenceSlicer with image slices
     callback_fn = partial(callback, text_prompt=text_prompt, device=device, gdino_processor=gdino_processor,
-                          gdino_model=gdino_model, inference_models_parameters=inference_models_parameters)
+                          gdino_model=gdino_model, inference_models_parameters=inference_models_parameters,
+                          slice_inference_parameters=slice_inference_parameters)
 
     # Create a slicer object
     slicer = sv.InferenceSlicer(
         callback=callback_fn,
         slice_wh=slice_wh,
-        overlap_ratio_wh=overlap_ratio,
+        overlap_wh=overlap_width_height,
+        overlap_ratio_wh=None,
         iou_threshold=iou_threshold,
-        overlap_filter=filter_strategy
+        overlap_filter=filter_strategy,
+        thread_workers=thread_workers
     )
 
     # Run slicer (do detection on different slices)
     print("Running Grounding DINO with SAHI")
     detections = slicer(image)
 
-    # Get class_ids corresponding defined relative to the original text_prompt and corresponding to class_names
+    # Get class_ids relative to the original text_prompt and corresponding to class_names
     keys = text_prompt.split('.')  # → ['house','window','bicycle','door','grass','leaf']
     class_id_map = {k: i + 1 for i, k in enumerate(keys)}  # → {'house':1, 'window':2, ..., 'leaf':6}
     inverted_map = {v: k for k, v in class_id_map.items()}
 
+    # Set main output variables
     class_names = [inverted_map[id] for id in detections.class_id]
     confidences = detections.confidence.tolist()
     class_ids = detections.class_id
     input_boxes = detections.xyxy
+
+    # Remove too-large object detections (when approaching SAHI slice-size/area, likely to be erroneous)
+    lor_threshold = slice_inference_parameters["large_object_removal_threshold"]  # lor = large object removal
+    lor_max_area = lor_threshold * slice_wh[0] * slice_wh[1]  # percentage of SAHI slice area
+    input_boxes_areas = (input_boxes[:, 2] - input_boxes[:, 0]) * (input_boxes[:, 3] - input_boxes[:, 1])
+    keep_mask = input_boxes_areas < lor_max_area
+
+    # Update main output variables
+    class_names = list(compress(class_names, keep_mask))
+    confidences = list(compress(confidences, keep_mask))
+    class_ids = class_ids[keep_mask]
+    input_boxes = input_boxes[keep_mask]
+
+
 
     # TODO: MOVE SAM2 predictions within SAHI pipeline! (or give it own SAHI with different parameters)
     # Set input for SAM2

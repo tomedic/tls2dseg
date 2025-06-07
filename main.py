@@ -32,7 +32,7 @@ import json
 # save_intermediate_results = True  # Save intensity images, gDINO and SAM2 outputs
 
 # Task & I/0 parameters:
-task_parameters = {'input_path': "./data/bafu_small_trees.e57",  # Set path to input point cloud
+task_parameters = {'input_path': "./data/bafu_large.e57",  # Set path to input point cloud
                    'output_path': "./results",   # Set path for storing the results
                    'save_intermediate_results': True,   # Save intensity images, gDINO and SAM2 outputs
                    'task': "object_detection",  # Task choice
@@ -86,11 +86,12 @@ image_generation_parameters = {'image_width': "scan_resolution",  # Scan-resolut
 #text_prompt = "house.window.bicycle.door.grass.pipe"
 #text_prompt = "house.window.wall.door.roof.brick.ground.fence.person"
 #text_prompt = "wall.ceiling.plants.plant pot.leaf.leaves.desk.chair.bag.table.keyboard.floor.window.monitor"
-text_prompt = "tree.trees.forest.forest trees.tree trunk.tree crown"
+#text_prompt = "pine. pine tree"
+text_prompt = "rock.stone.boulder.cliff.tree.pine"
 #text_prompt = "wheat.wheat head.wheat ear.wheat spike.wheat spikelet.wheat grain.wheat fruit"
 
 # Inference model parameters:
-inference_models_parameters = {'with_slice_inference': False,
+inference_models_parameters = {'with_slice_inference': True,
                                'bbox_model_id': 'IDEA-Research/grounding-dino-base',
                                'box_threshold': 0.15,  # 0.35
                                'text_threshold': 0.15,  # 0.25
@@ -99,9 +100,11 @@ inference_models_parameters = {'with_slice_inference': False,
 
 # Additional parameters for slice inference (necessary only if inference with SAHI)
 slice_inference_parameters = {'slice_width_height': (200, 200),
-                              'overlap_ratio_in_width_height': (0.2, 0.2),
-                              'iou_threshold': 0.85,
-                              'overlap_filter_strategy': 'nms'}
+                              'overlap_width_height': (100, 100),
+                              'iou_threshold': 0.80,
+                              'overlap_filter_strategy': 'nms',
+                              'large_object_removal_threshold': 0.40,
+                              'thread_workers': 16}
 
 def main():
 
@@ -211,14 +214,17 @@ def main():
 
         # From individual per-object bool masks get:
         #   - 1 instance mask (each instance having one int ID),
-        #   - 1 semantic mask (each class having one ing ID),
+        #   - 1 semantic mask (each class having one int ID),
         #   - class_id_map which maps semantic classes provided in text_prompt to semantic class IDs
         print("Getting unified instance and semantic mask from individual masks")
-        instance_mask, semantic_mask, class_id_map = get_instance_and_semantic_mask(results, text_prompt)
+        # instance_mask, semantic_mask, class_id_map = get_instance_and_semantic_mask(results, text_prompt)
+        instance_mask, semantic_mask, confidence_mask, class_id_map =\
+            get_instance_and_semantic_mask_with_confidence(results, text_prompt)
 
         # Add the generated masks to ImageStack related to the point cloud pcd
         print("Lifting 2d masks to 3d")
         project_masks2pcd_as_scalarfields(pcd, instance_mask, semantic_mask)
+        project_a_mask_2_pcd_as_scalarfield(pcd, mask=confidence_mask, mask_name="confidence")
 
         # Save segmented point cloud and related transformation parameters
         print("Saving results")
