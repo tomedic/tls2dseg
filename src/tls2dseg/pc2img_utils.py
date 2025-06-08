@@ -36,6 +36,8 @@ def pc2img_run(pcd: PointCloudData, pcd_path: Path, image_generation_parameters:
         spherical_image_data = pcd_image_link.get_image_data(pcd_image_link.available_stacks[0], f,
                                                              normalize=True,
                                                              normilization_percentiles=(5, 95))
+        # Replace NaN values with Max
+        spherical_image_data = np.nan_to_num(spherical_image_data, nan=np.nanmax(spherical_image_data))
 
         # Save image in results
         if "output_dir_images" in image_generation_parameters:

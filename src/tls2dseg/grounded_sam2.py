@@ -326,11 +326,11 @@ def run_grounded_sam2_with_sahi(image: Path | np.ndarray, text_prompt: str,
 
     # Batch detected bounding boxes to avoid memory explosion when running inference with SAM!
     # When storing masks separate them and store as a list of individual masks as sparse arrays!
-    max_boxes_per_batch = 16  # conservative default
+    sam_box_prompt_batch_size= inference_models_parameters["sam_box_prompt_batch_size"]
     masks = []
 
-    for batch_i in range(0, len(input_boxes), max_boxes_per_batch):
-        batch_boxes = input_boxes[batch_i:batch_i + max_boxes_per_batch]
+    for batch_i in range(0, len(input_boxes), sam_box_prompt_batch_size):
+        batch_boxes = input_boxes[batch_i:batch_i + sam_box_prompt_batch_size]
 
         # Run SAM2
         masks_i, _, _ = sam2_predictor.predict(

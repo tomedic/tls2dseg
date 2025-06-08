@@ -96,11 +96,12 @@ inference_models_parameters = {'with_slice_inference': True,
                                'box_threshold': 0.15,  # 0.35
                                'text_threshold': 0.15,  # 0.25
                                'sam2-model-config': 'configs/sam2.1/sam2.1_hiera_l.yaml',
-                               'sam2-checkpoint': '/scratch/projects/sam2/checkpoints/sam2.1_hiera_large.pt'}
+                               'sam2-checkpoint': '/scratch/projects/sam2/checkpoints/sam2.1_hiera_large.pt',
+                               'sam_box_prompt_batch_size': 16}
 
 # Additional parameters for slice inference (necessary only if inference with SAHI)
-slice_inference_parameters = {'slice_width_height': (200, 200),
-                              'overlap_width_height': (100, 100),
+slice_inference_parameters = {'slice_width_height': (400, 400),
+                              'overlap_width_height': (0, 0),
                               'iou_threshold': 0.80,
                               'overlap_filter_strategy': 'nms',
                               'large_object_removal_threshold': 0.40,
@@ -162,11 +163,13 @@ def main():
     print("Generating desired image(s)")
     images_pcd_i = pc2img_run(pcd, pcd_path_pathlib, image_generation_parameters, image_width, image_height)
 
-    # Reducing image resolution (if necessary)
+    # Reducing image resolution (if necessary),
+    #   + getting rid of NaN values & casting image to float32 (if not already that)
     if reduction_coefficient < 1:
         print("Reducing image resolution")
         images_pcd_i = reduce_image_resolution(images_pcd_i, reduction_coefficient, image_generation_parameters,
                                                pcd_path_pathlib)
+
         # Get new image width and height
         image_height, image_width = images_pcd_i[0][1].shape
 
