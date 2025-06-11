@@ -32,7 +32,7 @@ import json
 # save_intermediate_results = True  # Save intensity images, gDINO and SAM2 outputs
 
 # Task & I/0 parameters:
-task_parameters = {'input_path': "./data/bafu_large.e57",  # Set path to input point cloud
+task_parameters = {'input_path': "./data/bafu_small_trees.e57",  # Set path to input point cloud
                    'output_path': "./results",   # Set path for storing the results
                    'save_intermediate_results': True,   # Save intensity images, gDINO and SAM2 outputs
                    'task': "object_detection",  # Task choice
@@ -93,18 +93,18 @@ text_prompt = "rock.stone.boulder.cliff.tree.pine"
 # Inference model parameters:
 inference_models_parameters = {'with_slice_inference': True,
                                'bbox_model_id': 'IDEA-Research/grounding-dino-base',
-                               'box_threshold': 0.15,  # 0.35
-                               'text_threshold': 0.15,  # 0.25
+                               'box_threshold': 0.10,  # 0.35
+                               'text_threshold': 0.10,  # 0.25
                                'sam2-model-config': 'configs/sam2.1/sam2.1_hiera_l.yaml',
                                'sam2-checkpoint': '/scratch/projects/sam2/checkpoints/sam2.1_hiera_large.pt',
                                'sam_box_prompt_batch_size': 16}
 
 # Additional parameters for slice inference (necessary only if inference with SAHI)
 slice_inference_parameters = {'slice_width_height': (400, 400),
-                              'overlap_width_height': (0, 0),
+                              'overlap_width_height': (100, 100),
                               'iou_threshold': 0.80,
                               'overlap_filter_strategy': 'nms',
-                              'large_object_removal_threshold': 0.40,
+                              'large_object_removal_threshold': 0.10,
                               'thread_workers': 16}
 
 def main():
@@ -221,8 +221,9 @@ def main():
         #   - class_id_map which maps semantic classes provided in text_prompt to semantic class IDs
         print("Getting unified instance and semantic mask from individual masks")
         # instance_mask, semantic_mask, class_id_map = get_instance_and_semantic_mask(results, text_prompt)
+        image_hw = image_j_numpy.shape[:2]
         instance_mask, semantic_mask, confidence_mask, class_id_map =\
-            get_instance_and_semantic_mask_with_confidence(results, text_prompt)
+            get_instance_and_semantic_mask_with_confidence(results, text_prompt, image_hw)
 
         # Add the generated masks to ImageStack related to the point cloud pcd
         print("Lifting 2d masks to 3d")

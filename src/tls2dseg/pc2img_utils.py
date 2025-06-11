@@ -445,7 +445,7 @@ def get_instance_and_semantic_mask(results: dict, text_prompt) -> tuple[np.ndarr
     return instance_mask, semantic_mask, id_map
 
 
-def get_instance_and_semantic_mask_with_confidence(results: dict, text_prompt)\
+def get_instance_and_semantic_mask_with_confidence(results: dict, text_prompt, image_hw: tuple)\
         -> tuple[np.ndarray, np.ndarray, np.ndarray, dict]:
     """
     Creates 1 representative instance and 1 semantic segmentation mask from N individual object masks.
@@ -458,6 +458,7 @@ def get_instance_and_semantic_mask_with_confidence(results: dict, text_prompt)\
                 'class_names', 'class_ids', ...
         text_prompt: a string with text prompts used for object detection with GroundedDINO
                      (each "object" separated by a dot ".")
+        image_hw: a tuple with width and height of the image
     Returns:
         instance_mask: A NumPy array of shape (H, W) with unique labels for each instance.
         semantic_mask: A NumPy array of shape (H, W) with labels for each semantic class.
@@ -465,7 +466,7 @@ def get_instance_and_semantic_mask_with_confidence(results: dict, text_prompt)\
         class_ids: A dictionary with str class_name int class_id value-pairs
     """
 
-    H, W = results["masks"][0].shape  # Mask/image size
+    H, W = image_hw  # Mask/image size
     N = len(results["masks"])  # Number of detections
 
     # Get dictionary mapping "semantic classes" to unique IDs
@@ -480,7 +481,7 @@ def get_instance_and_semantic_mask_with_confidence(results: dict, text_prompt)\
     # Sorting masks from biggest to smallest, so if overlapping, the big ones do not superimpose the small ones
     mask_sizes = np.zeros(N, dtype=int)
     for i in range(N):
-        mask_sizes[i] = results["masks"][i].nnz
+        mask_sizes[i] = results["masks"][i].shape[0]
     # Get indices sorted from biggest to smallest
     sorted_indices = np.argsort(mask_sizes)[::-1]
 
@@ -490,19 +491,21 @@ def get_instance_and_semantic_mask_with_confidence(results: dict, text_prompt)\
     confidence_mask = np.zeros((H, W), dtype=np.float32)
 
     for i in range(N):
-        # Get the instance mask
-        mask_i = results["masks"][sorted_indices[i]].toarray().astype(bool)  # Shape: (H, W), dtype: bool
+        # Get the instance mask row and column indices
+        mask_i = results["masks"][sorted_indices[i]]
+        mask_i = np.unique(mask_i, axis=0)
+
         # Assign a unique label to each instance in the instance mask
         # Labels start from 1 (to have 0 for background)
         instance_label = i + 1
-        instance_mask[mask_i] = instance_label
+        instance_mask[mask_i[:, 0], mask_i[:, 1]] = instance_label
 
         # Assign the semantic label to the semantic mask
         # Labels are class_id + 1 to avoid using 0
-        semantic_mask[mask_i] = class_ids[sorted_indices[i]]
+        semantic_mask[mask_i[:, 0], mask_i[:, 1]] = class_ids[sorted_indices[i]]
 
         # Assign confidence score i to confidence mask
-        confidence_mask[mask_i] = confidences[sorted_indices[i]]
+        confidence_mask[mask_i[:, 0], mask_i[:, 1]] = confidences[sorted_indices[i]]
 
     return instance_mask, semantic_mask, confidence_mask, id_map
 

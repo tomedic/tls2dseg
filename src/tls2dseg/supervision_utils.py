@@ -16,3 +16,4 @@ CUSTOM_COLOR_MAP = [
     "#800000",
     "#aaffc3",
 ]
+
