@@ -230,16 +230,9 @@ def main():
         project_masks2pcd_as_scalarfields(pcd, instance_mask, semantic_mask)
         project_a_mask_2_pcd_as_scalarfield(pcd, mask=confidence_mask, mask_name="confidence")
 
-        # Save segmented point cloud and related transformation parameters
-        print("Saving results")
-        feature_name = "_" + image_j[0]
-        output_pcd_name = pcd_path_pathlib.stem + feature_name + "_seg.ply"  # _seg for segmented
-        output_pcd_path = output_dir / Path(output_pcd_name)
-        save_ply(output_pcd_path, pcd, retain_colors=True, retain_normals=True, scalar_fields=None)
-        
-        # Save related transformation matrix (for local-to-global conversion)
-        transformation_matrix_output_path = output_dir / Path(pcd_path_pathlib.stem + '_T.txt')
-        np.savetxt(transformation_matrix_output_path, pcd.transformation_matrix, fmt="%.8f", delimiter=" ")
+        if save_intermediate_results:
+            save_segmented_pcds_in_socs(pcd_path_pathlib, pcd, inference_models_parameters,
+                                        class_id_map, image_j)
 
         # Save class name - to - class id map in ascii
         class_id_map["background"] = 0

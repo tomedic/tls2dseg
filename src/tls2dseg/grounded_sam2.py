@@ -294,9 +294,11 @@ def run_grounded_sam2(image: Path | np.ndarray, text_prompt: str,
     masks = []
     if masks_np.ndim == 4:
         masks_np = masks_np.squeeze(1)  # convert the shape to (n, H, W)
+
     # Store individual masks j of batch i as sparse booleans
     for mask_j in masks_np:
-        masks.append(csr_matrix(mask_j.astype(bool), dtype=bool))
+        row, column = np.nonzero(mask_j)
+        masks.append(np.vstack((row, column), dtype=np.int32).T)
 
     # Store results in a dictionary
     #   masks - list of sparse bool matrices with 1 mask per matrice (N_boxes,_)
