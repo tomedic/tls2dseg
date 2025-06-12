@@ -58,6 +58,7 @@ def filter_pcd_roi_range(pcd: PointCloudData, pcp_parameters: dict) -> None:
 
     return None
 
+
 def save_segmented_pcds_in_socs(pcd_path_pathlib: Path, pcd: PointCloudData, inference_models_parameters: dict,
                                 class_id_map: dict, image_j: tuple):
     # Save segmented point cloud and related transformation parameters
