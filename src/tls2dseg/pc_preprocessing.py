@@ -107,20 +107,20 @@ def remove_unclassified_points(pcd: PointCloudData, task_parameters: dict) -> Po
 
 def get_detections3d(pcd: PointCloudData, pcd_id: float, d3d_parameters: dict) -> Tuple[np.ndarray, list]:
     """
-    Extract per-instance features from a PointCloudData object.
+    Extract a collection of detections 3d instances as a numpy array of relevant features / metadata accompanied
+     by a list of feature names explaining columns of the numpy array
 
     Args:
-        pcd: PointCloudData with
-             - pcd.scalar_fields['instances']  ->  (P,) int array
-             - pcd.scalar_fields['classes']    ->  (P,) int array
-             - pcd.scalar_fields['confidences']->  (P,) float array
-             - pcd.xyz                         ->  (P,3) float array
-        pcd_id: integer tag identifying this point cloud
-        how: 'mean' or 'median' for centroid
+        pcd: PointCloudData object
+        pcd_id: integer tag identifying this point cloud within a project
+        d3d_parameters: dictionary with parameters steering the process
 
     Returns:
-        features: np.ndarray, shape (N_instances, 28)
-        feature_names: list[str] of length 28
+        features: np.ndarray, shape (N_instances, 13) or (N_instances, 17), depending on bounding_box_type
+        feature_names: list[str] of length 13 or 17
+
+    Notes:
+        Features: 1) pcd id; 2) class id; 3) confidence score; 4) nr of points; 5) centroid; 6) bounding box
     """
 
     # Unpack (hyper-) parameters steering the process

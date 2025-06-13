@@ -176,6 +176,7 @@ def main():
         raise ValueError("Chosen results_aggregation_strategy is currently not supported!")
 
     for pcd_path_i in pcd_file_paths:
+        point_cloud_id += 1
 
         # Load data
         pcd: PointCloudData = load_e57(pcd_path_i, stay_global=False)  # Load point cloud
@@ -272,7 +273,6 @@ def main():
                                             class_id_map, image_j)
 
             # Extract per-instance metadata:
-            point_cloud_id += 1
             # TODO: Transform point cloud to global!
             d3d_i = get_detections3d(pcd, point_cloud_id, d3d_parameters)
             d3d_memory_bank.append(d3d_i)
