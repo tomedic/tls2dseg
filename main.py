@@ -24,6 +24,7 @@ from src.tls2dseg.utils import *
 from src.tls2dseg.sam_everything import *
 from src.tls2dseg.pc_preprocessing import *
 from src.tls2dseg.parameters_check import *
+from src.tls2dseg.detections_3d import *
 import json
 
 # I/0 parameters:
@@ -274,16 +275,30 @@ def main():
 
             # Extract per-instance metadata:
             # TODO: Transform point cloud to global!
-            d3d_i = get_detections3d(pcd, point_cloud_id, d3d_parameters)
+            # TODO: Possible additions/modifications to get_detections3d (check OneNote notes)
+            d3d_i, feature_names = get_detections3d(pcd, point_cloud_id, d3d_parameters)
             d3d_memory_bank.append(d3d_i)
 
-            # TODO: Create unique identifier later once all pcd_id and
-            #  instance_id field for all point clouds are populated
-            # TODO: Possible additions/modifications to get_instance_metadata (check OneNote notes)
+    # All point clouds looped through
+    # ------------------------------------------------------------------------------------------------------------------
+    # Concatenate all detections 3d, get their number and assign them a unique identifier
+    d3d_memory_bank = np.concatenate(d3d_memory_bank, axis=0)
+    N_d3d = d3d_memory_bank.shape[0]
+    d3d_unique_ids = np.arange(N_d3d, dtype=np.uint16).reshape(-1, 1)
+    d3d_memory_bank = np.concatenate((d3d_unique_ids, d3d_memory_bank), axis=1)
+
+    # TODO: CLEAN MEMORY
+
+    #
 
 
-            # Once all point clouds processed, clean RAM
-            # TODO: CLEAN RAM
+
+
+
+
+
+
+
 
 
 
