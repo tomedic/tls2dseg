@@ -9,6 +9,7 @@ import igraph as ig
 import leidenalg as la
 import trimesh
 from concurrent.futures import ProcessPoolExecutor
+from scipy.stats import nbinom
 
 
 def get_detections3d(pcd: PointCloudData, pcd_id: float, d3d_parameters: dict) -> Tuple[np.ndarray, list]:
@@ -447,7 +448,7 @@ def compute_supporter_counts(pairs: np.ndarray, bbox_overlap: np.ndarray, iou_th
 def compute_edge_weights(
         detections3d: np.ndarray,
         pairs: np.ndarray,
-        iou_threshold: float = 0.3,
+        iou_threshold: float = 0.15,
         mode: Literal['iou', 'supporters', 'both'] = 'both',
         boolean_engine: str = "scad",
         obb_workers: Optional[int] = None
@@ -542,9 +543,266 @@ def cluster_objects(adj: csr_matrix,
     return labels
 
 
-# -------------------------------------------------
-# 3. Convenience wrapper that returns the mapping
-# -------------------------------------------------
+def count_significant_overlaps(pairs: np.ndarray, bbox_overlap: np.ndarray, iou_threshold: float,
+                               N: int) -> np.ndarray:
+    """
+    Count, for each of N detections (its 3D bbox), with how many other detections (3D bboxes) it has a significant
+     overlap with (overlaps > iou_threshold).
+
+    Parameters
+    ----------
+    pairs : (M,2) int array of detection index pairs
+    bbox_overlap : (M,) float IoUs for those pairs
+    iou_threshold : float
+    N : int total number of detections
+
+    Returns
+    -------
+    counts : (N,) int array
+        counts[k] = # of detections j where IoU(k,j) > threshold
+    """
+    counts = np.zeros(N, dtype=int)
+    for (i, j), iou in zip(pairs, bbox_overlap):
+        if iou > iou_threshold:
+            counts[i] += 1
+            counts[j] += 1
+    return counts
+
+
+def detect_upper_tail_outliers(
+    data: np.ndarray,
+    method: str = "negative_binomial",
+    *,
+    iqr_factor: float = 1.5,
+    mad_factor: float = 3.0,
+    percentile: float = 95.0,
+         alpha: float = 0.05,
+) -> tuple[np.ndarray, float]:
+    """
+    Detect upper‐tail outliers in a 1D positive integer array.
+
+    Parameters
+    ----------
+    data : (N,) array
+        Any (developed for the per‐detection counts)
+    method : {"iqr","mad","percentile","negative_binomial"}
+    iqr_factor : float
+        multiplier for IQR fence: cutoff = Q3 + iqr_factor*(Q3-Q1)
+    mad_factor : float
+        multiplier for MAD fence: cutoff = median + mad_factor*MAD
+    percentile : float
+        for "percentile" method, cutoff = percentile‐th quantile of data
+    alpha : float
+        for "negative_binomial" method, cutoff = nbinom.ppf(1 - alpha, r, p)
+
+    Returns
+    -------
+    outlier_indices : 1D int array
+        indices in `data` that exceed the cutoff.
+    cutoff : float
+        the numeric threshold used.
+    """
+    if method == "iqr":
+        q1, q3 = np.percentile(data, [25, 75])
+        iqr = q3 - q1
+        cutoff = q3 + iqr_factor * iqr
+    elif method == "mad":
+        med = np.median(data)
+        mad = np.median(np.abs(data - med))
+        cutoff = med + mad_factor * mad
+    elif method == "percentile":
+        cutoff = np.percentile(data, percentile)
+    elif method == 'negative_binomial':
+        # Detect outliers based on negative binomial distribution
+        mean, var = data.mean(), data.var(ddof=1)
+        # Var = mean + mean^2 / r  ->  r = mean^2 / (var - mean)
+        r = mean ** 2 / max(var - mean, 1e-6)
+        p = r / (r + mean)
+        cutoff = nbinom.ppf(1 - alpha, r, p)
+    else:
+        raise ValueError(f"Unknown method {method!r}")
+
+    outliers = np.nonzero(data > cutoff)[0]
+    outliers.astype(np.uint16)
+    return outliers, cutoff
+
+
+def filter_outlier_detections3d_edges_and_nodes(
+    d3d_memory_bank: np.ndarray,
+    pairs: np.ndarray,
+    edge_weights: np.ndarray,
+    outliers: np.ndarray
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Remove outlier detections and any edges touching them.
+
+    Parameters
+    ----------
+    d3d_memory_bank : (N, D) array
+        Your per-detection summary.
+    pairs : (M, 2) int array
+        Candidate edges as (i, j) indices into d3d_memory_bank.
+    edge_weights : (M,) array
+        Corresponding edge weights.
+    outliers : (K,) int array
+        Indices of rows in d3d_memory_bank to drop.
+
+    Returns
+    -------
+    filtered_bank : (N-K, D) array
+        d3d_memory_bank with outlier rows removed.
+    filtered_pairs : (M', 2) int array
+        pairs with any row in `outliers` removed.
+    filtered_weights : (M',) array or None
+        edge_weights sliced to match filtered_pairs.
+    """
+    # Filter out the detections themselves
+    keep_mask = ~np.isin(np.arange(d3d_memory_bank.shape[0]), outliers)
+    filtered_bank = d3d_memory_bank[keep_mask]
+
+    # 2) Build a map from old indices to new indices (or -1 if dropped)
+    new_index = np.full(d3d_memory_bank.shape[0], -1, dtype=int)
+    new_index[keep_mask] = np.nonzero(keep_mask)[0]
+
+    # 3) Remap pairs to the new indexing
+    remapped = new_index[pairs]  # shape (M,2), values in [-1...]
+    # 4) Keep only edges where both endpoints survived
+    keep_edge = np.all(remapped >= 0, axis=1)
+    filtered_pairs = remapped[keep_edge]
+
+    # 5) Slice edge_weights if provided
+    filtered_weights = edge_weights[keep_edge]
+
+    return filtered_bank, filtered_pairs, filtered_weights
+
+
+# ---------- utilities ----------
+class UnionFind:
+    def __init__(self, n: int):
+        self.parent = np.arange(n, dtype=np.int32)
+        self.rank = np.zeros(n,  dtype=np.int8)
+
+    def find(self, x: int) -> int:
+        p = self.parent
+        while p[x] != x:
+            p[x] = p[p[x]]
+            x = p[x]
+        return x
+
+    def union(self, a: int, b: int):
+        ra, rb = self.find(a), self.find(b)
+        if ra == rb:
+            return
+        # union by rank
+        if self.rank[ra] < self.rank[rb]:
+            self.parent[ra] = rb
+        elif self.rank[rb] < self.rank[ra]:
+            self.parent[rb] = ra
+        else:
+            self.parent[rb] = ra
+            self.rank[ra] += 1
+# -----------------------------------------------------------
+
+def graph_clustering(
+    num_nodes: int,
+    pairs: np.ndarray,            # (M,2) int32
+    edge_weights: np.ndarray,     # (M,)  float  or int
+    method: Literal["leiden", "hcs", "pcc"] = "leiden",
+    *,
+    # PCC-specific
+    min_supporters: int = 2,
+    boolean_engine: str = "scad",
+    # Leiden parameters
+    leiden_resolution: float = 1.0,
+    # HCS parameters
+    hcs_min_cut_engine: str = "networkx",
+) -> np.ndarray:
+    """
+    Parameters
+    ----------
+    num_nodes : total detections (rows in d3d_memory_bank)
+    pairs      : edges (i,j)
+    edge_weights : same length; for PCC must hold "supporter counts"
+    method     : 'leiden' | 'hcs' | 'pcc'
+    Returns
+    -------
+    labels : (num_nodes,) int32 cluster id per detection ( -1 for isolated if HCS/PCC )
+    """
+    if method == "leiden":
+        import igraph as ig, leidenalg as la
+        # build igraph
+        g = ig.Graph(n=num_nodes, edges=pairs.tolist(), edge_attrs={"weight": edge_weights})
+        part = la.find_partition(
+            g,
+            la.ModularityVertexPartition,
+            weights="weight",
+            resolution_parameter=leiden_resolution,
+        )
+        labels = np.array(part.membership, dtype=np.int32)
+
+    elif method == "hcs":
+        # Simple Python implementation based on recursive min-cut with NetworkX
+        import networkx as nx
+        G = nx.Graph()
+        G.add_nodes_from(range(num_nodes))
+        G.add_weighted_edges_from([(int(i), int(j), float(w)) for (i, j), w in zip(pairs, edge_weights)])
+
+        label = -np.ones(num_nodes, dtype=np.int32)
+        current_label = 0
+
+        def recurse(subg: nx.Graph):
+            nonlocal current_label
+            if len(subg) == 0:
+                return
+            # min-cut size
+            mc_value = nx.algorithms.connectivity.stoer_wagner(subg)[0]
+            if mc_value > len(subg) / 2:
+                # highly connected → assign label
+                for node in subg.nodes:
+                    label[node] = current_label
+                current_label += 1
+            else:
+                # split at min-cut
+                A, B = nx.algorithms.connectivity.stoer_wagner(subg)[1]
+                recurse(subg.subgraph(A).copy())
+                recurse(subg.subgraph(B).copy())
+
+        recurse(G)
+        labels = label.astype(np.int32)
+
+    elif method == "pcc":
+        # Preferential / hierarchical connected components (MaskClustering flavour)
+        supporters = edge_weights.astype(int)
+        max_sup    = supporters.max()
+        uf         = UnionFind(num_nodes)
+
+        # Sort edges by supporter count descending once
+        order = np.argsort(-supporters)   # largest first
+        pairs_sorted = pairs[order]
+        supp_sorted  = supporters[order]
+
+        current_idx = 0  # pointer into edges
+        for thr in range(max_sup, min_supporters - 1, -1):
+            # union all edges with supporters == thr
+            while current_idx < len(supp_sorted) and supp_sorted[current_idx] >= thr:
+                i, j = pairs_sorted[current_idx]
+                uf.union(int(i), int(j))
+                current_idx += 1
+            # after unions at this level, we conceptually contract super-nodes;
+            # but UnionFind already stores the mapping, so no extra work.
+
+        # Build final label array
+        roots = np.array([uf.find(idx) for idx in range(num_nodes)], dtype=np.int32)
+        # relabel roots to consecutive ids
+        uniq, inv = np.unique(roots, return_inverse=True)
+        labels = inv.astype(np.int32)
+
+    else:
+        raise ValueError(f"Unknown method {method}")
+
+    return labels
+
+
 def fuse_instances(memory_bank: np.ndarray,
                    radius: float,
                    k_max: int | None = None,
