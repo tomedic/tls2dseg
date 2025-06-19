@@ -678,30 +678,107 @@ def filter_outlier_detections3d_edges_and_nodes(
 
 # ---------- utilities ----------
 class UnionFind:
-    def __init__(self, n: int):
-        self.parent = np.arange(n, dtype=np.int32)
-        self.rank = np.zeros(n,  dtype=np.int8)
-
-    def find(self, x: int) -> int:
-        p = self.parent
-        while p[x] != x:
-            p[x] = p[p[x]]
-            x = p[x]
+    def __init__(self, n):
+        self.par  = np.arange(n, dtype=np.int32)
+        self.rank = np.zeros(n, dtype=np.int8)
+    def find(self, x):
+        while self.par[x] != x:
+            self.par[x] = self.par[self.par[x]]
+            x = self.par[x]
         return x
-
-    def union(self, a: int, b: int):
+    def union(self, a, b):
         ra, rb = self.find(a), self.find(b)
-        if ra == rb:
-            return
-        # union by rank
+        if ra == rb: return ra
         if self.rank[ra] < self.rank[rb]:
-            self.parent[ra] = rb
+            self.par[ra] = rb
+            return rb
         elif self.rank[rb] < self.rank[ra]:
-            self.parent[rb] = ra
+            self.par[rb] = ra
+            return ra
         else:
-            self.parent[rb] = ra
+            self.par[rb] = ra
             self.rank[ra] += 1
-# -----------------------------------------------------------
+            return ra
+# ---------------------------------------
+
+def pcc_strict_nondecreasing(
+    num_nodes: int,
+    pairs: np.ndarray,            # (M,2)
+    supporters: np.ndarray,       # (M,)
+    min_supporters: int = 2,
+    quantiles: List[int] = (99, 95, 90, 80, 70, 60, 50),
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    PCC with multiplicity-preserving supporter counters.
+    The supporter count of any surviving edge never goes down.
+    """
+    uf = UnionFind(num_nodes)
+
+    # --- 1. Initial Counter for each node -------------------------------
+    Support = [Counter() for _ in range(num_nodes)]
+    for (i, j), sup in zip(pairs, supporters):
+        Support[i][j] += 1
+        Support[j][i] += 1
+
+    # Sorted edge order
+    order = np.argsort(-supporters)
+    pairs_sorted, supp_sorted = pairs[order], supporters[order]
+
+    thresholds = [
+        max(int(np.percentile(supporters, q)), min_supporters)
+        for q in quantiles
+    ]
+    thresholds.append(min_supporters)
+
+    current = 0            # pointer into sorted edge list
+    active_edges = pairs_sorted        # edges still considered
+    active_sup   = supp_sorted.copy()  # their current weights
+
+    for thr in thresholds:
+        # ---- 2. merge all edges with supp >= thr ----------------------
+        while current < len(active_sup) and active_sup[current] >= thr:
+            u, v = active_edges[current]
+            ru, rv = uf.find(u), uf.find(v)
+            if ru != rv:
+                # union; root_new is representative
+                root_new = uf.union(ru, rv)
+                root_old = rv if root_new == ru else ru
+                # merge Counters: new counts = sum (keeps multiplicity)
+                Support[root_new] += Support[root_old]
+                Support[root_old].clear()
+            current += 1
+
+        # ---- 3. re-score surviving edges for NEXT round -------------
+        if thr == thresholds[-1]:
+            break  # last iteration
+
+        root_of = np.fromiter((uf.find(i) for i in range(num_nodes)), dtype=np.int32)
+
+        # Keep only inter-cluster edges
+        keep = root_of[active_edges[:, 0]] != root_of[active_edges[:, 1]]
+        active_edges = active_edges[keep]
+        active_sup   = active_sup[keep]
+
+        # Recompute supporter counts (non-decreasing)
+        new_sup = np.empty_like(active_sup)
+        for idx, (u, v) in enumerate(active_edges):
+            ru, rv = root_of[u], root_of[v]
+            cu, cv = Support[ru], Support[rv]
+            common = set(cu.keys()).intersection(cv.keys())
+            s = sum(min(cu[k], cv[k]) for k in common)
+            new_sup[idx] = s
+        active_sup = new_sup
+
+        # Sort edges for next threshold loop
+        order2 = np.argsort(-active_sup)
+        active_edges, active_sup = active_edges[order2], active_sup[order2]
+        current = 0
+
+    # ---- 4. final labels ---------------------------------------------
+    roots = np.fromiter((uf.find(i) for i in range(num_nodes)), dtype=np.int32)
+    uniq, labels = np.unique(roots, return_inverse=True)
+    return labels.astype(np.int32), active_sup
+
 
 def graph_clustering(
     num_nodes: int,
@@ -711,11 +788,10 @@ def graph_clustering(
     *,
     # PCC-specific
     min_supporters: int = 2,
-    boolean_engine: str = "scad",
+    quantiles: List[int] = (90, 80, 70, 60, 50, 40, 30, 20, 10),
     # Leiden parameters
     leiden_resolution: float = 1.0,
-    # HCS parameters
-    hcs_min_cut_engine: str = "networkx",
+
 ) -> np.ndarray:
     """
     Parameters
@@ -724,6 +800,9 @@ def graph_clustering(
     pairs      : edges (i,j)
     edge_weights : same length; for PCC must hold "supporter counts"
     method     : 'leiden' | 'hcs' | 'pcc'
+    min_supporters: minimal number of supporting masks (detections 3d) needed for a mask merge
+    quantiles: thresholds for "pcc"
+    leiden_resolution: hyper-parameter steering resulting cluster sizes for Leiden
     Returns
     -------
     labels : (num_nodes,) int32 cluster id per detection ( -1 for isolated if HCS/PCC )
@@ -771,53 +850,9 @@ def graph_clustering(
         labels = label.astype(np.int32)
 
     elif method == "pcc":
-        # Preferential / hierarchical connected components (MaskClustering flavour)
-        supporters = edge_weights.astype(int)
-        max_sup    = supporters.max()
-        uf         = UnionFind(num_nodes)
-
-        # Sort edges by supporter count descending once
-        order = np.argsort(-supporters)   # largest first
-        pairs_sorted = pairs[order]
-        supp_sorted  = supporters[order]
-
-        current_idx = 0  # pointer into edges
-        for thr in range(max_sup, min_supporters - 1, -1):
-            # union all edges with supporters == thr
-            while current_idx < len(supp_sorted) and supp_sorted[current_idx] >= thr:
-                i, j = pairs_sorted[current_idx]
-                uf.union(int(i), int(j))
-                current_idx += 1
-            # after unions at this level, we conceptually contract super-nodes;
-            # but UnionFind already stores the mapping, so no extra work.
-
-        # Build final label array
-        roots = np.array([uf.find(idx) for idx in range(num_nodes)], dtype=np.int32)
-        # relabel roots to consecutive ids
-        uniq, inv = np.unique(roots, return_inverse=True)
-        labels = inv.astype(np.int32)
-
+        labels = pcc_strict_nondecreasing(num_nodes, pairs, edge_weights, min_supporters, quantiles)
     else:
         raise ValueError(f"Unknown method {method}")
 
     return labels
 
-
-def fuse_instances(memory_bank: np.ndarray,
-                   radius: float,
-                   k_max: int | None = None,
-                   semantic_gate: bool = True,
-                   min_cluster_size: int = 3,
-                   method: str = "leiden"):
-    """
-    Parameters
-    ----------
-    memory_bank : ndarray
-        (N, D) stacked feature table, must contain uid (col 0), class (2), centroid xyz (5:8)
-    radius : float
-        Centroid radius (same units as xyz) for edge proposals.
-    """
-    adj = build_adjacency(memory_bank, radius, k_max, semantic_gate)
-    labels = cluster_objects(adj, min_cluster_size, method)
-    uid2new = dict(zip(memory_bank[:, 0].astype(np.uint32), labels.astype(np.int32)))
-    return uid2new, labels
