@@ -17,6 +17,7 @@ from pchandler.geometry import PointCloudData
 from pchandler.data_io import load_e57, save_ply
 
 # TOMISLAV:
+from pchandler.geometry.transforms import toggle_socs2prcs, translate, lazy_global_shift_change
 import torch
 from src.tls2dseg.pc2img_utils import *
 from src.tls2dseg.grounded_sam2 import *
@@ -176,6 +177,9 @@ def main():
     else:
         raise ValueError("Chosen results_aggregation_strategy is currently not supported!")
 
+    # Set common global shift for all point clouds (precaution, should not be necessary for small projects)
+    common_global_shift = np.zeros((3,), dtype=np.float_)
+
     for pcd_path_i in pcd_file_paths:
         point_cloud_id += 1
 
@@ -269,12 +273,29 @@ def main():
             # Remove background class (if task = object detection)
             pcd = remove_unclassified_points(pcd, task_parameters)
 
+            # Transform point cloud to global (project-related) coordinate system
+            pcd = toggle_socs2prcs(pcd)
+
+            # Assure common global shift for further operations!
+            pcd_i_global_shift = pcd.global_coordinate_shift
+            if common_global_shift != pcd_i_global_shift and point_cloud_id == 1:
+                common_global_shift = pcd_i_global_shift
+
+            if np.any(common_global_shift) > 0.0:
+                # Heavy (but certainly working) global shift change:
+                # translate(pcd, translation=-common_global_shift)
+
+                # Light/lazy (but questionable) global shift change:
+                pcd = lazy_global_shift_change(pcd, common_global_shift)
+
+            # Save individual station point clouds (currently aligned in PRCS, if toggle_socs2prcs works)
             if save_intermediate_results:
-                save_segmented_pcds_in_socs(pcd_path_i, pcd, inference_models_parameters,
-                                            class_id_map, image_j)
+                save_segmented_pcds(pcd_path_i, pcd, inference_models_parameters, class_id_map, image_j)
+
+
+
 
             # Extract per-instance metadata:
-            # TODO: Transform point cloud to global!
             # TODO: Possible additions/modifications to get_detections3d (check OneNote notes)
             d3d_i, feature_names = get_detections3d(pcd, point_cloud_id, d3d_parameters)
             d3d_memory_bank.append(d3d_i)
