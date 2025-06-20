@@ -5,7 +5,12 @@ from pchandler.geometry.filters import RangeFilter, BoxFilter, VoxelDownsample, 
 from pchandler.data_io import save_ply
 from pathlib import Path
 import json
+from sklearn.cluster import DBSCAN
+from sklearn.neighbors import NearestNeighbors
+import hdbscan
+from scipy import stats
 
+# TODO: Separate functions operating on Nx3 np.ndarrays and on PointCloudData (above and below in the file)
 
 
 def get_all_bbox_corners_from_min_max_corners(minimum_corner: np.ndarray, maximum_corner: np.ndarray) -> np.ndarray:
@@ -14,11 +19,69 @@ def get_all_bbox_corners_from_min_max_corners(minimum_corner: np.ndarray, maximu
         .reshape(-1, 3)
     return all_bbox_corners
 
+
 def get_min_max_corners_from_all_bbox_corners(corners: np.ndarray) -> Tuple[np.ndarray,np.ndarray]:
     # Get min_xyz and max_xyz from all eight (8) corners of an axis-aligned bounding box (aabb)
     min_corner = np.min(corners, axis=0)
     max_corner = np.max(corners, axis=0)
     return min_corner, max_corner
+
+
+def main_cluster_extraction(data: np.ndarray, clusterer_definition: dict) -> np.ndarray:
+    # Run DBSCAN or HDBSCAN
+    algorithm_type = clusterer_definition['type']
+    min_samples = clusterer_definition['min_samples']
+    cluster_selection_epsilon = clusterer_definition['epsilon_hdbscan']
+    if algorithm_type == 'dbscan':
+        epsilon = clusterer_definition['epsilon']
+        clusterer = DBSCAN(eps=epsilon, min_samples=min_samples)  # Adjust eps and min_samples based on your data_example
+    elif algorithm_type == 'hdbscan':
+        min_cluster_size = clusterer_definition['min_cluster_size']
+        clusterer = hdbscan.HDBSCAN(min_cluster_size=min_cluster_size, min_samples=min_samples,
+                                    allow_single_cluster=True, cluster_selection_epsilon=cluster_selection_epsilon)
+    else:
+        raise ValueError('Incorrect clusterer definition: clusterer_type invalid!')
+
+    labels = clusterer.fit_predict(data[:, :3])
+
+    # Identify the largest cluster
+    unique_labels, counts = np.unique(labels, return_counts=True)
+    largest_cluster_label = unique_labels[np.argmax(counts)]
+    # Return Boolean Mask related to points of the largest cluster
+    mask = labels == largest_cluster_label
+    return mask
+
+
+def statistical_outlier_removal(data: np.ndarray, k: int = 10, std_ratio: [int, float] = 2.0) -> np.ndarray:
+    """
+    Perform statistical outlier removal on a point cloud.
+    Parameters:
+    - point_cloud: numpy array of shape (n_points, 3), the input point cloud.
+    - k: int, the number of neighbors to consider for each point.
+    - std_ratio: float, the threshold for determining outliers based on standard deviation.
+    Returns:
+    - filtered_point_cloud: numpy array of the filtered point cloud.
+    - outliers: numpy array of the points that were removed.
+    """
+    point_cloud = data[:, :3]
+    # Compute the nearest neighbors
+    nbrs = NearestNeighbors(n_neighbors=k + 1).fit(point_cloud)
+    distances, _ = nbrs.kneighbors(point_cloud)
+
+    # Exclude the distance to the point itself (first column)
+    avg_distances = np.mean(distances[:, 1:], axis=1)
+    mean_dist = np.median(avg_distances)
+    std_dist = stats.median_abs_deviation(avg_distances) * 1.4826
+
+    # Define a threshold to detect outliers
+    threshold = mean_dist + std_ratio * std_dist
+
+    # Filter points
+    mask = avg_distances < threshold
+    # data_filtered = data[mask]
+    # data_outliers = data[~mask]
+
+    return mask
 
 
 def filter_pcd_roi_range(pcd: PointCloudData, pcp_parameters: dict) -> None:
@@ -107,6 +170,8 @@ def remove_unclassified_points(pcd: PointCloudData, task_parameters: dict) -> Po
         raise ValueError(f"Unsupported task_parameter 'task', provided: {task}")
 
     return pcd
+
+
 
 
 

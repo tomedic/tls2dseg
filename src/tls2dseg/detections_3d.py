@@ -10,9 +10,10 @@ import leidenalg as la
 import trimesh
 from concurrent.futures import ProcessPoolExecutor
 from scipy.stats import nbinom
+from tls2dseg.pc_preprocessing import main_cluster_extraction, statistical_outlier_removal
 
 
-def get_detections3d(pcd: PointCloudData, pcd_id: float, d3d_parameters: dict) -> Tuple[np.ndarray, list]:
+def get_detections3d(pcd: PointCloudData, pcd_id: float, d3d_parameters: dict, pcp_parameters: dict) -> Tuple[np.ndarray, list]:
     """
     Extract a collection of detections 3d instances as a numpy array of relevant features / metadata accompanied
      by a list of feature names explaining columns of the numpy array
@@ -65,9 +66,36 @@ def get_detections3d(pcd: PointCloudData, pcd_id: float, d3d_parameters: dict) -
         mask = (instances_pcd == uid)
         pts_i = pts_pcd[mask]
 
+
         # class & confidence (assumed uniform per-instance)
         classes_d3d[i, 0] = classes_pcd[mask][0]
         confidence_d3d[i, 0] = confidences_pcd[mask][0]
+
+        if preprocess:
+            # Preprocess detection 3d instance point clouds
+            # 1 - retain only dominant point cluster
+            # Expected point spacing (needed for DBSCAN, or HDBSCAN if epsilon_hdbscan != 0.0):
+            #   - assumption - uniform density (oversimplification!), 10% noise on point position,
+            #     searching for 26 neighbors (in the case of 3d voxel that would be faces, edges and corners of a voxel)
+            # TODO: param. tuning (+ expected point spacing using: scan res, max dist, max. AOI 60° + noise, sine() )
+            # TODO: alternatively to try: connected components, density peak clustering, ...
+            expected_point_spacing = pcp_parameters["output_resolution"] * np.sqrt(3) * 1.1
+            min_samples = 0.01 * pts_i.shape[0]
+            min_cluster_size = 0.3 * pts_i.shape[0]
+            clusterer_definition = {'type': 'hdbscan', 'epsilon': expected_point_spacing, 'min_samples': min_samples,
+                                    'min_cluster_size': min_cluster_size,
+                                    'epsilon_hdbscan': 0.0}
+
+            mask = main_cluster_extraction(pts_i, clusterer_definition)
+            pts_i = pts_i[mask], classes_d3d = classes_d3d[mask], confidence_d3d = confidence_d3d[mask]
+
+            # 2 - remove remaining outliers by "robustified SOR" filter (scaled MAD instead of std)
+            k_neighbors = int(np.round(pts_i.shape[0] * 0.05, 0))
+            sor_parameters = {'k': k_neighbors, 'std_ratio': 3}  # Check meaning of parameters online
+            if pts_i.shape[0] > sor_parameters['k']:
+                mask = statistical_outlier_removal(pts_i, k=sor_parameters['k'],
+                                                   std_ratio=sor_parameters['std_ratio'])
+            pts_i = pts_i[mask], classes_d3d = classes_d3d[mask], confidence_d3d = confidence_d3d[mask]
 
         # number of points
         pts_count_d3d[i, 0] = mask.sum()

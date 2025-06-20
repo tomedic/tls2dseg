@@ -112,7 +112,7 @@ slice_inference_parameters = {'slice_width_height': (400, 400),
 
 # Parameters defining how to get 3d objects from 2d detections + SAM2 masks
 d3d_parameters = {'bounding_box_type': 'obb',
-                  'centroid_type': 'median',
+                  'centroid_type': 'bbox_c',
                   'preprocess': True}
 
 
@@ -297,7 +297,7 @@ def main():
 
             # Extract per-instance metadata:
             # TODO: Possible additions/modifications to get_detections3d (check OneNote notes)
-            d3d_i, feature_names = get_detections3d(pcd, point_cloud_id, d3d_parameters)
+            d3d_i, feature_names = get_detections3d(pcd, point_cloud_id, d3d_parameters, pcp_parameters)
             d3d_memory_bank.append(d3d_i)
 
     # All point clouds looped through
