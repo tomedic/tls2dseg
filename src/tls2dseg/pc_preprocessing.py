@@ -30,13 +30,13 @@ def get_min_max_corners_from_all_bbox_corners(corners: np.ndarray) -> Tuple[np.n
 def main_cluster_extraction(data: np.ndarray, clusterer_definition: dict) -> np.ndarray:
     # Run DBSCAN or HDBSCAN
     algorithm_type = clusterer_definition['type']
-    min_samples = clusterer_definition['min_samples']
+    min_samples = int(clusterer_definition['min_samples'])
     cluster_selection_epsilon = clusterer_definition['epsilon_hdbscan']
     if algorithm_type == 'dbscan':
         epsilon = clusterer_definition['epsilon']
         clusterer = DBSCAN(eps=epsilon, min_samples=min_samples)  # Adjust eps and min_samples based on your data_example
     elif algorithm_type == 'hdbscan':
-        min_cluster_size = clusterer_definition['min_cluster_size']
+        min_cluster_size = int(clusterer_definition['min_cluster_size'])
         clusterer = hdbscan.HDBSCAN(min_cluster_size=min_cluster_size, min_samples=min_samples,
                                     allow_single_cluster=True, cluster_selection_epsilon=cluster_selection_epsilon)
     else:
@@ -139,7 +139,7 @@ def save_segmented_pcds(pcd_path_pathlib: Path, pcd: PointCloudData, inference_m
 
     # Save related transformation matrix (for local-to-global conversion)
     transformation_matrix_output_path = output_dir_socs_pcds / Path(pcd_path_pathlib.stem + '_socs2prcs_T.txt')
-    np.savetxt(transformation_matrix_output_path, pcd.transformation_matrix, fmt="%.8f", delimiter=" ")
+    np.savetxt(transformation_matrix_output_path, pcd.tmat_socs2prcs, fmt="%.8f", delimiter=" ")
 
     # Save class name - to - class id map in ascii
     class_id_map["background"] = 0
@@ -164,7 +164,7 @@ def subsample_pcd_to_output_resolution(pcd: PointCloudData, pcp_parameters: dict
 def remove_unclassified_points(pcd: PointCloudData, task_parameters: dict) -> PointCloudData:
     task = task_parameters["task"]
     if task == "object_detection":
-            mask = pcd.scalar_fields["classes"] != 0
+            mask = pcd.scalar_fields["classes"].data != 0
             pcd.reduce(mask)
     else:
         raise ValueError(f"Unsupported task_parameter 'task', provided: {task}")

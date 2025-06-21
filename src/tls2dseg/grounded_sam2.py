@@ -259,7 +259,7 @@ def run_grounded_sam2(image: Path | np.ndarray, text_prompt: str,
 
     # Create main outputs (to be saved in a dictionary 'results')
     input_boxes = gdino_results[0]["boxes"].cpu().numpy()  # get the bounding box prompts for SAM2
-    confidences = gdino_results[0]["scores"].cpu().numpy().tolist()  # tensor -> ndarray
+    confidences = gdino_results[0]["scores"].cpu().numpy()  # tensor -> ndarray
     class_names = gdino_results[0]["labels"]  # get class names
     # Get class_ids corresponding defined relative to the original text_prompt and corresponding to class_names
     keys = text_prompt.split('.')  # → ['house','window','bicycle','door','grass','leaf']
@@ -267,7 +267,21 @@ def run_grounded_sam2(image: Path | np.ndarray, text_prompt: str,
     id_map = {k: i + 1 for i, k in enumerate(keys)}  # → {'house':1, 'window':2, ..., 'leaf':6}
     class_ids = np.array([id_map[q] for q in class_names])  # a list of corresponding class IDs
 
+
+    # Remove too-large object detections (when approaching SAHI slice-size/area, likely to be erroneous)
+    lor_threshold = inference_models_parameters["large_object_removal_threshold"]  # lor = large object removal
+    lor_max_area = lor_threshold * image_width * image_height  # percentage of SAHI slice area
+    input_boxes_areas = (input_boxes[:, 2] - input_boxes[:, 0]) * (input_boxes[:, 3] - input_boxes[:, 1])
+    keep_mask = input_boxes_areas < lor_max_area
+
+    # Update main output variables
+    class_names = list(compress(class_names, keep_mask))
+    confidences = confidences[keep_mask]
+    class_ids = class_ids[keep_mask]
+    input_boxes = input_boxes[keep_mask]
+
     # Create mask labels (class name + confidence scores)
+    confidences.tolist()
     labels = [
         f"{class_name} {confidence:.2f}"
         for class_name, confidence
@@ -426,7 +440,7 @@ def save_gsam2_results(image: tuple[str, np.ndarray, Path], results: dict,
     masks = results["masks"]
     class_ids = results["class_ids"]
     labels = results["mask_labels"]
-    scores = results["confidences"]
+    scores = results["confidences"].astype(float).tolist()
     class_names = results["class_names"]
 
     # Get values from image tuple:
@@ -502,10 +516,10 @@ def save_gsam2_results(image: tuple[str, np.ndarray, Path], results: dict,
         # convert bounding boxes and scores (confidences) to lists
         input_boxes = input_boxes.tolist()
         if isinstance(scores, np.ndarray):
-            scores = scores.tolist()
+            scores = scores.astype(float).tolist()
 
         # save the results in standard format
-        results = {
+        results_supervision = {
             "image_path": image_path.as_posix(),
             "annotations": [
                 {
@@ -525,6 +539,6 @@ def save_gsam2_results(image: tuple[str, np.ndarray, Path], results: dict,
         output_json = f"{image_path.stem}_gsam2_results.json"
 
         with open(os.path.join(output_dir_masks_json, output_json), "w") as f:
-            json.dump(results, f, indent=4)
+            json.dump(results_supervision, f, indent=4)
 
     return None

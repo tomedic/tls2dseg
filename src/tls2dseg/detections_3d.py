@@ -11,6 +11,7 @@ import trimesh
 from concurrent.futures import ProcessPoolExecutor
 from scipy.stats import nbinom
 from tls2dseg.pc_preprocessing import main_cluster_extraction, statistical_outlier_removal
+import math
 
 
 def get_detections3d(pcd: PointCloudData, pcd_id: float, d3d_parameters: dict, pcp_parameters: dict) -> Tuple[np.ndarray, list]:
@@ -39,7 +40,7 @@ def get_detections3d(pcd: PointCloudData, pcd_id: float, d3d_parameters: dict, p
     # Create views to relevant point cloud data
     instances_pcd = pcd.scalar_fields['instances']
     classes_pcd = pcd.scalar_fields['classes']
-    confidences_pcd = pcd.scalar_fields['confidences']
+    confidences_pcd = pcd.scalar_fields['confidence']
     pts_pcd = pcd.xyz  # (P,3)
 
     # Get unique identifiers of detected 3d objects (d3d = detection 3d) and the number of them
@@ -66,10 +67,9 @@ def get_detections3d(pcd: PointCloudData, pcd_id: float, d3d_parameters: dict, p
         mask = (instances_pcd == uid)
         pts_i = pts_pcd[mask]
 
-
         # class & confidence (assumed uniform per-instance)
-        classes_d3d[i, 0] = classes_pcd[mask][0]
-        confidence_d3d[i, 0] = confidences_pcd[mask][0]
+        classes_d3d[i, 0] = classes_pcd.data[mask][0]
+        confidence_d3d[i, 0] = confidences_pcd.data[mask][0]
 
         if preprocess:
             # Preprocess detection 3d instance point clouds
@@ -80,8 +80,8 @@ def get_detections3d(pcd: PointCloudData, pcd_id: float, d3d_parameters: dict, p
             # TODO: param. tuning (+ expected point spacing using: scan res, max dist, max. AOI 60° + noise, sine() )
             # TODO: alternatively to try: connected components, density peak clustering, ...
             expected_point_spacing = pcp_parameters["output_resolution"] * np.sqrt(3) * 1.1
-            min_samples = 0.01 * pts_i.shape[0]
-            min_cluster_size = 0.3 * pts_i.shape[0]
+            min_samples = int(math.ceil(0.01 * pts_i.shape[0]))
+            min_cluster_size = int(math.ceil(0.3 * pts_i.shape[0]))
             clusterer_definition = {'type': 'hdbscan', 'epsilon': expected_point_spacing, 'min_samples': min_samples,
                                     'min_cluster_size': min_cluster_size,
                                     'epsilon_hdbscan': 0.0}
@@ -97,6 +97,7 @@ def get_detections3d(pcd: PointCloudData, pcd_id: float, d3d_parameters: dict, p
                                                    std_ratio=sor_parameters['std_ratio'])
             pts_i = pts_i[mask], classes_d3d = classes_d3d[mask], confidence_d3d = confidence_d3d[mask]
 
+        testis = 1
         # number of points
         pts_count_d3d[i, 0] = mask.sum()
 

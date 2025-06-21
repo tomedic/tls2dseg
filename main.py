@@ -44,7 +44,7 @@ task_parameters = {'input_path': "./data/bafu/",  # Set path to input point clou
 
 
 # PointCloud processing parameters
-pcp_parameters = {'output_resolution': 0.5,  # Subsample point cloud
+pcp_parameters = {'output_resolution': 2.0,  # Subsample point cloud
                   'range_limits': None,  # All points further then will be discarded
                   'roi_limits': None  # only region of interest (3D bounding box) is to be analyzed
                   }
@@ -161,6 +161,10 @@ def main():
     with open(str(inverted_map_path), 'w', encoding='ascii') as f:
         json.dump(inverted_id_map, f, ensure_ascii=True)
 
+    # Update hyper-parameters
+    inference_models_parameters['large_object_removal_threshold'] = slice_inference_parameters[
+        'large_object_removal_threshold']
+
     # 1. Point Cloud Processing
     # __________________________________________________________________________________________________________________
 
@@ -184,7 +188,7 @@ def main():
         point_cloud_id += 1
 
         # Load data
-        pcd: PointCloudData = load_e57(pcd_path_i, stay_global=False)  # Load point cloud
+        pcd: PointCloudData = load_e57(pcd_path_i, stay_prcs=False, save_prcs_info=True)  # Load point cloud
 
         # Filter point cloud for ranges and RoI (region of interest)
         filter_pcd_roi_range(pcd, pcp_parameters)
@@ -265,23 +269,26 @@ def main():
             project_masks2pcd_as_scalarfields(pcd, instance_mask, semantic_mask)
             project_a_mask_2_pcd_as_scalarfield(pcd, mask=confidence_mask, mask_name="confidence")
 
+            print(f"PCD count:{pcd.xyz.shape[0]}")
             # Subsample point cloud to desired output resolution:
-            # TODO: current method keeps points nearest to the voxel center, if I want better results (averaging
-            #  instead of subsampling, I need to implement majority voting for instance and semantic masks)
             pcd = subsample_pcd_to_output_resolution(pcd, pcp_parameters)
-
+            print(f"PCD count:{pcd.xyz.shape[0]}")
             # Remove background class (if task = object detection)
             pcd = remove_unclassified_points(pcd, task_parameters)
-
+            print(f"PCD count:{pcd.xyz.shape[0]}")
             # Transform point cloud to global (project-related) coordinate system
             pcd = toggle_socs2prcs(pcd)
 
             # Assure common global shift for further operations!
-            pcd_i_global_shift = pcd.global_coordinate_shift
-            if common_global_shift != pcd_i_global_shift and point_cloud_id == 1:
+            if pcd.global_coordinate_shift is None:
+                pcd_i_global_shift = np.zeros((3,), dtype=np.float_)
+            else:
+                pcd_i_global_shift = pcd.global_coordinate_shift
+
+            if np.any(common_global_shift != pcd_i_global_shift) and point_cloud_id == 1:
                 common_global_shift = pcd_i_global_shift
 
-            if np.any(common_global_shift) > 0.0:
+            if np.any(common_global_shift > 0.0):
                 # Heavy (but certainly working) global shift change:
                 # translate(pcd, translation=-common_global_shift)
 
@@ -291,14 +298,13 @@ def main():
             # Save individual station point clouds (currently aligned in PRCS, if toggle_socs2prcs works)
             if save_intermediate_results:
                 save_segmented_pcds(pcd_path_i, pcd, inference_models_parameters, class_id_map, image_j)
-
-
-
-
+            testis = 1
             # Extract per-instance metadata:
             # TODO: Possible additions/modifications to get_detections3d (check OneNote notes)
             d3d_i, feature_names = get_detections3d(pcd, point_cloud_id, d3d_parameters, pcp_parameters)
             d3d_memory_bank.append(d3d_i)
+
+    testis = 1
 
     # All point clouds looped through
     # ------------------------------------------------------------------------------------------------------------------
