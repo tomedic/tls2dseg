@@ -77,7 +77,7 @@ def statistical_outlier_removal(data: np.ndarray, k: int = 10, std_ratio: [int, 
     threshold = mean_dist + std_ratio * std_dist
 
     # Filter points
-    mask = avg_distances < threshold
+    mask = avg_distances <= threshold
     # data_filtered = data[mask]
     # data_outliers = data[~mask]
 
@@ -168,10 +168,18 @@ def remove_unclassified_points(pcd: PointCloudData, task_parameters: dict) -> Po
             pcd.reduce(mask)
     else:
         raise ValueError(f"Unsupported task_parameter 'task', provided: {task}")
-
     return pcd
 
 
+def remove_small_instances(pcd: PointCloudData, d3d_parameters: dict) -> PointCloudData:
+    min_pcd_size = d3d_parameters["min_d3d_pcd_point_count"]
+    instances = pcd.scalar_fields["instances"]
+    # Per instance point counts (+ inverse index for mapping back)
+    _, inv_idx, counts = np.unique(instances, return_inverse=True, return_counts=True)
+    # Mask returning points of all instances that are bigger than a threshold
+    mask = counts[inv_idx] > min_pcd_size
+    pcd.reduce(mask)
+    return pcd
 
 
 

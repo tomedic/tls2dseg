@@ -44,7 +44,7 @@ task_parameters = {'input_path': "./data/bafu/",  # Set path to input point clou
 
 
 # PointCloud processing parameters
-pcp_parameters = {'output_resolution': 2.0,  # Subsample point cloud
+pcp_parameters = {'output_resolution': 0.5,  # Subsample point cloud
                   'range_limits': None,  # All points further then will be discarded
                   'roi_limits': None  # only region of interest (3D bounding box) is to be analyzed
                   }
@@ -94,7 +94,7 @@ text_prompt = "rock.stone.boulder.cliff.tree.pine"
 #text_prompt = "wheat.wheat head.wheat ear.wheat spike.wheat spikelet.wheat grain.wheat fruit"
 
 # Inference model parameters:
-inference_models_parameters = {'with_slice_inference': False,
+inference_models_parameters = {'with_slice_inference': True,
                                'bbox_model_id': 'IDEA-Research/grounding-dino-base',
                                'box_threshold': 0.10,  # 0.35
                                'text_threshold': 0.10,  # 0.25
@@ -113,7 +113,8 @@ slice_inference_parameters = {'slice_width_height': (400, 400),
 # Parameters defining how to get 3d objects from 2d detections + SAM2 masks
 d3d_parameters = {'bounding_box_type': 'obb',
                   'centroid_type': 'bbox_c',
-                  'preprocess': True}
+                  'preprocess': True,
+                  'min_d3d_pcd_point_count': 50}
 
 
 def main():
@@ -224,6 +225,9 @@ def main():
         # masks = run_sam2_everything(image_test, sam2_everything, inference_models_parameters)
         # testis = 1
 
+        # Subsample point cloud to desired output resolution (once images generated):
+        pcd = subsample_pcd_to_output_resolution(pcd, pcp_parameters)
+
         # Run Grounded SAM2 inference (for all images of a point cloud pcd_i)
         for i, image_j in enumerate(images_pcd_i):
             image_j_numpy = image_j[1]
@@ -266,24 +270,25 @@ def main():
 
             # Add the generated masks to ImageStack related to the point cloud pcd
             print("Lifting 2d masks to 3d")
-            project_masks2pcd_as_scalarfields(pcd, instance_mask, semantic_mask)
-            project_a_mask_2_pcd_as_scalarfield(pcd, mask=confidence_mask, mask_name="confidence")
 
-            print(f"PCD count:{pcd.xyz.shape[0]}")
-            # Subsample point cloud to desired output resolution:
-            pcd = subsample_pcd_to_output_resolution(pcd, pcp_parameters)
-            print(f"PCD count:{pcd.xyz.shape[0]}")
+            # Create a point cloud copy for further data processing:
+            pcd_ij = pcd.copy()
+
+            project_masks2pcd_as_scalarfields(pcd_ij, instance_mask, semantic_mask)
+            project_a_mask_2_pcd_as_scalarfield(pcd_ij, mask=confidence_mask, mask_name="confidence")
+
             # Remove background class (if task = object detection)
-            pcd = remove_unclassified_points(pcd, task_parameters)
-            print(f"PCD count:{pcd.xyz.shape[0]}")
+            pcd_ij = remove_unclassified_points(pcd_ij, task_parameters)
+            # Remove too small object detections
+            pcd_ij = remove_small_instances(pcd_ij, d3d_parameters)
             # Transform point cloud to global (project-related) coordinate system
-            pcd = toggle_socs2prcs(pcd)
+            pcd_ij = toggle_socs2prcs(pcd_ij)
 
             # Assure common global shift for further operations!
-            if pcd.global_coordinate_shift is None:
+            if pcd_ij.global_coordinate_shift is None:
                 pcd_i_global_shift = np.zeros((3,), dtype=np.float_)
             else:
-                pcd_i_global_shift = pcd.global_coordinate_shift
+                pcd_i_global_shift = pcd_ij.global_coordinate_shift
 
             if np.any(common_global_shift != pcd_i_global_shift) and point_cloud_id == 1:
                 common_global_shift = pcd_i_global_shift
@@ -293,18 +298,17 @@ def main():
                 # translate(pcd, translation=-common_global_shift)
 
                 # Light/lazy (but questionable) global shift change:
-                pcd = lazy_global_shift_change(pcd, common_global_shift)
+                pcd_ij = lazy_global_shift_change(pcd_ij, common_global_shift)
 
             # Save individual station point clouds (currently aligned in PRCS, if toggle_socs2prcs works)
             if save_intermediate_results:
-                save_segmented_pcds(pcd_path_i, pcd, inference_models_parameters, class_id_map, image_j)
-            testis = 1
+                save_segmented_pcds(pcd_path_i, pcd_ij, inference_models_parameters, class_id_map, image_j)
+
             # Extract per-instance metadata:
             # TODO: Possible additions/modifications to get_detections3d (check OneNote notes)
-            d3d_i, feature_names = get_detections3d(pcd, point_cloud_id, d3d_parameters, pcp_parameters)
+            d3d_i, feature_names = get_detections3d(pcd_ij, point_cloud_id, d3d_parameters, pcp_parameters)
             d3d_memory_bank.append(d3d_i)
 
-    testis = 1
 
     # All point clouds looped through
     # ------------------------------------------------------------------------------------------------------------------

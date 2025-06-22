@@ -1,3 +1,14 @@
+import warnings
+warnings.filterwarnings(
+    "ignore",
+    category=FutureWarning,
+    message=".*force_all_finite.*"
+)
+
+import logging
+# Silence all tokenizers messages below ERROR
+logging.getLogger("tokenizers").setLevel(logging.ERROR)
+
 from scipy.spatial.transform import Rotation as R
 from pchandler.geometry import PointCloudData
 from typing import Tuple, Optional, Union, List, Literal
@@ -11,6 +22,7 @@ import trimesh
 from concurrent.futures import ProcessPoolExecutor
 from scipy.stats import nbinom
 from tls2dseg.pc_preprocessing import main_cluster_extraction, statistical_outlier_removal
+from tls2dseg.visualization import *
 import math
 
 
@@ -71,7 +83,7 @@ def get_detections3d(pcd: PointCloudData, pcd_id: float, d3d_parameters: dict, p
         classes_d3d[i, 0] = classes_pcd.data[mask][0]
         confidence_d3d[i, 0] = confidences_pcd.data[mask][0]
 
-        if preprocess:
+        if preprocess and pts_i.shape[0] > 3:
             # Preprocess detection 3d instance point clouds
             # 1 - retain only dominant point cluster
             # Expected point spacing (needed for DBSCAN, or HDBSCAN if epsilon_hdbscan != 0.0):
@@ -79,25 +91,29 @@ def get_detections3d(pcd: PointCloudData, pcd_id: float, d3d_parameters: dict, p
             #     searching for 26 neighbors (in the case of 3d voxel that would be faces, edges and corners of a voxel)
             # TODO: param. tuning (+ expected point spacing using: scan res, max dist, max. AOI 60° + noise, sine() )
             # TODO: alternatively to try: connected components, density peak clustering, ...
+
             expected_point_spacing = pcp_parameters["output_resolution"] * np.sqrt(3) * 1.1
-            min_samples = int(math.ceil(0.01 * pts_i.shape[0]))
-            min_cluster_size = int(math.ceil(0.3 * pts_i.shape[0]))
+            min_samples = int(math.ceil(0.005 * pts_i.shape[0]))
+            min_cluster_size = int(math.ceil(0.25 * pts_i.shape[0]))
             clusterer_definition = {'type': 'hdbscan', 'epsilon': expected_point_spacing, 'min_samples': min_samples,
                                     'min_cluster_size': min_cluster_size,
                                     'epsilon_hdbscan': 0.0}
 
             mask = main_cluster_extraction(pts_i, clusterer_definition)
-            pts_i = pts_i[mask], classes_d3d = classes_d3d[mask], confidence_d3d = confidence_d3d[mask]
+            # TODO: REMOVE THIS VISUAL INSPECTION AND TUNING TOOL
+            # if uid == 150:
+            #     pts_temp = pts_i + 100
+            #     pts_i = pts_i[mask]
+            #     plot_2_point_clouds(pts_temp, pts_i)
 
             # 2 - remove remaining outliers by "robustified SOR" filter (scaled MAD instead of std)
-            k_neighbors = int(np.round(pts_i.shape[0] * 0.05, 0))
+            k_neighbors = int(math.ceil(pts_i.shape[0] * 0.05))
             sor_parameters = {'k': k_neighbors, 'std_ratio': 3}  # Check meaning of parameters online
             if pts_i.shape[0] > sor_parameters['k']:
                 mask = statistical_outlier_removal(pts_i, k=sor_parameters['k'],
                                                    std_ratio=sor_parameters['std_ratio'])
-            pts_i = pts_i[mask], classes_d3d = classes_d3d[mask], confidence_d3d = confidence_d3d[mask]
+            pts_i = pts_i[mask]
 
-        testis = 1
         # number of points
         pts_count_d3d[i, 0] = mask.sum()
 
@@ -122,12 +138,20 @@ def get_detections3d(pcd: PointCloudData, pcd_id: float, d3d_parameters: dict, p
                 centroids_d3d = (mx + mn) / 2
         elif bounding_box_type == "obb":
             # oriented bounding box OBB via PCA
+            c = np.mean(pts_i,axis=0) # get center of pts_i
             # compute covariance & eigen‐decomposition
             cov = np.cov(pts_i.T, bias=True)
             eigvals, eigvecs = np.linalg.eigh(cov)
             # sort by descending variance
             order = np.argsort(eigvals)[::-1]
             axes = eigvecs[:, order]  # defining PCA-frame (ordered PCA eigenvectors)
+            # Assuring orhonormal:
+            u = axes[:, 0]  # first principal axis
+            v = axes[:, 1]  # second principal axis
+            w = np.cross(u, v)  # guaranteed right-handed
+            w /= np.linalg.norm(w)  # re-normalize (just in case)
+            axes = np.column_stack([u, v, w])
+
             pts_c = pts_i - c  # get centered points
             pts_pca = pts_c @ axes  # get points in PCA frame
             mn_p = pts_pca.min(axis=0)
@@ -136,7 +160,7 @@ def get_detections3d(pcd: PointCloudData, pcd_id: float, d3d_parameters: dict, p
             ctr_p = (mn_p + mx_p) / 2  # get center in PCA frame
             obb_center = c + axes @ ctr_p  # get center in pcd frame
             if centroid_type == 'bbox_c':
-                centroids_d3d = obb_center
+                centroids_d3d[i] = obb_center
 
             # Get quaternion from 3×3 matrix (axes stored column-wise)
             rotation = R.from_matrix(axes)

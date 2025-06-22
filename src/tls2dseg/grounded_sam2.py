@@ -104,7 +104,9 @@ def callback(image_slice: np.ndarray, text_prompt: str, gdino_processor: AutoPro
     # TODO: Warning: this assures no code crashes, but does not process the image edges! (consider better solution)
     slice_height_expected, slice_width_expected = slice_inference_parameters["slice_width_height"]
     if slice_height != slice_height_expected or slice_width != slice_width_expected:
-        return sv.Detections(xyxy=np.empty((0, 4)), confidence=np.array([]), class_id=np.array([]))
+        detections = sv.Detections(xyxy=np.empty((0, 4)), confidence=np.array([]), class_id=np.array([]))
+        detections.data["sparse_masks"] = []
+        return detections
 
     # 2. Run Grounded DINO
     # __________________________________________________________________________________________________________________
@@ -167,7 +169,9 @@ def callback(image_slice: np.ndarray, text_prompt: str, gdino_processor: AutoPro
     gc.collect()
 
     if not class_names:
-        return sv.Detections(xyxy=np.empty((0, 4)), confidence=np.array([]), class_id=np.array([]))
+        detections = sv.Detections(xyxy=np.empty((0, 4)), confidence=np.array([]), class_id=np.array([]))
+        detections.data["sparse_masks"] = []
+        return detections
 
     # 4. Run SAM2 (and store sparse masks)
     # __________________________________________________________________________________________________________________
@@ -281,7 +285,8 @@ def run_grounded_sam2(image: Path | np.ndarray, text_prompt: str,
     input_boxes = input_boxes[keep_mask]
 
     # Create mask labels (class name + confidence scores)
-    confidences.tolist()
+    confidences = confidences.astype(float).tolist()
+
     labels = [
         f"{class_name} {confidence:.2f}"
         for class_name, confidence
@@ -389,7 +394,7 @@ def run_grounded_sam2_with_sahi(image: Path | np.ndarray, text_prompt: str,
     confidences = detections.confidence.tolist()
     class_ids = detections.class_id
     input_boxes = detections.xyxy
-    masks = detections.data["sparse_masks"]
+    masks = detections.data.get("sparse_masks", [])
 
     # Create mask labels (class name + confidence scores)
     labels = [
@@ -440,7 +445,7 @@ def save_gsam2_results(image: tuple[str, np.ndarray, Path], results: dict,
     masks = results["masks"]
     class_ids = results["class_ids"]
     labels = results["mask_labels"]
-    scores = results["confidences"].astype(float).tolist()
+    scores = results["confidences"]
     class_names = results["class_names"]
 
     # Get values from image tuple:
