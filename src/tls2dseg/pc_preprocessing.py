@@ -107,7 +107,7 @@ def filter_pcd_roi_range(pcd: PointCloudData, pcp_parameters: dict) -> None:
         #   - numpy to PointCloudData object
         roi_pcd = PointCloudData(xyz=all_8_corners_PRCS)
         #   - apply transformation from PRCS_2_SOCS (inverse of SOCS_2_PRCS stored in pcd.transformation_matrix)
-        roi_pcd.transform(transformation_matrix=np.linalg.inv(pcd.transformation_matrix))
+        roi_pcd.transform(transformation_matrix=np.linalg.inv(pcd.tmat_socs2prcs))
         #   - pointCloudData object to numpy
         all_8_corners_SOCS = roi_pcd.xyz
         #   - get new min and max corners in SOCS from all 8 corners
@@ -123,7 +123,7 @@ def filter_pcd_roi_range(pcd: PointCloudData, pcp_parameters: dict) -> None:
     return None
 
 
-def save_segmented_pcds(pcd_path_pathlib: Path, pcd: PointCloudData, inference_models_parameters: dict,
+def save_segmented_pcd_ij(pcd_path_pathlib: Path, pcd: PointCloudData, inference_models_parameters: dict,
                                 class_id_map: dict, image_j: tuple):
     # Save segmented point cloud and related transformation parameters
     print("Saving Single-station point clouds")
@@ -148,6 +148,24 @@ def save_segmented_pcds(pcd_path_pathlib: Path, pcd: PointCloudData, inference_m
     with open(str(inverted_map_path), 'w', encoding='ascii') as f:
         json.dump(inverted_map, f, ensure_ascii=True)
 
+    return None
+
+
+def save_segmented_pcd(data_dir: Path, out_dir: Path, pcd: PointCloudData, class_id_map: dict):
+    # Save segmented point cloud and related transformation parameters
+    print("Saving point cloud")
+
+    output_pcd_name = data_dir.name + "_segmented.ply"  # _seg for segmented
+    output_pcd_path = out_dir / Path(output_pcd_name)
+
+    save_ply(output_pcd_path, pcd, retain_colors=True, retain_normals=True, scalar_fields=None)
+
+    # Save class name - to - class id map in ascii
+    class_id_map["background"] = 0
+    inverted_map = {v: k for k, v in class_id_map.items()}
+    inverted_map_path = out_dir / Path('class_names_id_map.txt')
+    with open(str(inverted_map_path), 'w', encoding='ascii') as f:
+        json.dump(inverted_map, f, ensure_ascii=True)
     return None
 
 

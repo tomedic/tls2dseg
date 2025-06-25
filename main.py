@@ -4,29 +4,51 @@
 # TODO: THIS IS A QUICK-FIX -> remove and do everything properly for pip installable project!
 import sys
 import os
-
-import numpy as np
-
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
 # Load libraries:
+import numpy as np
+import torch
+import json
+import warnings
+
+# Silence all warnings:
+os.environ["TOKENIZERS_PARALLELISM"] = "true"
+import logging
+logging.getLogger("pchandler").setLevel(logging.ERROR)
+np.seterr(invalid='ignore')
+warnings.filterwarnings(
+    "ignore",
+    category=UserWarning,
+    message="Normals, and colors are not retained during `voxel_downsample`!"
+)
+warnings.filterwarnings(
+    "ignore",
+    category=FutureWarning,
+    message="The key `labels` is will"
+)
+warnings.filterwarnings(
+    "ignore",
+    category=UserWarning,
+    message="The given NumPy array is not writable"
+)
 
 # NICHOLAS:
 from pathlib import Path
 from pchandler.geometry import PointCloudData
 from pchandler.data_io import load_e57, save_ply
+from pchandler.geometry.transforms import toggle_socs2prcs
 
 # TOMISLAV:
-from pchandler.geometry.transforms import toggle_socs2prcs, translate, lazy_global_shift_change
-import torch
 from src.tls2dseg.pc2img_utils import *
 from src.tls2dseg.grounded_sam2 import *
-from src.tls2dseg.utils import *
+from src.tls2dseg.utils_main import *
 from src.tls2dseg.sam_everything import *
 from src.tls2dseg.pc_preprocessing import *
 from src.tls2dseg.parameters_check import *
 from src.tls2dseg.detections_3d import *
-import json
+from src.tls2dseg.graph_clustering import *
+
 
 # I/0 parameters:
 # pcd_path = "./data/wheat_heads_small.e57"  # Set path to point cloud
@@ -34,24 +56,28 @@ import json
 # save_intermediate_results = True  # Save intensity images, gDINO and SAM2 outputs
 
 # Task & I/0 parameters:
-task_parameters = {'input_path': "./data/bafu/",  # Set path to input point clouds
+task_parameters = {'input_path': "./data/wheat_heads/",  # Set path to input point clouds
                    'file_format': "e57",
-                   'output_path': "./results",   # Set path for storing the results
-                   'save_intermediate_results': True,   # Save intensity images, gDINO and SAM2 outputs
+                   'output_path': "./results",  # Set path for storing the results
+                   'save_intermediate_results': True,  # Save intensity images, gDINO and SAM2 outputs
                    'task': "object_detection",  # Task choice
                    'results_aggregation_strategy': "object_memory_bank"  # OUT type choice: memory bank vs. voxel-grid
                    }
 
-
 # PointCloud processing parameters
-pcp_parameters = {'output_resolution': 0.5,  # Subsample point cloud
-                  'range_limits': None,  # All points further then will be discarded
-                  'roi_limits': None  # only region of interest (3D bounding box) is to be analyzed
-                  }
-# pcp_parameters = {'output_resolution': 0.003,  # Subsample point cloud
-#                   'range_limits': [0., 5.],  # All points further then will be discarded
-#                   'roi_limits': [-12.5, -0.8, 491.7, 0.3, 7.5, 493.7]  # only region of interest (3D bounding box) is to be analyzed
+# BAFU settings:
+# pcp_parameters = {'output_resolution': 0.5,  # Subsample point cloud
+#                   'range_limits': None,  # All points further then will be discarded
+#                   'roi_limits': None,  # only region of interest (3D bounding box) is to be analyzed
+#                   'keep_confidences': False  # keep confidence
 #                   }
+
+# Wheat-heads settings:
+pcp_parameters = {'output_resolution': 0.003,  # Subsample point cloud
+                  'range_limits': [0., 5.],  # All points further then will be discarded
+                  'roi_limits': [-12.5, -0.8, 491.7, 0.3, 7.5, 493.7],  # only region of interest (3D bounding box) is to be analyzed
+                  'keep_confidences': False  # keep confidence
+                  }
 
 # Image generation parameters:
 
@@ -86,12 +112,12 @@ image_generation_parameters = {'image_width': "scan_resolution",  # Scan-resolut
 
 # Prompt object detection / segmentation
 # TODO: VERY important: text prompts need to be lowercase + end with a dot
-#text_prompt = "house.window.bicycle.door.grass.pipe"
-#text_prompt = "house.window.wall.door.roof.brick.ground.fence.person"
-#text_prompt = "wall.ceiling.plants.plant pot.leaf.leaves.desk.chair.bag.table.keyboard.floor.window.monitor"
-#text_prompt = "pine. pine tree"
-text_prompt = "rock.stone.boulder.cliff.tree.pine"
-#text_prompt = "wheat.wheat head.wheat ear.wheat spike.wheat spikelet.wheat grain.wheat fruit"
+# text_prompt = "house.window.bicycle.door.grass.pipe"
+# text_prompt = "house.window.wall.door.roof.brick.ground.fence.person"
+# text_prompt = "wall.ceiling.plants.plant pot.leaf.leaves.desk.chair.bag.table.keyboard.floor.window.monitor"
+# text_prompt = "pine. pine tree"
+# text_prompt = "rock.stone.boulder.cliff.tree.pine"
+text_prompt = "wheat.wheat head.wheat ear.wheat spike.wheat spikelet.wheat grain.wheat fruit"
 
 # Inference model parameters:
 inference_models_parameters = {'with_slice_inference': True,
@@ -103,8 +129,8 @@ inference_models_parameters = {'with_slice_inference': True,
                                'sam_box_prompt_batch_size': 16}
 
 # Additional parameters for slice inference (necessary only if inference with SAHI)
-slice_inference_parameters = {'slice_width_height': (400, 400),
-                              'overlap_width_height': (100, 100),
+slice_inference_parameters = {'slice_width_height': (200, 200),
+                              'overlap_width_height': (50, 50),
                               'iou_threshold': 0.80,
                               'overlap_filter_strategy': 'nms',
                               'large_object_removal_threshold': 0.10,
@@ -114,11 +140,20 @@ slice_inference_parameters = {'slice_width_height': (400, 400),
 d3d_parameters = {'bounding_box_type': 'obb',
                   'centroid_type': 'bbox_c',
                   'preprocess': True,
-                  'min_d3d_pcd_point_count': 50}
-
+                  'min_d3d_pcd_point_count': 50,
+                  'merge_inst_of_same_class_only': False,
+                  'sparse_connectivity_method': 'knn',  # Literal['knn','radius']
+                  'sparse_connectivity_threshold': 2,  # 'knn' -> k of nn per scan; 'radius' -> nn radius [m]
+                  'supporters_iou_threshold': 0.15,  # necessary IoU between 3d bbox for signif. overlap
+                  'remove_outliers_by_support': True,  # remove Detections3D if too large support (under-segmented)
+                  'outlier_detection_method': 'negative_binomial',  # "iqr","mad","percentile","negative_binomial"
+                  'outlier_detection_threshold': 0.01,  # different for each method, see fun. description
+                  'graph_clustering_method': 'leiden',  # 'leiden' | 'hcs' | 'pcc'
+                  'min_supporters': 3,  # min. number of supporters necessary for a valid cluster
+                  'leiden_resolution': 1,  # hyp.-p. for 'leiden' (<1 - fewer larger clusters, >1 vice versa)
+                  }
 
 def main():
-
     # 0. Initial Set-up
     # __________________________________________________________________________________________________________________
 
@@ -128,7 +163,7 @@ def main():
 
     # Set output path
     output_dir = task_parameters['output_path']
-    output_dir_pathlib = Path(task_parameters['output_path'])   # Create pathlib path
+    output_dir_pathlib = Path(task_parameters['output_path'])  # Create pathlib path
 
     # Create folders and set flags to True for intermediate results (if necessary)
     save_intermediate_results = task_parameters['save_intermediate_results']
@@ -173,20 +208,23 @@ def main():
     data_folder_path = Path(task_parameters["input_path"]).resolve()
     file_format = task_parameters["file_format"]
     pcd_file_paths = list(data_folder_path.glob(f"*.{file_format}"))
+    n_scans = len(pcd_file_paths)
 
     # Set-up results structure
     how_aggregate_results = task_parameters["results_aggregation_strategy"]
-    point_cloud_id = 0
     if how_aggregate_results == "object_memory_bank":
-        d3d_memory_bank = []
+        d3d_collection = []
+        pcd_ij_collection = []
     else:
         raise ValueError("Chosen results_aggregation_strategy is currently not supported!")
 
+    # Point cloud tracking (pcd_i -> original point cloud, pcd_ij -> pcd_i with segmentation based on feature j)
+    pcd_i_id, pcd_ij_id = 0, 0
     # Set common global shift for all point clouds (precaution, should not be necessary for small projects)
     common_global_shift = np.zeros((3,), dtype=np.float_)
 
     for pcd_path_i in pcd_file_paths:
-        point_cloud_id += 1
+        pcd_i_id += 1
 
         # Load data
         pcd: PointCloudData = load_e57(pcd_path_i, stay_prcs=False, save_prcs_info=True)  # Load point cloud
@@ -227,9 +265,12 @@ def main():
 
         # Subsample point cloud to desired output resolution (once images generated):
         pcd = subsample_pcd_to_output_resolution(pcd, pcp_parameters)
+        # Assure common global shift for further operations
+        pcd, common_global_shift = assure_common_global_shift(pcd, common_global_shift, pcd_i_id)
 
         # Run Grounded SAM2 inference (for all images of a point cloud pcd_i)
         for i, image_j in enumerate(images_pcd_i):
+            pcd_ij_id += 1
             image_j_numpy = image_j[1]
             # Transform 1 channel (float) ndarray into 3channel (8bit) - "grayscale" to "rgb"
             # image_j_numpy = convert_to_image(image_j_numpy, "max", normalize=True, colormap='gray')
@@ -241,10 +282,11 @@ def main():
 
             if inference_models_parameters["with_slice_inference"] is True:
                 print("Grounded SAM2 - Inference on image slices")
-                results = run_grounded_sam2_with_sahi(image=image_j_numpy, text_prompt=text_prompt, gdino_model=gdino_model,
-                                            gdino_processor=gdino_processor, sam2_predictor=sam2_predictor,
-                                            inference_models_parameters=inference_models_parameters,
-                                            slice_inference_parameters=slice_inference_parameters)
+                results = run_grounded_sam2_with_sahi(image=image_j_numpy, text_prompt=text_prompt,
+                                                      gdino_model=gdino_model,
+                                                      gdino_processor=gdino_processor, sam2_predictor=sam2_predictor,
+                                                      inference_models_parameters=inference_models_parameters,
+                                                      slice_inference_parameters=slice_inference_parameters)
             else:
                 print("Grounded SAM2 - Inference on a whole image")
                 results = run_grounded_sam2(image=image_j_numpy, text_prompt=text_prompt, gdino_model=gdino_model,
@@ -256,7 +298,8 @@ def main():
             # Save object detection (gdino) and segmentation (SAM2) results as .jpeg images and corresponding data in .json:
             if save_intermediate_results:
                 print("Saving intermediate results")
-                save_gsam2_results(image=images_pcd_i[i], results=results, inference_models_parameters=inference_models_parameters)
+                save_gsam2_results(image=images_pcd_i[i], results=results,
+                                   inference_models_parameters=inference_models_parameters)
 
             # From individual per-object bool masks get:
             #   - 1 instance mask (each instance having one int ID),
@@ -265,7 +308,7 @@ def main():
             print("Getting unified instance and semantic mask from individual masks")
             # instance_mask, semantic_mask, class_id_map = get_instance_and_semantic_mask(results, text_prompt)
             image_hw = image_j_numpy.shape[:2]
-            instance_mask, semantic_mask, confidence_mask, class_id_map =\
+            instance_mask, semantic_mask, confidence_mask, class_id_map = \
                 get_instance_and_semantic_mask_with_confidence(results, text_prompt, image_hw)
 
             # Add the generated masks to ImageStack related to the point cloud pcd
@@ -275,7 +318,8 @@ def main():
             pcd_ij = pcd.copy()
 
             project_masks2pcd_as_scalarfields(pcd_ij, instance_mask, semantic_mask)
-            project_a_mask_2_pcd_as_scalarfield(pcd_ij, mask=confidence_mask, mask_name="confidence")
+            if pcp_parameters["keep_confidences"]:
+                project_a_mask_2_pcd_as_scalarfield(pcd_ij, mask=confidence_mask, mask_name="confidence")
 
             # Remove background class (if task = object detection)
             pcd_ij = remove_unclassified_points(pcd_ij, task_parameters)
@@ -284,66 +328,71 @@ def main():
             # Transform point cloud to global (project-related) coordinate system
             pcd_ij = toggle_socs2prcs(pcd_ij)
 
-            # Assure common global shift for further operations!
-            if pcd_ij.global_coordinate_shift is None:
-                pcd_i_global_shift = np.zeros((3,), dtype=np.float_)
-            else:
-                pcd_i_global_shift = pcd_ij.global_coordinate_shift
-
-            if np.any(common_global_shift != pcd_i_global_shift) and point_cloud_id == 1:
-                common_global_shift = pcd_i_global_shift
-
-            if np.any(common_global_shift > 0.0):
-                # Heavy (but certainly working) global shift change:
-                # translate(pcd, translation=-common_global_shift)
-
-                # Light/lazy (but questionable) global shift change:
-                pcd_ij = lazy_global_shift_change(pcd_ij, common_global_shift)
-
             # Save individual station point clouds (currently aligned in PRCS, if toggle_socs2prcs works)
             if save_intermediate_results:
-                save_segmented_pcds(pcd_path_i, pcd_ij, inference_models_parameters, class_id_map, image_j)
+                save_segmented_pcd_ij(pcd_path_i, pcd_ij, inference_models_parameters, class_id_map, image_j)
+
+            # Save segmented point cloud
+            pcd_ij_collection.append(pcd_ij)
 
             # Extract per-instance metadata:
             # TODO: Possible additions/modifications to get_detections3d (check OneNote notes)
-            d3d_i, feature_names = get_detections3d(pcd_ij, point_cloud_id, d3d_parameters, pcp_parameters)
-            d3d_memory_bank.append(d3d_i)
-
+            d3d_i = get_detections3d(pcd_ij, pcd_ij_id, d3d_parameters, pcp_parameters)
+            d3d_collection.append(d3d_i)
 
     # All point clouds looped through
     # ------------------------------------------------------------------------------------------------------------------
-    # Concatenate all detections 3d, get their number and assign them a unique identifier
-    d3d_memory_bank = np.concatenate(d3d_memory_bank, axis=0)
-    N_d3d = d3d_memory_bank.shape[0]
-    d3d_unique_ids = np.arange(N_d3d, dtype=np.uint16).reshape(-1, 1)
-    d3d_memory_bank = np.concatenate((d3d_unique_ids, d3d_memory_bank), axis=1)
+    # Merge all Detections3D objects into 1 large object
+    d3d_collection = merge_detections3d(d3d_collection)
+    n_d3d = d3d_collection.pcd_ids.shape[0]
+
+    # Get initial sparse connectivity (relevant/sparse nodes for the graph)
+    semantic_gate = d3d_parameters["merge_inst_of_same_class_only"]
+    spcon_method = d3d_parameters["sparse_connectivity_method"]
+    spcon_threshold = d3d_parameters["sparse_connectivity_threshold"]
+    pairs = get_initial_sparse_connectivity(centroids=d3d_collection.centroids, class_ids=d3d_collection.classes,
+                                            n_scans=n_scans, method=spcon_method, knn_ps=spcon_threshold,
+                                            radius=spcon_threshold, semantic_gate=semantic_gate)
+
+    # get edges for graph
+    iou_threshold = d3d_parameters["supporters_iou_threshold"]
+    edges_iou, edges_supp = get_edge_weights(detections3d=d3d_collection, pairs=pairs,
+                                             iou_threshold=iou_threshold, mode='both')
+
+    # Remove Detections3D that overlap with too many other Detections3D (likely under-segmented)
+    remove_outliers_by_support = d3d_parameters["remove_outliers_by_support"]
+    or_method = d3d_parameters["outlier_detection_method"]
+    or_threshold = d3d_parameters["outlier_detection_threshold"]
+    if remove_outliers_by_support:
+        counts = count_significant_overlaps(pairs=pairs, bbox_overlap=edges_iou, iou_threshold=iou_threshold, N=n_d3d)
+        outliers, cutoff = detect_upper_tail_outliers(data=counts, method=or_method, alpha=or_threshold)
+        d3d_collection, pairs, edges_supp = filter_outlier_detections3d_edges_and_nodes(d3d_collection=d3d_collection,
+                                                                                        pairs=pairs,
+                                                                                        edge_weights=edges_supp,
+                                                                                        outliers=outliers)
+        n_d3d = d3d_collection.pcd_ids.shape[0]
+
+
+
+    # Find corresponding Detections3D instances using graph clustering
+    clustering_method = d3d_parameters['graph_clustering_method']
+    min_supporters = d3d_parameters['min_supporters']
+    leiden_resolution = d3d_parameters['leiden_resolution']
+    clusters_ids = graph_clustering(num_nodes=n_d3d, pairs=pairs, edge_weights=edges_supp,
+                                    method=clustering_method, min_supporters=min_supporters,
+                                    leiden_resolution=leiden_resolution)
+
+    # Assign new instance labels to point clouds and merge them together
+    pcd_result = get_segmented_and_merged_point_cloud(pcd_ij_collection, d3d_collection, clusters_ids, pcp_parameters)
+
+    # Save point cloud with final results
+    save_segmented_pcd(data_folder_path, output_dir_pathlib, pcd_result, class_id_map)
 
     # TODO: CLEAN MEMORY
-
-    #
-
-
-
-
-
-
-
-
-
-
-
-
-
 
     test = 1
     banana = 2
 
 
-
-
-
-
-
 if __name__ == "__main__":
     main()
-

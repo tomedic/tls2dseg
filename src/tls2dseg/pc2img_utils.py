@@ -486,9 +486,9 @@ def get_instance_and_semantic_mask_with_confidence(results: dict, text_prompt, i
     sorted_indices = np.argsort(mask_sizes)[::-1]
 
     # Initialize masks with zeros (background)
-    instance_mask = np.zeros((H, W), dtype=np.int32)
-    semantic_mask = np.zeros((H, W), dtype=np.int32)
-    confidence_mask = np.zeros((H, W), dtype=np.float32)
+    instance_mask = np.zeros((H, W), dtype=np.uint32)
+    semantic_mask = np.zeros((H, W), dtype=np.uint8)
+    confidence_mask = np.zeros((H, W), dtype=np.float16)
 
     for i in range(N):
         # Get the instance mask row and column indices

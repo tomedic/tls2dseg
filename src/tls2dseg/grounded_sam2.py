@@ -24,6 +24,8 @@ from itertools import compress
 from src.tls2dseg.supervision_utils import CUSTOM_COLOR_MAP
 from src.tls2dseg.pc2img_utils import img_1to3_channels_encoding
 from src.tls2dseg.sparse_masks_inference_slicer import SparseMasksInferenceSlicer
+from threading import Lock
+sam_lock = Lock()
 
 def initialize_gdino(inference_models_parameters: dict) -> Tuple[AutoModelForZeroShotObjectDetection, AutoProcessor]:
     # build grounding dino (IDEA huggingface workflow) - set up the model and data processing pipeline
@@ -176,22 +178,23 @@ def callback(image_slice: np.ndarray, text_prompt: str, gdino_processor: AutoPro
     # 4. Run SAM2 (and store sparse masks)
     # __________________________________________________________________________________________________________________
     # Set input for SAM2
-    sam2_predictor.set_image(image_slice)
+    with sam_lock:
+        sam2_predictor.set_image(image_slice)
 
-    # Batch detected bounding boxes to avoid memory explosion when running inference with SAM!
-    sam_box_prompt_batch_size = inference_models_parameters["sam_box_prompt_batch_size"]
-    masks = []
+        # Batch detected bounding boxes to avoid memory explosion when running inference with SAM!
+        sam_box_prompt_batch_size = inference_models_parameters["sam_box_prompt_batch_size"]
+        masks = []
 
-    for batch_i in range(0, len(input_boxes), sam_box_prompt_batch_size):
-        batch_boxes = input_boxes[batch_i:batch_i + sam_box_prompt_batch_size]
+        for batch_i in range(0, len(input_boxes), sam_box_prompt_batch_size):
+            batch_boxes = input_boxes[batch_i:batch_i + sam_box_prompt_batch_size]
 
-        # Run SAM2
-        masks_i, _, _ = sam2_predictor.predict(
-            point_coords=None,
-            point_labels=None,
-            box=batch_boxes,
-            multimask_output=False,
-        )
+            # Run SAM2
+            masks_i, _, _ = sam2_predictor.predict(
+                point_coords=None,
+                point_labels=None,
+                box=batch_boxes,
+                multimask_output=False,
+            )
 
         # Squeeze out unnecessary dimensions
         if masks_i.ndim == 4:

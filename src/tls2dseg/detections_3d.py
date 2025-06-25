@@ -1,4 +1,5 @@
 import warnings
+
 warnings.filterwarnings(
     "ignore",
     category=FutureWarning,
@@ -6,27 +7,37 @@ warnings.filterwarnings(
 )
 
 import logging
+
 # Silence all tokenizers messages below ERROR
 logging.getLogger("tokenizers").setLevel(logging.ERROR)
 
+import numpy as np
 from scipy.spatial.transform import Rotation as R
 from pchandler.geometry import PointCloudData
 from typing import Tuple, Optional, Union, List, Literal
-import numpy as np
-from scipy.spatial import cKDTree  # fast radius search :contentReference[oaicite:2]{index=2}
-from scipy.sparse import coo_matrix, csr_matrix
-from collections import Counter
-import igraph as ig
-import leidenalg as la
-import trimesh
-from concurrent.futures import ProcessPoolExecutor
-from scipy.stats import nbinom
 from tls2dseg.pc_preprocessing import main_cluster_extraction, statistical_outlier_removal
-from tls2dseg.visualization import *
 import math
+from dataclasses import dataclass
 
 
-def get_detections3d(pcd: PointCloudData, pcd_id: float, d3d_parameters: dict, pcp_parameters: dict) -> Tuple[np.ndarray, list]:
+# from tls2dseg.visualization import *
+
+
+@dataclass
+class Detections3D:
+    pcd_ids: np.ndarray  # (N,)
+    instances: np.ndarray  # (N,)
+    classes: np.ndarray  # (N,)
+    confidences: np.ndarray  # (N,)
+    point_counts: np.ndarray  # (N,)
+    centroids: np.ndarray  # (N,3)
+    bboxes: np.ndarray  # (N,6) or (N,10)
+    bboxes_type: Literal['aabb', 'obb', 'both']
+    centroid_type: Literal['mean', 'median', 'bbox_c']
+    preprocessing_applied: bool
+
+
+def get_detections3d(pcd: PointCloudData, pcd_id: float, d3d_parameters: dict, pcp_parameters: dict) -> Detections3D:
     """
     Extract a collection of detections 3d instances as a numpy array of relevant features / metadata accompanied
      by a list of feature names explaining columns of the numpy array
@@ -35,6 +46,7 @@ def get_detections3d(pcd: PointCloudData, pcd_id: float, d3d_parameters: dict, p
         pcd: PointCloudData object
         pcd_id: integer tag identifying this point cloud within a project
         d3d_parameters: dictionary with parameters steering the process
+        pcp_parameters: dictionary with parameters steering the process
 
     Returns:
         features: np.ndarray, shape (N_instances, 13) or (N_instances, 17), depending on bounding_box_type
@@ -52,17 +64,18 @@ def get_detections3d(pcd: PointCloudData, pcd_id: float, d3d_parameters: dict, p
     # Create views to relevant point cloud data
     instances_pcd = pcd.scalar_fields['instances']
     classes_pcd = pcd.scalar_fields['classes']
-    confidences_pcd = pcd.scalar_fields['confidence']
+    if pcp_parameters["keep_confidences"]:
+        confidences_pcd = pcd.scalar_fields['confidence']
     pts_pcd = pcd.xyz  # (P,3)
 
     # Get unique identifiers of detected 3d objects (d3d = detection 3d) and the number of them
-    unique_d3d = np.unique(instances_pcd)
+    unique_d3d = np.unique(instances_pcd).astype(np.uint32)
     N_d3d = len(unique_d3d)
 
     # pre-allocate
     pcd_id_d3d = np.full((N_d3d, 1), pcd_id, dtype=np.uint8)
     classes_d3d = np.zeros((N_d3d, 1), dtype=np.uint8)
-    confidence_d3d = np.zeros((N_d3d, 1), dtype=np.float16)  # TODO: consider x100 and replace with uint8
+    confidence_d3d = np.ones((N_d3d, 1), dtype=np.float16)  # TODO: consider x100 and replace with uint8
     pts_count_d3d = np.zeros((N_d3d, 1), dtype=np.uint32)
     centroids_d3d = np.zeros((N_d3d, 3), dtype=np.float32)
 
@@ -81,7 +94,8 @@ def get_detections3d(pcd: PointCloudData, pcd_id: float, d3d_parameters: dict, p
 
         # class & confidence (assumed uniform per-instance)
         classes_d3d[i, 0] = classes_pcd.data[mask][0]
-        confidence_d3d[i, 0] = confidences_pcd.data[mask][0]
+        if pcp_parameters["keep_confidences"]:
+            confidence_d3d[i, 0] = confidences_pcd.data[mask][0]
 
         if preprocess and pts_i.shape[0] > 3:
             # Preprocess detection 3d instance point clouds
@@ -138,7 +152,7 @@ def get_detections3d(pcd: PointCloudData, pcd_id: float, d3d_parameters: dict, p
                 centroids_d3d = (mx + mn) / 2
         elif bounding_box_type == "obb":
             # oriented bounding box OBB via PCA
-            c = np.mean(pts_i,axis=0) # get center of pts_i
+            c = np.mean(pts_i, axis=0)  # get center of pts_i
             # compute covariance & eigen‐decomposition
             cov = np.cov(pts_i.T, bias=True)
             eigvals, eigvecs = np.linalg.eigh(cov)
@@ -171,741 +185,77 @@ def get_detections3d(pcd: PointCloudData, pcd_id: float, d3d_parameters: dict, p
             bbox_d3d[i, 3:6] = obb_extent
             bbox_d3d[i, 6:] = quaternion
 
-    # build feature_names in the same stacking order:
-    feature_names = []
-    feature_names += ['pcd_id', 'class', 'confidence', 'n_pts']
-    feature_names += [f'c_{ax}' for ax in ('x', 'y', 'z')]
-    if bounding_box_type == "aabb":
-        feature_names += [f'aabb_min_{ax}' for ax in ('x', 'y', 'z')]
-        feature_names += [f'aabb_max_{ax}' for ax in ('x', 'y', 'z')]
-    elif bounding_box_type == "obb":
-        feature_names += [f'obb_c_{ax}' for ax in ('x', 'y', 'z')]
-        feature_names += [f'obb_ext_{ax}' for ax in ('x', 'y', 'z')]
-        feature_names += [f'obb_quat_{ax}' for ax in ('x', 'y', 'z', 'w')]
+    # Create Detections3D object
+    detections_3d = Detections3D(pcd_ids=pcd_id_d3d, instances=np.expand_dims(unique_d3d, axis=1), classes=classes_d3d,
+                                 confidences=confidence_d3d, point_counts=pts_count_d3d, centroids=centroids_d3d,
+                                 bboxes=bbox_d3d, bboxes_type=bounding_box_type, centroid_type=centroid_type,
+                                 preprocessing_applied=preprocess)
 
-    # horizontally stack into (N,13) if aabb, or (N,17) if obb
-    features = np.hstack([
-        pcd_id_d3d,
-        classes_d3d,
-        confidence_d3d,
-        pts_count_d3d,
-        centroids_d3d,
-        bbox_d3d
-    ])
-
-    return features, feature_names
+    return detections_3d
 
 
-def get_initial_sparse_connectivity(
-        centroids: np.ndarray,  # (N,3) float32/float64
-        class_ids: Optional[np.ndarray] = None,  # (N,) int  – needed if semantic_gate=True
-        n_scans: float = 1,  # float – needed for knn-threshold
-        *,
-        method: str = "knn",  # "knn"  or  "radius"
-        knn_ps: int = 2,  # 1‒3, used only if method=="knn"
-        radius: float = 0.20,  # metres, used only if method=="radius"
-        semantic_gate: bool = False,  # require identical class_ids?
-) -> np.ndarray:
+def merge_detections3d(detections_list: List[Detections3D]) -> Detections3D:
+    if len(detections_list) == 0:
+        raise ValueError("detections_list must contain at least one Detections3D object")
+
+    # Validate bbox_type consistency
+    # TODO: Implement check if all values consistent across the list of Detections3D
+    bbox_type = detections_list[0].bboxes_type
+    centroid_type = detections_list[0].centroid_type
+    preprocessing_applied = detections_list[0].preprocessing_applied
+
+    # Stack each attribute vertically
+    pcd_ids = np.vstack([det.pcd_ids for det in detections_list])
+    instances = np.vstack([det.instances for det in detections_list])
+    classes = np.vstack([det.classes for det in detections_list])
+    confidences = np.vstack([det.confidences for det in detections_list])
+    point_counts = np.vstack([det.point_counts for det in detections_list])
+    centroids = np.vstack([det.centroids for det in detections_list])
+    bboxes = np.vstack([det.bboxes for det in detections_list])
+
+    # Create Detections3D object
+    detections_3d = Detections3D(pcd_ids=pcd_ids, instances=instances, classes=classes,
+                                 confidences=confidences, point_counts=point_counts, centroids=centroids,
+                                 bboxes=bboxes, bboxes_type=bbox_type, centroid_type=centroid_type,
+                                 preprocessing_applied=preprocessing_applied)
+    return detections_3d
+
+
+def filter_detections3d(
+        detections: Detections3D,
+        mask: np.ndarray
+) -> Detections3D:
     """
-    Fast KD-tree based neighbour discovery -> boolean CSR adjacency.
+    Return a new Detections3D instance containing only the entries
+    where `mask` is True.
 
-    Parameters
-    ----------
-    centroids : (N,3) array
-        XYZ of bounding-box centres.
-    class_ids : (N,) array or None
-        Semantic labels; required iff semantic_gate is True.
-    n_scans  : float
-        Number of scans * features used to generate masks. Needed to
-        compute knn_threshold = knn * n_scans.
-    method    : "knn"  |  "radius"
-        Neighbour criterion.
-    knn_ps       : int
-        Nuber of neighbors per scan to search for. Multiplier in knn_threshold = knn_ps * n_scans (1 ≤ knn ≤ 3).
-    radius    : float
-        Ball-query radius (same unit as centroids) if method=="radius".
-    semantic_gate : bool
-        If True, keep an edge only when class_ids[i]==class_ids[j].
+    Args:
+        detections: Detections3D to filter.
+        mask: Boolean array of shape (N,) selecting which instances to keep.
 
-    Returns
-    -------
-    pairs : (M,2) int array
-        Edge list [i,j] with i<j for which adj[i,j]=True.
+    Returns:
+        A filtered Detections3D with the same metadata fields but only
+        entries corresponding to True in mask.
+
+    Raises:
+        ValueError: If mask is not boolean or its length does not match
+                    the number of detections.
     """
-
-    N = centroids.shape[0]
-    if method not in {"knn", "radius"}:
-        raise ValueError("method must be 'knn' or 'radius'")
-    if method == "knn" and n_scans is None:
-        raise ValueError("scan_ids required for knn method")
-    if semantic_gate and class_ids is None:
-        raise ValueError("class_ids required when semantic_gate=True")
-
-    # ----------  KD-tree query ----------
-    tree = cKDTree(centroids)
-
-    # build neighbour lists ---------------------------------------------------
-    if method == "radius":
-        neighbour_lists = tree.query_ball_tree(tree, r=radius)
-    else:  # "knn"
-        k_total = int(knn_ps * n_scans + 1)  # +1 to include self
-        dists, idxs = tree.query(centroids, k=k_total, workers=-1)
-        neighbour_lists = [row[1:] for row in idxs]  # drop self
-
-    # ----------  assemble edges ----------
-    rows, cols = [], []
-    for i, nbrs in enumerate(neighbour_lists):
-        for j in nbrs:
-            if j <= i:
-                continue  # keep i<j only once
-            if semantic_gate and class_ids[i] != class_ids[j]:
-                continue
-            rows.append(i)
-            cols.append(j)
-
-    pairs = np.column_stack((rows, cols))  # i<j pairs
-    return pairs
-
-
-def sparse_connectivity_pairs2csr_matrix(
-        pairs: Union[np.ndarray, list],
-        edge_weights: Optional[np.ndarray] = None
-) -> csr_matrix:
-    """
-    Convert a list/array of node-pairs (i, j) into a symmetric CSR adjacency matrix,
-    optionally using precomputed edge weights.
-
-    Parameters
-    ----------
-    pairs : array-like of shape (M, 2)
-        Each row is a pair [i, j] indicating an undirected edge between nodes i and j.
-    edge_weights : array-like of shape (M,), optional
-        Precomputed weights for each pair. If None, all edges are set to True (boolean adjacency).
-
-    Returns
-    -------
-    adj : scipy.sparse.csr_matrix
-        Symmetric adjacency matrix of shape (N, N), where
-        N = max node index in pairs + 1.
-        If `edge_weights` is None, `adj` is boolean. Otherwise, numeric dtype of edge_weights.
-    """
-    # Convert pairs to numpy array
-    pairs = np.asarray(pairs, dtype=int)
-    if pairs.ndim != 2 or pairs.shape[1] != 2:
-        raise ValueError("`pairs` must be of shape (M, 2)")
-    M = pairs.shape[0]
-
-    # Determine data for adjacency entries
-    if edge_weights is None:
-        data = np.ones(M * 2, dtype=bool)
-    else:
-        edge_weights = np.asarray(edge_weights)
-        if edge_weights.ndim != 1 or edge_weights.shape[0] != M:
-            raise ValueError("`edge_weights` must be 1D of length equal to number of pairs")
-        # Duplicate weights for symmetric entries
-        data = np.concatenate([edge_weights, edge_weights])
-
-    # Build row and column index arrays for symmetric adjacency
-    row = np.concatenate([pairs[:, 0], pairs[:, 1]])
-    col = np.concatenate([pairs[:, 1], pairs[:, 0]])
-
-    # Infer N from the maximum node index
-    if M > 0:
-        N = int(pairs.max()) + 1
-    else:
-        N = 0
-
-    # Construct CSR matrix
-    adj = coo_matrix((data, (row, col)), shape=(N, N)).tocsr()
-    return adj
-
-
-def compute_obb_iou_naive(
-        centers: np.ndarray,
-        extents: np.ndarray,
-        quats: np.ndarray,
-        pairs: np.ndarray,
-        engine: str = "scad"
-) -> np.ndarray:
-    """
-    Compute 3D IoU for oriented bounding boxes (OBBs) using trimesh boolean intersection.
-
-    Parameters
-    ----------
-    centers : (N,3) array
-        OBB centers.
-    extents : (N,3) array
-        Full box dimensions along each local axis.
-    quats : (N,4) array
-        Quaternions in [x, y, z, w] order.
-    pairs : (M,2) int array
-        Each row [i,j] indicates a pair of boxes.
-    engine : str
-        Boolean engine for trimesh (e.g. 'scad', 'blender', 'cork').
-
-    Returns
-    -------
-    ious : (M,) float array
-        IoU for each OBB pair.
-    """
-    M = pairs.shape[0]
-    ious = np.zeros(M, dtype=np.float32)
-
-    for idx, (i, j) in enumerate(pairs):
-        # Build box meshes
-        box1 = trimesh.creation.box(extents=extents[i])
-        box2 = trimesh.creation.box(extents=extents[j])
-
-        # Apply transforms (rotation + translation)
-        R1 = R.from_quat(quats[i, :]).as_matrix()
-        T1 = np.eye(4)
-        T1[:3, :3] = R1
-        T1[:3, 3] = centers[i]
-        box1.apply_transform(T1)
-
-        R2 = R.from_quat(quats[j, :]).as_matrix()
-        T2 = np.eye(4)
-        T2[:3, :3] = R2
-        T2[:3, 3] = centers[j]
-        box2.apply_transform(T2)
-
-        # Compute volumes
-        vol1 = box1.volume
-        vol2 = box2.volume
-
-        # Boolean intersection
-        try:
-            inter = trimesh.boolean.intersection([box1, box2], engine=engine)
-            inter_vol = inter.volume if inter is not None else 0.0
-        except BaseException:
-            inter_vol = 0.0
-
-        union_vol = vol1 + vol2 - inter_vol
-        ious[idx] = inter_vol / union_vol if union_vol > 0 else 0.0
-
-    return ious
-
-
-def _compute_iou_from_packed(
-        args: Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, str]
-) -> float:
-    ext_i, trans_i, ext_j, trans_j, engine = args
-    box1 = trimesh.creation.box(extents=ext_i, transform=trans_i)
-    box2 = trimesh.creation.box(extents=ext_j, transform=trans_j)
-    v1, v2 = box1.volume, box2.volume
-    try:
-        inter = trimesh.boolean.intersection([box1, box2], engine=engine)
-        iv = inter.volume if inter else 0.0
-    except Exception:
-        iv = 0.0
-    union = v1 + v2 - iv
-    return iv / union if union > 0 else 0.0
-
-
-def compute_obb_iou_parallel(
-        centers: np.ndarray,
-        extents: np.ndarray,
-        quats: np.ndarray,
-        pairs: np.ndarray,
-        engine: str = "scad",
-        max_workers: Optional[int] = None
-) -> np.ndarray:
-    """
-    Compute 3D IoU for OBBs by pre-packing only the per-pair extents/transforms.
-
-    Parameters
-    ----------
-    centers : (N,3)  OBB centers
-    extents : (N,3)  OBB dimensions
-    quats   : (N,4)  [x,y,z,w] quaternions
-    pairs   : (M,2)  integer index pairs
-    engine  : bool engine for trimesh
-    max_workers : # of processes
-
-    Returns
-    -------
-    ious : (M,) float IoU per pair
-    """
-    # 1) Precompute all transforms
-    r = R.from_quat(quat=quats)
-    rots = r.as_matrix()  # (N,3,3)
-    N = centers.shape[0]
-    transforms = np.tile(np.eye(4, dtype=np.float32), (N, 1, 1))
-    transforms[:, :3, :3] = rots
-    transforms[:, :3, 3] = centers
-
-    # 2) Pack per-pair arguments
-    pack_args: List[Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, str]] = []
-    for (i, j) in pairs:
-        pack_args.append((extents[i], transforms[i],
-                          extents[j], transforms[j],
-                          engine))
-
-    # 3) Parallel map
-    with ProcessPoolExecutor(max_workers=max_workers) as exe:
-        ious = list(exe.map(_compute_iou_from_packed, pack_args))
-
-    return np.array(ious, dtype=np.float32)
-
-
-def compute_aabb_iou_vectorized(
-        aabb: np.ndarray,
-        pairs: np.ndarray
-) -> np.ndarray:
-    """
-    Vectorized IoU for axis-aligned bounding boxes.
-
-    Parameters
-    ----------
-    aabb : (N,6) array [minx,miny,minz,maxx,maxy,maxz]
-    pairs : (M,2) int array of index pairs
-
-    Returns
-    -------
-    ious : (M,) float32 IoU per pair
-    """
-    # gather aabb corners
-    mins = aabb[:, :3]
-    maxs = aabb[:, 3:]
-    # sort them according to pairs
-    mins_i = mins[pairs[:, 0]]
-    mins_j = mins[pairs[:, 1]]
-    maxs_i = maxs[pairs[:, 0]]
-    maxs_j = maxs[pairs[:, 1]]
-    # intersection aabb and corresponding volume
-    inter_min = np.maximum(mins_i, mins_j)
-    inter_max = np.minimum(maxs_i, maxs_j)
-    inter_dim = np.clip(inter_max - inter_min, 0, None)
-    inter_vol = inter_dim[:, 0] * inter_dim[:, 1] * inter_dim[:, 2]
-    # volumes (per each box in a pair and intersection)
-    vol_i = np.prod(maxs_i - mins_i, axis=1)
-    vol_j = np.prod(maxs_j - mins_j, axis=1)
-    union_vol = vol_i + vol_j - inter_vol
-    # 3D IoU
-    return np.where(union_vol > 0, inter_vol / union_vol, 0.0).astype(np.float32)
-
-
-def compute_supporter_counts(pairs: np.ndarray, bbox_overlap: np.ndarray, iou_threshold: float = 0.3) -> np.ndarray:
-    M = pairs.shape[0]
-    neigh = {i: set() for i in np.unique(pairs)}
-    for (i, j), iou in zip(pairs, bbox_overlap):
-        if iou >= iou_threshold:
-            neigh[i].add(j)
-            neigh[j].add(i)
-    supporter_counts = np.zeros(M, dtype=np.int16)
-    for idx, (i, j) in enumerate(pairs):
-        supporter_counts[idx] = len(neigh[i].intersection(neigh[j]))
-    return supporter_counts
-
-
-def compute_edge_weights(
-        detections3d: np.ndarray,
-        pairs: np.ndarray,
-        iou_threshold: float = 0.15,
-        mode: Literal['iou', 'supporters', 'both'] = 'both',
-        boolean_engine: str = "scad",
-        obb_workers: Optional[int] = None
-) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
-    """
-    Compute edge weights for sparse pairs: IoU and/or supporter counts.
-
-    Parameters
-    ----------
-    detections3d : (N,D) array, with bboxes in cols 7:
-    pairs : (M,2) int array
-    iou_threshold : float, supporters IoU threshold
-    mode : 'iou','supporters','both'
-    boolean_engine : trimesh boolean engine
-    obb_workers : #workers for OBB IoU parallel
-
-    Returns
-    -------
-    bbox_overlap : (M,) or None
-    supporter_counts : (M,) or None
-    """
-    bboxes = detections3d[:, 7:]
-    bbox_overlap = None
-    supporter_counts = None
-
-    # Compute 3D IoU (either for AABB or for OBB)
-    # TODO: if statement left inside, because maybe I implement edge weights not based on 3D IoU in future
-    # AABB
-    if bboxes.shape[1] == 6:
-        aabb = bboxes
-        if mode in ('iou', 'both', 'supporters'):
-            bbox_overlap = compute_aabb_iou_vectorized(aabb, pairs)
-    # OBB
-    elif bboxes.shape[1] == 10:
-        if mode in ('iou', 'both', 'supporters'):
-            bbox_overlap = compute_obb_iou_parallel(centers=bboxes[:, :3], extents=bboxes[:, 3:6],
-                                                    quats=bboxes[:, 6:10], pairs=pairs, engine=boolean_engine,
-                                                    max_workers=obb_workers)
-    else:
-        raise ValueError("bboxes must have 6 or 10 columns")
-
-    if mode in ('supporters', 'both'):
-        supporter_counts = compute_supporter_counts(pairs, bbox_overlap, iou_threshold)
-
-    if mode == 'iou':
-        return bbox_overlap, None
-    elif mode == 'supporters':
-        return None, supporter_counts
-    elif mode == 'both':
-        return bbox_overlap, supporter_counts
-    else:
-        raise ValueError(f"mode must be 'iou', 'supporters' or 'both', got {mode} instead")
-
-
-def cluster_objects(adj: csr_matrix,
-                    min_cluster_size: int = 3,
-                    method: str = "leiden") -> np.ndarray:
-    """
-    Cluster adjacency → new object IDs
-    Returns cluster label per row (-1 if filtered).
-    """
-    if method == "leiden":
-        g = ig.Graph.Adjacency((adj > 0).tolist(), mode="UNDIRECTED")
-        g.es["weight"] = adj.data
-        part = la.find_partition(g, la.ModularityVertexPartition, weights="weight")
-        labels = np.array(part.membership, dtype=np.int32)
-    elif method == "louvain":
-        import networkx as nx
-        G = nx.from_scipy_sparse_array(adj, edge_attribute="weight")
-        labels_dict = nx.algorithms.community.louvain_communities(
-            G, weight="weight", resolution=1.0)
-        labels = -np.ones(adj.shape[0], dtype=np.int32)
-        for cid, comm in enumerate(labels_dict):
-            labels[np.fromiter(comm, dtype=int)] = cid
-    elif method == "agglomerative":
-        from sklearn.cluster import AgglomerativeClustering
-        # need dense distance – OK for <50 k nodes
-        D = adj.max() - adj.toarray()
-        np.fill_diagonal(D, 0)
-        model = AgglomerativeClustering(
-            affinity="precomputed", linkage="average", distance_threshold=0.5,
-            n_clusters=None)
-        labels = model.fit_predict(D)
-    else:
-        raise ValueError(f"Unknown clustering method {method!r}")
-
-    # prune tiny clusters
-    counts = Counter(labels)
-    valid_lbls = {lbl for lbl, c in counts.items() if c >= min_cluster_size and lbl != -1}
-    labels = np.where(np.isin(labels, list(valid_lbls)), labels, -1)
-
-    return labels
-
-
-def count_significant_overlaps(pairs: np.ndarray, bbox_overlap: np.ndarray, iou_threshold: float,
-                               N: int) -> np.ndarray:
-    """
-    Count, for each of N detections (its 3D bbox), with how many other detections (3D bboxes) it has a significant
-     overlap with (overlaps > iou_threshold).
-
-    Parameters
-    ----------
-    pairs : (M,2) int array of detection index pairs
-    bbox_overlap : (M,) float IoUs for those pairs
-    iou_threshold : float
-    N : int total number of detections
-
-    Returns
-    -------
-    counts : (N,) int array
-        counts[k] = # of detections j where IoU(k,j) > threshold
-    """
-    counts = np.zeros(N, dtype=int)
-    for (i, j), iou in zip(pairs, bbox_overlap):
-        if iou > iou_threshold:
-            counts[i] += 1
-            counts[j] += 1
-    return counts
-
-
-def detect_upper_tail_outliers(
-    data: np.ndarray,
-    method: str = "negative_binomial",
-    *,
-    iqr_factor: float = 1.5,
-    mad_factor: float = 3.0,
-    percentile: float = 95.0,
-         alpha: float = 0.05,
-) -> tuple[np.ndarray, float]:
-    """
-    Detect upper‐tail outliers in a 1D positive integer array.
-
-    Parameters
-    ----------
-    data : (N,) array
-        Any (developed for the per‐detection counts)
-    method : {"iqr","mad","percentile","negative_binomial"}
-    iqr_factor : float
-        multiplier for IQR fence: cutoff = Q3 + iqr_factor*(Q3-Q1)
-    mad_factor : float
-        multiplier for MAD fence: cutoff = median + mad_factor*MAD
-    percentile : float
-        for "percentile" method, cutoff = percentile‐th quantile of data
-    alpha : float
-        for "negative_binomial" method, cutoff = nbinom.ppf(1 - alpha, r, p)
-
-    Returns
-    -------
-    outlier_indices : 1D int array
-        indices in `data` that exceed the cutoff.
-    cutoff : float
-        the numeric threshold used.
-    """
-    if method == "iqr":
-        q1, q3 = np.percentile(data, [25, 75])
-        iqr = q3 - q1
-        cutoff = q3 + iqr_factor * iqr
-    elif method == "mad":
-        med = np.median(data)
-        mad = np.median(np.abs(data - med))
-        cutoff = med + mad_factor * mad
-    elif method == "percentile":
-        cutoff = np.percentile(data, percentile)
-    elif method == 'negative_binomial':
-        # Detect outliers based on negative binomial distribution
-        mean, var = data.mean(), data.var(ddof=1)
-        # Var = mean + mean^2 / r  ->  r = mean^2 / (var - mean)
-        r = mean ** 2 / max(var - mean, 1e-6)
-        p = r / (r + mean)
-        cutoff = nbinom.ppf(1 - alpha, r, p)
-    else:
-        raise ValueError(f"Unknown method {method!r}")
-
-    outliers = np.nonzero(data > cutoff)[0]
-    outliers.astype(np.uint16)
-    return outliers, cutoff
-
-
-def filter_outlier_detections3d_edges_and_nodes(
-    d3d_memory_bank: np.ndarray,
-    pairs: np.ndarray,
-    edge_weights: np.ndarray,
-    outliers: np.ndarray
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """
-    Remove outlier detections and any edges touching them.
-
-    Parameters
-    ----------
-    d3d_memory_bank : (N, D) array
-        Your per-detection summary.
-    pairs : (M, 2) int array
-        Candidate edges as (i, j) indices into d3d_memory_bank.
-    edge_weights : (M,) array
-        Corresponding edge weights.
-    outliers : (K,) int array
-        Indices of rows in d3d_memory_bank to drop.
-
-    Returns
-    -------
-    filtered_bank : (N-K, D) array
-        d3d_memory_bank with outlier rows removed.
-    filtered_pairs : (M', 2) int array
-        pairs with any row in `outliers` removed.
-    filtered_weights : (M',) array or None
-        edge_weights sliced to match filtered_pairs.
-    """
-    # Filter out the detections themselves
-    keep_mask = ~np.isin(np.arange(d3d_memory_bank.shape[0]), outliers)
-    filtered_bank = d3d_memory_bank[keep_mask]
-
-    # 2) Build a map from old indices to new indices (or -1 if dropped)
-    new_index = np.full(d3d_memory_bank.shape[0], -1, dtype=int)
-    new_index[keep_mask] = np.nonzero(keep_mask)[0]
-
-    # 3) Remap pairs to the new indexing
-    remapped = new_index[pairs]  # shape (M,2), values in [-1...]
-    # 4) Keep only edges where both endpoints survived
-    keep_edge = np.all(remapped >= 0, axis=1)
-    filtered_pairs = remapped[keep_edge]
-
-    # 5) Slice edge_weights if provided
-    filtered_weights = edge_weights[keep_edge]
-
-    return filtered_bank, filtered_pairs, filtered_weights
-
-
-# ---------- utilities ----------
-class UnionFind:
-    def __init__(self, n):
-        self.par  = np.arange(n, dtype=np.int32)
-        self.rank = np.zeros(n, dtype=np.int8)
-    def find(self, x):
-        while self.par[x] != x:
-            self.par[x] = self.par[self.par[x]]
-            x = self.par[x]
-        return x
-    def union(self, a, b):
-        ra, rb = self.find(a), self.find(b)
-        if ra == rb: return ra
-        if self.rank[ra] < self.rank[rb]:
-            self.par[ra] = rb
-            return rb
-        elif self.rank[rb] < self.rank[ra]:
-            self.par[rb] = ra
-            return ra
-        else:
-            self.par[rb] = ra
-            self.rank[ra] += 1
-            return ra
-# ---------------------------------------
-
-def pcc_strict_nondecreasing(
-    num_nodes: int,
-    pairs: np.ndarray,            # (M,2)
-    supporters: np.ndarray,       # (M,)
-    min_supporters: int = 2,
-    quantiles: List[int] = (99, 95, 90, 80, 70, 60, 50),
-) -> Tuple[np.ndarray, np.ndarray]:
-    """
-    PCC with multiplicity-preserving supporter counters.
-    The supporter count of any surviving edge never goes down.
-    """
-    uf = UnionFind(num_nodes)
-
-    # --- 1. Initial Counter for each node -------------------------------
-    Support = [Counter() for _ in range(num_nodes)]
-    for (i, j), sup in zip(pairs, supporters):
-        Support[i][j] += 1
-        Support[j][i] += 1
-
-    # Sorted edge order
-    order = np.argsort(-supporters)
-    pairs_sorted, supp_sorted = pairs[order], supporters[order]
-
-    thresholds = [
-        max(int(np.percentile(supporters, q)), min_supporters)
-        for q in quantiles
-    ]
-    thresholds.append(min_supporters)
-
-    current = 0            # pointer into sorted edge list
-    active_edges = pairs_sorted        # edges still considered
-    active_sup   = supp_sorted.copy()  # their current weights
-
-    for thr in thresholds:
-        # ---- 2. merge all edges with supp >= thr ----------------------
-        while current < len(active_sup) and active_sup[current] >= thr:
-            u, v = active_edges[current]
-            ru, rv = uf.find(u), uf.find(v)
-            if ru != rv:
-                # union; root_new is representative
-                root_new = uf.union(ru, rv)
-                root_old = rv if root_new == ru else ru
-                # merge Counters: new counts = sum (keeps multiplicity)
-                Support[root_new] += Support[root_old]
-                Support[root_old].clear()
-            current += 1
-
-        # ---- 3. re-score surviving edges for NEXT round -------------
-        if thr == thresholds[-1]:
-            break  # last iteration
-
-        root_of = np.fromiter((uf.find(i) for i in range(num_nodes)), dtype=np.int32)
-
-        # Keep only inter-cluster edges
-        keep = root_of[active_edges[:, 0]] != root_of[active_edges[:, 1]]
-        active_edges = active_edges[keep]
-        active_sup   = active_sup[keep]
-
-        # Recompute supporter counts (non-decreasing)
-        new_sup = np.empty_like(active_sup)
-        for idx, (u, v) in enumerate(active_edges):
-            ru, rv = root_of[u], root_of[v]
-            cu, cv = Support[ru], Support[rv]
-            common = set(cu.keys()).intersection(cv.keys())
-            s = sum(min(cu[k], cv[k]) for k in common)
-            new_sup[idx] = s
-        active_sup = new_sup
-
-        # Sort edges for next threshold loop
-        order2 = np.argsort(-active_sup)
-        active_edges, active_sup = active_edges[order2], active_sup[order2]
-        current = 0
-
-    # ---- 4. final labels ---------------------------------------------
-    roots = np.fromiter((uf.find(i) for i in range(num_nodes)), dtype=np.int32)
-    uniq, labels = np.unique(roots, return_inverse=True)
-    return labels.astype(np.int32), active_sup
-
-
-def graph_clustering(
-    num_nodes: int,
-    pairs: np.ndarray,            # (M,2) int32
-    edge_weights: np.ndarray,     # (M,)  float  or int
-    method: Literal["leiden", "hcs", "pcc"] = "leiden",
-    *,
-    # PCC-specific
-    min_supporters: int = 2,
-    quantiles: List[int] = (90, 80, 70, 60, 50, 40, 30, 20, 10),
-    # Leiden parameters
-    leiden_resolution: float = 1.0,
-
-) -> np.ndarray:
-    """
-    Parameters
-    ----------
-    num_nodes : total detections (rows in d3d_memory_bank)
-    pairs      : edges (i,j)
-    edge_weights : same length; for PCC must hold "supporter counts"
-    method     : 'leiden' | 'hcs' | 'pcc'
-    min_supporters: minimal number of supporting masks (detections 3d) needed for a mask merge
-    quantiles: thresholds for "pcc"
-    leiden_resolution: hyper-parameter steering resulting cluster sizes for Leiden
-    Returns
-    -------
-    labels : (num_nodes,) int32 cluster id per detection ( -1 for isolated if HCS/PCC )
-    """
-    if method == "leiden":
-        import igraph as ig, leidenalg as la
-        # build igraph
-        g = ig.Graph(n=num_nodes, edges=pairs.tolist(), edge_attrs={"weight": edge_weights})
-        part = la.find_partition(
-            g,
-            la.ModularityVertexPartition,
-            weights="weight",
-            resolution_parameter=leiden_resolution,
-        )
-        labels = np.array(part.membership, dtype=np.int32)
-
-    elif method == "hcs":
-        # Simple Python implementation based on recursive min-cut with NetworkX
-        import networkx as nx
-        G = nx.Graph()
-        G.add_nodes_from(range(num_nodes))
-        G.add_weighted_edges_from([(int(i), int(j), float(w)) for (i, j), w in zip(pairs, edge_weights)])
-
-        label = -np.ones(num_nodes, dtype=np.int32)
-        current_label = 0
-
-        def recurse(subg: nx.Graph):
-            nonlocal current_label
-            if len(subg) == 0:
-                return
-            # min-cut size
-            mc_value = nx.algorithms.connectivity.stoer_wagner(subg)[0]
-            if mc_value > len(subg) / 2:
-                # highly connected → assign label
-                for node in subg.nodes:
-                    label[node] = current_label
-                current_label += 1
-            else:
-                # split at min-cut
-                A, B = nx.algorithms.connectivity.stoer_wagner(subg)[1]
-                recurse(subg.subgraph(A).copy())
-                recurse(subg.subgraph(B).copy())
-
-        recurse(G)
-        labels = label.astype(np.int32)
-
-    elif method == "pcc":
-        labels = pcc_strict_nondecreasing(num_nodes, pairs, edge_weights, min_supporters, quantiles)
-    else:
-        raise ValueError(f"Unknown method {method}")
-
-    return labels
-
+    if mask.dtype != bool:
+        raise ValueError(f"Expected boolean mask, got dtype {mask.dtype}")
+    n = detections.pcd_ids.shape[0]
+    if mask.shape[0] != n:
+        raise ValueError(f"Mask length {mask.shape[0]} does not match number of detections {n}")
+
+    return Detections3D(
+        pcd_ids=detections.pcd_ids[mask],
+        instances=detections.instances[mask],
+        classes=detections.classes[mask],
+        confidences=detections.confidences[mask],
+        point_counts=detections.point_counts[mask],
+        centroids=detections.centroids[mask],
+        bboxes=detections.bboxes[mask],
+        bboxes_type=detections.bboxes_type,
+        centroid_type=detections.centroid_type,
+        preprocessing_applied=detections.preprocessing_applied
+    )

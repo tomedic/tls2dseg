@@ -3,12 +3,7 @@ import matplotlib
 matplotlib.use("TkAgg")
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
-from mpl_toolkits.mplot3d import Axes3D
-from scipy.interpolate import griddata
-from matplotlib.patches import Ellipse
-from scipy.stats import chi2
-
-#matplotlib.use('qt5agg')
+from scipy.spatial.transform import Rotation as R
 
 def set_axes_equal(ax):
     """Set equal scaling for a 3D plot."""
@@ -119,5 +114,86 @@ def display_histogram(d, bins=10, title="Histogram", xlabel="Values", ylabel="Fr
     plt.xlabel(xlabel)
     plt.ylabel(ylabel)
     plt.grid(True)
+    plt.show()
+    return
+
+
+def compute_bbox_corners(bbox_data:np.ndarray):
+    """
+    Computes the eight corners of a bounding box in a consistent order.
+    For an oriented box, the local corners are computed using the half extents
+    and then transformed to global coordinates.
+    """
+
+    center = bbox_data[:3]
+    extent = bbox_data[3:6]
+    quaternions = bbox_data[6:]
+    R3x3 = R.from_quat(np.squeeze(quaternions))
+    R3x3 = R3x3.as_matrix()
+    half = extent / 2.0
+
+    # Define local corners using the fixed order.
+    v0_local = np.array([-half[0], -half[1], -half[2]])
+    v1_local = np.array([half[0], -half[1], -half[2]])
+    v2_local = np.array([half[0], half[1], -half[2]])
+    v3_local = np.array([-half[0], half[1], -half[2]])
+    v4_local = np.array([-half[0], -half[1], half[2]])
+    v5_local = np.array([half[0], -half[1], half[2]])
+    v6_local = np.array([half[0], half[1], half[2]])
+    v7_local = np.array([-half[0], half[1], half[2]])
+    local_corners = np.array([v0_local, v1_local, v2_local, v3_local,
+                              v4_local, v5_local, v6_local, v7_local])
+    # Transform local corners into global coordinates.
+    corners = (R3x3 @ local_corners.T).T + center.T
+
+    return corners
+
+
+def visualize_bbox_3d(point_cloud: np.ndarray, bbox_data: dict) -> None:
+    """
+    Visualizes a 3D point cloud and its bounding box using Matplotlib.
+        bbox_data details in bbox_functions -> extract_bounding_box
+    """
+    # Visualization parameters.
+    point_size = 1
+    bbox_opacity = 0.3
+    bbox_edge_color = 'k'
+    bbox_face_color = 'red'
+
+    # Create figure and 3D axes.
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+
+    # Plot the point cloud.
+    ax.scatter(point_cloud[:, 0], point_cloud[:, 1], point_cloud[:, 2],
+               s=point_size, color='blue', alpha=0.6)
+
+    # Compute the eight corners of the bounding box.
+    corners = compute_bbox_corners(bbox_data)
+
+    # Define the six faces using the indices of the corners.
+    faces = [
+        [corners[0], corners[1], corners[2], corners[3]],  # bottom face
+        [corners[4], corners[5], corners[6], corners[7]],  # top face
+        [corners[0], corners[1], corners[5], corners[4]],  # front face
+        [corners[3], corners[2], corners[6], corners[7]],  # back face
+        [corners[1], corners[2], corners[6], corners[5]],  # right face
+        [corners[0], corners[3], corners[7], corners[4]]  # left face
+    ]
+
+    # Create a Poly3DCollection for the bounding box faces.
+    bbox_mesh = Poly3DCollection(faces, alpha=bbox_opacity,
+                                 facecolor=bbox_face_color, edgecolor=bbox_edge_color)
+    ax.add_collection3d(bbox_mesh)
+
+    # Set equal aspect ratio.
+    ax.set_box_aspect([1, 1, 1])
+    set_axes_equal(ax)
+
+    # Label axes.
+    ax.set_xlabel('X')
+    ax.set_ylabel('Y')
+    ax.set_zlabel('Z')
+
     plt.show()
     return
