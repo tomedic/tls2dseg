@@ -329,7 +329,8 @@ def rotate_pcd_to_azimuth_gap(pcd, image_generation_parameters) -> float:
         min_mask = counts == counts.min()
         chosen_idx = _best_run(min_mask)
 
-    theta_rad = -np.pi - centres[chosen_idx]
+    # Angle between empty space and 0 deg direction:
+    theta_rad = centres[chosen_idx] - (-np.pi)
     theta_deg = np.rad2deg(theta_rad)
 
     # -------------------------------------------------

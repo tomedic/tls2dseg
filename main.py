@@ -1,6 +1,6 @@
 # Point Cloud Segmentation Using 2D point cloud representation and DL foundational models (e.g. GroundedSAM)
 # Author: Tomislav Medic & ChatGPT, 22.04.2025
-
+import gc
 # TODO: THIS IS A QUICK-FIX -> remove and do everything properly for pip installable project!
 import sys
 import os
@@ -74,7 +74,7 @@ task_parameters = {'input_path': "./data/wheat_heads/",  # Set path to input poi
 
 # Wheat-heads settings:
 pcp_parameters = {'output_resolution': 0.003,  # Subsample point cloud
-                  'range_limits': [0., 5.],  # All points further then will be discarded
+                  'range_limits': [0., 3.],  # All points further then will be discarded
                   'roi_limits': [-12.5, -0.8, 491.7, 0.3, 7.5, 493.7],  # only region of interest (3D bounding box) is to be analyzed
                   'keep_confidences': False  # keep confidence
                   }
@@ -129,11 +129,12 @@ inference_models_parameters = {'with_slice_inference': True,
                                'sam_box_prompt_batch_size': 16}
 
 # Additional parameters for slice inference (necessary only if inference with SAHI)
-slice_inference_parameters = {'slice_width_height': (200, 200),
-                              'overlap_width_height': (50, 50),
+slice_inference_parameters = {'slice_width_height': (400, 400),
+                              'overlap_width_height': (0, 0),
                               'iou_threshold': 0.80,
                               'overlap_filter_strategy': 'nms',
                               'large_object_removal_threshold': 0.10,
+                              'empty_slice_removal_threshold': 0.95,
                               'thread_workers': 16}
 
 # Parameters defining how to get 3d objects from 2d detections + SAM2 masks
@@ -321,11 +322,18 @@ def main():
             if pcp_parameters["keep_confidences"]:
                 project_a_mask_2_pcd_as_scalarfield(pcd_ij, mask=confidence_mask, mask_name="confidence")
 
+            del instance_mask, semantic_mask, confidence_mask
+            gc.collect()
+
             # Remove background class (if task = object detection)
             pcd_ij = remove_unclassified_points(pcd_ij, task_parameters)
             # Remove too small object detections
             pcd_ij = remove_small_instances(pcd_ij, d3d_parameters)
+
             # Transform point cloud to global (project-related) coordinate system
+            #   first correct for rotation theta_deg used for more efficient spherical image generation
+            rotate_pcd_around_z(pcd_ij, theta=-theta_deg)
+            #   then toggle to PRCS
             pcd_ij = toggle_socs2prcs(pcd_ij)
 
             # Save individual station point clouds (currently aligned in PRCS, if toggle_socs2prcs works)
@@ -339,6 +347,12 @@ def main():
             # TODO: Possible additions/modifications to get_detections3d (check OneNote notes)
             d3d_i = get_detections3d(pcd_ij, pcd_ij_id, d3d_parameters, pcp_parameters)
             d3d_collection.append(d3d_i)
+
+            del pcd_ij, d3d_i
+            gc.collect()
+
+    del pcd, images_pcd_i, image_j, image_j_numpy
+    gc.collect()
 
     # All point clouds looped through
     # ------------------------------------------------------------------------------------------------------------------

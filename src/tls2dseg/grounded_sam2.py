@@ -91,6 +91,35 @@ def callback(image_slice: np.ndarray, text_prompt: str, gdino_processor: AutoPro
      - scipy csr_matrix stored as detections.data["sparse_masks"])
     '''
 
+    # 0. Check for early termination
+    # ------------------------------------------------------------------------------------------------------------------
+
+    # Create empty detections object for early terminations:
+    def return_empty_detections() -> sv.Detections:
+        empty_detections = sv.Detections(xyxy=np.empty((0, 4)), confidence=np.array([]), class_id=np.array([]))
+        empty_detections.data["sparse_masks"] = []
+        return empty_detections
+
+    # Check if image slice is predominantly empty space:
+    max_val = np.max(image_slice)
+    max_count = np.count_nonzero(image_slice == max_val)
+    all_count = image_slice.size
+    #   if more pixels than a threshold have value = max_val -> slice predominantly empty and will not be processed
+    empty_slice_removal_threshold = slice_inference_parameters['empty_slice_removal_threshold']
+    if (max_count/all_count) > empty_slice_removal_threshold:
+        return return_empty_detections()
+
+    # Check if slice height and width as big as expected (if not skip this slice)
+    # TODO: Warning: this assures no code crashes, but does not process the image edges! (consider better solution)
+
+    #   get real image slice height and width
+    slice_height, slice_width = image_slice.shape[:2]
+    #   get expected image slice height and width
+    slice_height_expected, slice_width_expected = slice_inference_parameters["slice_width_height"]
+    #   if not matching -> exit
+    if slice_height != slice_height_expected or slice_width != slice_width_expected:
+        return return_empty_detections()
+
     # 1. Prepare data
     # __________________________________________________________________________________________________________________
 
@@ -98,17 +127,6 @@ def callback(image_slice: np.ndarray, text_prompt: str, gdino_processor: AutoPro
     # Optional: change dtype to 'uint8' or 'float32'; broadcast channels instead of repeating them (memory save)
     image_slice = img_1to3_channels_encoding(image_slice, normalize='0-1', output_dtype='float32',
                                              replace_nan_with='max', broadcast=True)
-
-    # Get image slice height and width
-    slice_height, slice_width = image_slice.shape[:2]
-
-    # Check if slice height and width as big as expected (if not skip this slice)
-    # TODO: Warning: this assures no code crashes, but does not process the image edges! (consider better solution)
-    slice_height_expected, slice_width_expected = slice_inference_parameters["slice_width_height"]
-    if slice_height != slice_height_expected or slice_width != slice_width_expected:
-        detections = sv.Detections(xyxy=np.empty((0, 4)), confidence=np.array([]), class_id=np.array([]))
-        detections.data["sparse_masks"] = []
-        return detections
 
     # 2. Run Grounded DINO
     # __________________________________________________________________________________________________________________
@@ -171,19 +189,18 @@ def callback(image_slice: np.ndarray, text_prompt: str, gdino_processor: AutoPro
     gc.collect()
 
     if not class_names:
-        detections = sv.Detections(xyxy=np.empty((0, 4)), confidence=np.array([]), class_id=np.array([]))
-        detections.data["sparse_masks"] = []
-        return detections
+        return return_empty_detections()
 
     # 4. Run SAM2 (and store sparse masks)
     # __________________________________________________________________________________________________________________
     # Set input for SAM2
+    # Batch detected bounding boxes to avoid memory explosion when running inference with SAM!
+    sam_box_prompt_batch_size = inference_models_parameters["sam_box_prompt_batch_size"]
+    masks = []
+    sparse_masks = []
+
     with sam_lock:
         sam2_predictor.set_image(image_slice)
-
-        # Batch detected bounding boxes to avoid memory explosion when running inference with SAM!
-        sam_box_prompt_batch_size = inference_models_parameters["sam_box_prompt_batch_size"]
-        masks = []
 
         for batch_i in range(0, len(input_boxes), sam_box_prompt_batch_size):
             batch_boxes = input_boxes[batch_i:batch_i + sam_box_prompt_batch_size]
@@ -196,13 +213,19 @@ def callback(image_slice: np.ndarray, text_prompt: str, gdino_processor: AutoPro
                 multimask_output=False,
             )
 
-        # Squeeze out unnecessary dimensions
-        if masks_i.ndim == 4:
-            masks_i = masks_i.squeeze(1)  # convert the shape to (n, H, W)
+            # Squeeze out unnecessary dimensions
+            if masks_i.ndim == 4:
+                masks_i = masks_i.squeeze(1)  # convert the shape to (n, H, W)
+            masks.append(masks_i)
+
+    # Transform masks into a single numpy.ndarray from a list of batches:
+    if masks:
+        masks = np.concatenate(masks, axis=0)
+
         # Store individual masks j of batch i as sparse booleans
-        for mask_j in masks_i:
-            row, column = np.nonzero(mask_j)
-            masks.append(np.vstack((row, column), dtype=np.int32).T)
+        for mask_i in masks:
+            row, column = np.nonzero(mask_i)
+            sparse_masks.append(np.vstack((row, column), dtype=np.int32).T)
 
     # Clear GPU memory
     torch.cuda.empty_cache()
@@ -210,13 +233,13 @@ def callback(image_slice: np.ndarray, text_prompt: str, gdino_processor: AutoPro
 
     # 5. Create an instance of supervision.detections object
     # __________________________________________________________________________________________________________________
-    if not len(masks) == input_boxes.shape[0] == confidences.shape[0] == class_ids.shape[0]:
+    if not len(sparse_masks) == input_boxes.shape[0] == confidences.shape[0] == class_ids.shape[0]:
         raise ValueError("Something went wrong while running Grounded SAM2 with SAHI: "
                          "Not all sv.detection attributes have the same length!",
                          "(attributes: input_boxes, confidences, class_ids, sparse_masks)")
 
     detections = sv.Detections(xyxy=input_boxes, confidence=confidences, class_id=class_ids)
-    detections.data["sparse_masks"] = masks
+    detections.data["sparse_masks"] = sparse_masks
 
     return detections
 
