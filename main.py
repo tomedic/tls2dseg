@@ -130,16 +130,16 @@ inference_models_parameters = {'with_slice_inference': True,
                                'text_threshold': 0.15,  # 0.25
                                'sam2-model-config': 'configs/sam2.1/sam2.1_hiera_l.yaml',
                                'sam2-checkpoint': '/scratch/projects/sam2/checkpoints/sam2.1_hiera_large.pt',
-                               'sam_box_prompt_batch_size': 64}
+                               'large_object_removal_threshold': 0.20,
+                               'sam_box_prompt_batch_size': 32}
 
 # Additional parameters for slice inference (necessary only if inference with SAHI)
 slice_inference_parameters = {'slice_width_height': (200, 200),
-                              'overlap_width_height': (100, 100),
+                              'overlap_width_height': (50, 50),
                               'iou_threshold': 0.80,
                               'overlap_filter_strategy': 'nms',
-                              'large_object_removal_threshold': 0.20,
                               'empty_slice_removal_threshold': 0.95,
-                              'thread_workers': 16}
+                              'thread_workers': 12}
 
 # Parameters defining how to get 3d objects from 2d detections + SAM2 masks
 d3d_parameters = {'bounding_box_type': 'obb',
