@@ -104,3 +104,17 @@ def get_segmented_and_merged_point_cloud(pcd_ij_collection: list, d3d_collection
             pcd_all.scalar_fields.remove_field("merge_id")
 
     return pcd_all
+
+
+def small_cluster_removal(clusters_ids, d3d_parameters) -> np.ndarray:
+    threshold = d3d_parameters["small_cluster_removal_threshold"]
+    # Find unique values and their counts
+    unique_ids, count_ids = np.unique(clusters_ids, return_counts=True)
+    # Identify too small clusters
+    small_clusters = unique_ids[count_ids < threshold]
+    # Build mask of positions to zero out
+    mask = np.isin(clusters_ids, small_clusters)
+    # Zero out small clusters and return
+    cluster_ids_new = clusters_ids.copy()
+    cluster_ids_new[mask] = 0
+    return cluster_ids_new

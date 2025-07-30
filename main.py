@@ -80,7 +80,9 @@ pcp_parameters = {'output_resolution': 0.003,  # Subsample point cloud
                   'range_limits': [0., 3.],  # All points further then will be discarded
                   'roi_limits': [-12.5, -0.8, 491.7, 0.3, 7.5, 493.7],
                   # only region of interest (3D bounding box) is to be analyzed
-                  'keep_confidences': False  # keep confidence
+                  'keep_confidences': False,  # keep confidence
+                  'assign_random_color_per_instance': True,
+                  'flip_upsidedown_scans': 180,  # falsy -> no-flip, number -> flip about x-axis in deg
                   }
 
 # Image generation parameters:
@@ -131,11 +133,12 @@ inference_models_parameters = {'with_slice_inference': True,
                                'sam2-model-config': 'configs/sam2.1/sam2.1_hiera_l.yaml',
                                'sam2-checkpoint': '/scratch/projects/sam2/checkpoints/sam2.1_hiera_large.pt',
                                'large_object_removal_threshold': 0.20,
+                               'partial_detection_edge_touching_threshold': 5,
                                'sam_box_prompt_batch_size': 32}
 
 # Additional parameters for slice inference (necessary only if inference with SAHI)
 slice_inference_parameters = {'slice_width_height': (200, 200),
-                              'overlap_width_height': (50, 50),
+                              'overlap_width_height': (100, 100),
                               'iou_threshold': 0.80,
                               'overlap_filter_strategy': 'nms',
                               'empty_slice_removal_threshold': 0.95,
@@ -156,6 +159,7 @@ d3d_parameters = {'bounding_box_type': 'obb',
                   'graph_clustering_method': 'leiden',  # 'leiden' | 'hcs' | 'pcc'
                   'min_supporters': 2,  # min. number of supporters necessary for a valid cluster
                   'leiden_resolution': 1,  # hyp.-p. for 'leiden' (<1 - fewer larger clusters, >1 vice versa)
+                  'small_cluster_removal_threshold': 3,  # How many times a cluster has to appear to be accepted
                   }
 
 
@@ -241,6 +245,14 @@ def main():
 
             # Filter point cloud for ranges and RoI (region of interest)
             filter_pcd_roi_range(pcd, pcp_parameters)
+
+            # Optional: Detect if point cloud upside-down, if yes - flip for theta degrees:
+            test_upsidedown = False
+            if pcp_parameters["flip_upsidedown_scans"]:
+                alpha_deg = pcp_parameters["flip_upsidedown_scans"]
+                test_upsidedown = check_was_scanner_upsidedown(pcd)
+                if test_upsidedown:
+                    rotate_pcd_around_x(pcd, alpha_deg=alpha_deg)
 
             # Rotate point cloud around z (if necessary), return rotation angle theta in degrees
             theta_deg = resolve_rotate_pcd_parameter(pcd, image_generation_parameters)
@@ -346,6 +358,11 @@ def main():
                 #   first correct for rotation theta_deg used for more efficient spherical image generation
                 if theta_deg != 0.0:
                     rotate_pcd_around_z(pcd_ij, theta=-theta_deg)
+
+                # second: correct for rotation alpha_deg for flipping upside-down scans
+                if test_upsidedown:
+                    rotate_pcd_around_x(pcd, alpha_deg=-alpha_deg)
+
                 #   then toggle to PRCS
                 pcd_ij = toggle_socs2prcs(pcd_ij)
 
@@ -433,11 +450,15 @@ def main():
                                     method=clustering_method, min_supporters=min_supporters,
                                     leiden_resolution=leiden_resolution)
 
-    # TODO: Implement kicking-out clusters with too small support (ID appearing only once or twice)
-
+    # Kicking-out clusters with too small support (ID appearing less than a threshold times)
+    clusters_ids = small_cluster_removal(clusters_ids, d3d_parameters)
 
     # Assign new instance labels to point clouds and merge them together
     pcd_result = get_segmented_and_merged_point_cloud(pcd_ij_collection, d3d_collection, clusters_ids, pcp_parameters)
+
+    # Replace pcd RGB colour by random colors for each instance
+    if pcp_parameters['assign_random_color_per_instance'] is True:
+        color_pcd_instances_by_random(pcd_result)
 
     # Save point cloud with final results
     save_segmented_pcd(data_folder_path, output_dir_pathlib, pcd_result, class_id_map)

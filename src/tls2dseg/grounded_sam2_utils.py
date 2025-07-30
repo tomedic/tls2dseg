@@ -96,9 +96,43 @@ def remove_too_large_detections(input_boxes, class_names, class_ids, confidences
 
     # Remove too-large object detections (when approaching SAHI slice-size/area, likely to be erroneous)
     lor_threshold = inference_models_parameters["large_object_removal_threshold"]  # lor = large object removal
+
+    # Early stopping
+    if lor_threshold is None:
+        return input_boxes, class_names, class_ids, confidences
+
+    # Detecting too large instances
     lor_max_area = lor_threshold * slice_width * slice_height  # percentage of SAHI slice area
     input_boxes_areas = (input_boxes[:, 2] - input_boxes[:, 0]) * (input_boxes[:, 3] - input_boxes[:, 1])
     keep_mask = input_boxes_areas < lor_max_area
+
+    # Update main output variables
+    class_names = list(compress(class_names, keep_mask))
+    confidences = confidences[keep_mask]
+    class_ids = class_ids[keep_mask]
+    input_boxes = input_boxes[keep_mask]
+
+    return input_boxes, class_names, class_ids, confidences
+
+
+def remove_detections_touching_image_edges(input_boxes, class_names, class_ids, confidences,
+                                inference_models_parameters, slice_width, slice_height) -> Tuple:
+
+    # How close (in pixels) can a bounding box edge be to an image (or image slice) edge, and still be accepted
+    threshold = inference_models_parameters["partial_detection_edge_touching_threshold"]
+
+    # Early stopping:
+    if threshold is None:
+        return input_boxes, class_names, class_ids, confidences
+
+    # Detect boxes touching left & bottom edge
+    criteria_1 = np.any(input_boxes[:, :2] < threshold, axis=1)
+    # Detect boxes touching right edge
+    criteria_2 = input_boxes[:, 2] > slice_width - threshold
+    # Detect boxes touching top edge
+    criteria_3 = input_boxes[:, 3] > slice_height - threshold
+    # Combine into single keep mask
+    keep_mask = ~ (criteria_1 | criteria_2 | criteria_3)
 
     # Update main output variables
     class_names = list(compress(class_names, keep_mask))
@@ -127,10 +161,15 @@ def post_process_gdino_results(gdino_processor, outputs, inputs, text_prompt, in
     input_boxes, class_names, class_ids, confidences = parse_gdino_results(gdino_results, text_prompt)
 
     #   - remove too-large object detections (when approaching SAHI slice-size/area, likely to be erroneous)
-    input_boxes, class_names, class_ids, confidences = remove_too_large_detections(input_boxes, class_names, class_ids,
-                                                                                   confidences,
-                                                                                   inference_models_parameters,
-                                                                                   slice_width, slice_height)
+    input_boxes, class_names, class_ids, confidences =\
+        remove_too_large_detections(input_boxes, class_names, class_ids, confidences, inference_models_parameters,
+                                    slice_width, slice_height)
+
+    #   - remove detections touching edges
+    input_boxes, class_names, class_ids, confidences =\
+        remove_detections_touching_image_edges(input_boxes, class_names, class_ids, confidences,
+                                               inference_models_parameters, slice_width, slice_height)
+
     #   - everything is empty flag
     if not class_names:
         empty_results_flag = True

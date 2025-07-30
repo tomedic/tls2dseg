@@ -200,6 +200,33 @@ def remove_small_instances(pcd: PointCloudData, d3d_parameters: dict) -> PointCl
     return pcd
 
 
+def color_pcd_instances_by_random(pcd: PointCloudData) -> None:
+    """
+    Assigns a random RGB color to point cloud points, one color per each unique instance in pcd.instances
+    Parameters
+    ----------
+    pcd : PointCloudData
+    """
+    # Extract the per-point instance IDs
+    instances = pcd.scalar_fields["instances"]
+    # Find all unique
+    unique_ids = np.unique(instances)
+    # Generate one random color per unique ID, RGB triplet of uint8
+    colors_for_ids = np.random.randint(low=0, high=256, size=(unique_ids.shape[0], 3), dtype=np.uint8)
+
+    # Build a lookup: instance ID -> row in colors_for_ids
+    id_to_index = {uid: idx for idx, uid in enumerate(unique_ids)}
+
+    # Map each point’s instance to its color
+    colored = np.empty((instances.shape[0], 3), dtype=np.uint8)
+    for i, inst in enumerate(instances):
+        colored[i] = colors_for_ids[id_to_index[inst]]
+
+    # Apply to the point cloud
+    pcd.set_color(colored)
+    # In-place point cloud change
+    return None
+
 
 
 
