@@ -669,6 +669,7 @@ def reduce_image_resolution(set_of_images: list, reduction_coefficient: float, i
         # Convert pyvis object back to numpy
         image_data_i = np.frombuffer(image_data_i.write_to_memory(), dtype=np.float32)
         image_data_i = image_data_i.reshape((height, width))
+        image_data_i = np.clip(image_data_i, 0, 1)
 
         # Save image in intermediate results
         if "output_dir_images" in image_generation_parameters:

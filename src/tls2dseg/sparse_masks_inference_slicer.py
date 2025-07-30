@@ -35,32 +35,13 @@ def move_sparse_masks(
         raise ValueError(f"Offset values must be non-negative integers. Got: {offset}")
 
     # Image slice offsets
-    y_offset, x_offset = offset[1], offset[0]
-    # Full high-resolution image width and height
-    w_image, h_image = resolution_wh[0], resolution_wh[1]
+    yx_offset = offset[::-1]
 
     # Apply offsets:
-    for i, mask_i in enumerate(masks):
+    masks = [mask_i + yx_offset for mask_i in masks]
 
-        # Apply offsets
-        new_row = mask_i[:, 0] + y_offset
-        new_col = mask_i[:, 1] + x_offset
-
-        # Filter out-of-bounds entries (just in case)
-        valid = (
-            (new_row >= 0) & (new_row < h_image) &
-            (new_col >= 0) & (new_col < w_image)
-        )
-
-        # Create new shifted sparse matrix in global space
-        shifted_mask = np.vstack((new_row, new_col), dtype=np.int32).T
-        shifted_mask = shifted_mask[valid]
-
-        # Replace old with new in a list
-        masks[i] = shifted_mask
-
-        # Update detections:
-        detections.data["sparse_masks"] = masks
+    # Update detections:
+    detections.data["sparse_masks"] = masks
 
     return detections
 
