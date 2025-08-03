@@ -229,6 +229,7 @@ def main():
         if how_aggregate_results == "object_memory_bank":
             d3d_collection = []
             pcd_ij_collection = []
+            d2d_collection = []
         else:
             raise ValueError("Chosen results_aggregation_strategy is currently not supported!")
 
@@ -267,21 +268,20 @@ def main():
 
             # Generate images of point cloud i
             print("Generating desired image(s)")
-            images_pcd_i = pc2img_run(pcd, pcd_path_i, image_generation_parameters, image_width, image_height)
+            images_of_pcd_i = pc2img_run(pcd, pcd_path_i, image_generation_parameters, image_width, image_height)
 
             # Reducing image resolution (if necessary),
             #   + getting rid of NaN values & casting image to float32 (if not already float32)
             if reduction_coefficient < 1:
                 print("Reducing image resolution")
-                images_pcd_i = reduce_image_resolution(images_pcd_i, reduction_coefficient, image_generation_parameters,
-                                                       pcd_path_i)
-
-                # Get new image width and height
-                image_height, image_width = images_pcd_i[0][1].shape
+                images_of_pcd_i = reduce_image_resolution(images_of_pcd_i, reduction_coefficient,
+                                                          image_generation_parameters, pcd_path_i)
 
             # TODO: Initializing and testing SAM2 everything -> nicely incorporate in the code (how:
             #  semantic segmentation on intensity + instance segmentation SAM2everything on range, combine)
-            # image_test = images_pcd_i[1][1]
+            # Get new image width and height
+            # image_height, image_width = images_of_pcd_i[0][1].shape
+            # image_test = images_of_pcd_i[1][1]
             # sam2_everything = initialize_sam2_everyting(inference_models_parameters)
             # masks = run_sam2_everything(image_test, sam2_everything, inference_models_parameters)
 
@@ -293,12 +293,11 @@ def main():
             # 2. Inference: Instance + semantic segmentation -----------------------------------------------------------
 
             # Run Grounded SAM2 inference (for all images of a point cloud pcd_i)
-            for i, image_j in enumerate(images_pcd_i):
+            for j, image_j in enumerate(images_of_pcd_i):
                 pcd_ij_id += 1
                 image_j_numpy = image_j[1]
-                # Transform 1 channel (float) ndarray into 3channel (8bit) - "grayscale" to "rgb"
-                # image_j_numpy = convert_to_image(image_j_numpy, "max", normalize=True, colormap='gray')
 
+                # TODO: modify text description -> sparse masks!
                 # results [dict]: 'masks' with M x w x h (M = mask number, w = width, h = height),
                 #                  'input_boxes' with input boinding boxes,
                 #                  'confidences' with confidence scores,
@@ -318,12 +317,10 @@ def main():
                                                 gdino_processor=gdino_processor, sam2_predictor=sam2_predictor,
                                                 inference_models_parameters=inference_models_parameters)
 
-                images_pcd_i[i] = (images_pcd_i[i][0], image_j_numpy, images_pcd_i[i][2])
-
                 # Save object detection (gdino) and segmentation (SAM2) results as .jpeg images and corresponding data in .json:
                 if save_intermediate_results:
                     print("Saving intermediate results")
-                    save_gsam2_results(image=images_pcd_i[i], results=results,
+                    save_gsam2_results(image=images_of_pcd_i[j], results=results,
                                        inference_models_parameters=inference_models_parameters)
 
                 # From individual per-object bool masks get:
@@ -332,16 +329,19 @@ def main():
                 #   - class_id_map which maps semantic classes provided in text_prompt to semantic class IDs
                 print("Getting unified instance and semantic mask from individual masks")
                 # instance_mask, semantic_mask, class_id_map = get_instance_and_semantic_mask(results, text_prompt)
-                image_hw = image_j_numpy.shape[:2]
                 instance_mask, semantic_mask, confidence_mask, class_id_map = \
-                    get_instance_and_semantic_mask_with_confidence(results, text_prompt, image_hw)
+                    get_instance_and_semantic_mask_with_confidence(results, text_prompt,
+                                                                   image_hw=image_j_numpy.shape[:2])
+
+                # Get per-mask depths:
+                n_workers = slice_inference_parameters["thread_workers"]
+                get_per_mask_depth_parallel(results, images_of_pcd_i, n_workers)
+
 
                 # Add the generated masks to ImageStack related to the point cloud pcd
                 print("Lifting 2d masks to 3d")
-
                 # Create a point cloud copy for further data processing:
                 pcd_ij = pcd.copy()
-
                 project_masks2pcd_as_scalarfields(pcd_ij, instance_mask, semantic_mask)
                 if pcp_parameters["keep_confidences"]:
                     project_a_mask_2_pcd_as_scalarfield(pcd_ij, mask=confidence_mask, mask_name="confidence")
@@ -351,6 +351,7 @@ def main():
 
                 # Remove background class (if task = object detection)
                 pcd_ij = remove_unclassified_points(pcd_ij, task_parameters)
+                # TODO: REMOVE THIS ONCE OUTLIER-REMOVAL IN PLACE:
                 # Remove too small object detections
                 pcd_ij = remove_small_instances(pcd_ij, d3d_parameters)
 
@@ -372,6 +373,8 @@ def main():
 
                 # Save segmented point cloud
                 pcd_ij_collection.append(pcd_ij)
+                # Save 2d detections (bounding boxes, masks, confidences, class_ids,...)
+                d2d_collection.append(results)
 
                 # Extract per-instance metadata:
                 # TODO: Possible additions/modifications to get_detections3d (check OneNote notes)
@@ -381,7 +384,7 @@ def main():
                 del pcd_ij, d3d_i
                 gc.collect()
 
-        del pcd, images_pcd_i, image_j, image_j_numpy
+        del pcd, images_of_pcd_i, image_j, image_j_numpy
         gc.collect()
 
         # All point clouds looped through

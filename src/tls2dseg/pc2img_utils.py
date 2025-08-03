@@ -12,6 +12,7 @@ from sklearn.neighbors import NearestNeighbors
 import re
 import pyvips
 from typing import Union, Literal
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
 
 def pc2img_run(pcd: PointCloudData, pcd_path: Path, image_generation_parameters: dict,
@@ -811,3 +812,51 @@ def img_1to3_channels_encoding(img: np.ndarray, output_dtype: Union[str, np.dtyp
         img = np.repeat(img[..., None], 3, axis=2)
 
     return img
+
+
+def get_per_mask_depth(detections_2d: dict, images_of_pcd_i: list) -> dict:
+    # Add a new field to detections_2d "object_distance" for each mask
+    # Get masks:
+    masks = detections_2d["masks"]
+    # Get range image:
+    image_features = [i for i in images_of_pcd_i[0]]
+    range_image_index = image_features.index("range")
+    range_image = images_of_pcd_i[range_image_index][1]
+
+    object_distances = np.empty(len(masks), dtype=np.float32)
+    for i, mask_i in enumerate(masks):
+        mask_ranges = range_image[mask_i[:, 0], mask_i[:, 1]]
+        object_distances[i] = np.nanmedian(mask_ranges)
+
+    detections_2d["object_distances"] = object_distances
+
+    return detections_2d
+
+
+def get_per_mask_depth_parallel(detections_2d: dict, images_of_pcd_i: list, n_jobs: int = None) -> dict:
+    # Add a new field to detections_2d "object_distance" for each mask
+    # Helper function:
+    def _compute_mask_median(args):
+        mask, range_image = args
+        # extract all range values under this mask, compute nan-median
+        return np.nanmedian(range_image[mask[:, 0], mask[:, 1]])
+
+    # Get masks:
+    masks = detections_2d["masks"]
+    # pull out the range image the same way you already do:
+    image_features = [i for i in images_of_pcd_i[0]]
+    range_image_index = image_features.index("range")
+    range_image = images_of_pcd_i[range_image_index][1]
+
+    # prep arguments so each worker gets (mask, range_image)
+    work_items = [(mask, range_image) for mask in masks]
+
+    object_distances = np.empty(len(masks), dtype=np.float32)
+    with ProcessPoolExecutor(max_workers=n_jobs) as exe:
+        # map returns in order if you use executor.map
+        for i, med in enumerate(exe.map(_compute_mask_median, work_items)):
+            object_distances[i] = med
+
+    detections_2d["object_distances"] = object_distances
+    return detections_2d
+
