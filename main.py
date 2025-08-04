@@ -51,6 +51,7 @@ from src.tls2dseg.pc_preprocessing import *
 from src.tls2dseg.parameters_check import *
 from src.tls2dseg.detections_3d import *
 from src.tls2dseg.graph_clustering import *
+from src.tls2dseg.detections_2d import *
 
 # I/0 parameters:
 # pcd_path = "./data/wheat_heads_small.e57"  # Set path to point cloud
@@ -64,7 +65,8 @@ task_parameters = {'input_path': "./data/wheat_heads/",  # Set path to input poi
                    'output_path': "./results",  # Set path for storing the results
                    'save_intermediate_results': True,  # Save intensity images, gDINO and SAM2 outputs
                    'task': "object_detection",  # Task choice
-                   'results_aggregation_strategy': "object_memory_bank"  # OUT type choice: memory bank vs. voxel-grid
+                   'results_aggregation_strategy': "object_memory_bank",  # OUT type choice: memory bank vs. voxel-grid
+                   'n_workers': 12,  # Number of workers for parallel processing, default choices: 1 or N_cpu_cores -1
                    }
 
 # PointCloud processing parameters
@@ -141,8 +143,7 @@ slice_inference_parameters = {'slice_width_height': (200, 200),
                               'overlap_width_height': (100, 100),
                               'iou_threshold': 0.80,
                               'overlap_filter_strategy': 'nms',
-                              'empty_slice_removal_threshold': 0.95,
-                              'thread_workers': 12}
+                              'empty_slice_removal_threshold': 0.95}
 
 # Parameters defining how to get 3d objects from 2d detections + SAM2 masks
 d3d_parameters = {'bounding_box_type': 'obb',
@@ -184,6 +185,9 @@ def main():
     # Set device
     device = "cuda" if torch.cuda.is_available() else "cpu"  # Set inference hardware
     inference_models_parameters['device'] = device  # Add to model parameters dictionary
+
+    # Set other parameters
+    slice_inference_parameters["thread_workers"] = task_parameters['n_workers']
 
     # Set the environment settings (this is necessary for SAM)
     # use bfloat16 where ok, otherwise float32
@@ -317,6 +321,9 @@ def main():
                                                 gdino_processor=gdino_processor, sam2_predictor=sam2_predictor,
                                                 inference_models_parameters=inference_models_parameters)
 
+                # Get per-mask depths:
+                get_per_mask_depth_parallel(results, images_of_pcd_i, n_jobs=task_parameters['n_workers'])
+
                 # Save object detection (gdino) and segmentation (SAM2) results as .jpeg images and corresponding data in .json:
                 if save_intermediate_results:
                     print("Saving intermediate results")
@@ -332,11 +339,6 @@ def main():
                 instance_mask, semantic_mask, confidence_mask, class_id_map = \
                     get_instance_and_semantic_mask_with_confidence(results, text_prompt,
                                                                    image_hw=image_j_numpy.shape[:2])
-
-                # Get per-mask depths:
-                n_workers = slice_inference_parameters["thread_workers"]
-                get_per_mask_depth_parallel(results, images_of_pcd_i, n_workers)
-
 
                 # Add the generated masks to ImageStack related to the point cloud pcd
                 print("Lifting 2d masks to 3d")
@@ -376,12 +378,7 @@ def main():
                 # Save 2d detections (bounding boxes, masks, confidences, class_ids,...)
                 d2d_collection.append(results)
 
-                # Extract per-instance metadata:
-                # TODO: Possible additions/modifications to get_detections3d (check OneNote notes)
-                d3d_i = get_detections3d(pcd_ij, pcd_ij_id, d3d_parameters, pcp_parameters)
-                d3d_collection.append(d3d_i)
-
-                del pcd_ij, d3d_i
+                del pcd_ij
                 gc.collect()
 
         del pcd, images_of_pcd_i, image_j, image_j_numpy
@@ -393,27 +390,40 @@ def main():
         # Pickle and save detections
         if save_intermediate_results is True:
             # Set paths
-            detections3d_output_dir = inference_models_parameters['detections3d_output_dir']
-            odir_pcd_collection = detections3d_output_dir / Path("pcd_ij_collection.pkl")
-            odir_d3d_collection = detections3d_output_dir / Path("3d3_collection.pkl")
+            stage1_output_dir = inference_models_parameters['stage1_output_dir']
+            odir_pcd_collection = stage1_output_dir / Path("pcd_ij_collection.pkl")
+            odir_d2d_collection = stage1_output_dir / Path("d2d_collection.pkl")
             # Save data
             with open(odir_pcd_collection, 'wb') as f:
                 pickle.dump(pcd_ij_collection, f)
-            with open(odir_d3d_collection, 'wb') as f:
+            with open(odir_d2d_collection, 'wb') as f:
                 pickle.dump(d3d_collection, f)
 
     else:
         # Set paths
-        detections3d_output_dir = inference_models_parameters['detections3d_output_dir']
-        odir_pcd_collection = detections3d_output_dir / Path("pcd_ij_collection.pkl")
-        odir_d3d_collection = detections3d_output_dir / Path("3d3_collection.pkl")
+        stage1_output_dir = inference_models_parameters['stage1_output_dir']
+        odir_pcd_collection = stage1_output_dir / Path("pcd_ij_collection.pkl")
+        odir_d2d_collection = stage1_output_dir / Path("d2d_collection.pkl")
         # Load data
         with open(odir_pcd_collection, 'rb') as f:
             pcd_ij_collection = pickle.load(f)
-        with open(odir_d3d_collection, 'rb') as f:
-            d3d_collection = pickle.load(f)
+        with open(odir_d2d_collection, 'rb') as f:
+            d2d_collection = pickle.load(f)
 
     # SECOND PART OF THE CODE: -----------------------------------------------------------------------------------------
+
+    # 2D masks-based outlier removal:
+    d2d_collection = merge_list_of_2d_detections(d2d_collection)
+
+    d2d_collection, outliers_ids = d2d_outlier_removal(d2d_collection, task_parameters, per_class_separation=False,
+                                                       confidence_interval=0.99)
+
+
+
+    # Extract per-instance metadata:
+    # TODO: Possible additions/modifications to get_detections3d (check OneNote notes)
+    d3d_i = get_detections3d(pcd_ij, pcd_ij_id, d3d_parameters, pcp_parameters)
+    d3d_collection.append(d3d_i)
 
     # Merge all Detections3D objects into 1 large object
     d3d_collection = merge_detections3d(d3d_collection)

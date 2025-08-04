@@ -127,7 +127,7 @@ def save_segmented_pcd_ij(pcd_path_pathlib: Path, pcd: PointCloudData, inference
                                 class_id_map: dict, image_j: tuple):
     # Save segmented point cloud and related transformation parameters
     print("Saving Single-station point clouds")
-    output_dir_socs_pcds = inference_models_parameters['output_dir_socs_pcds']
+    output_dir_socs_pcds = inference_models_parameters['output_dir_segmented_pcds']
     feature_name = "_" + image_j[0]
     if pcd.xyz_is_prcs:
         cs_name = "_prcs"
