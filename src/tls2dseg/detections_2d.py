@@ -1,8 +1,6 @@
 import numpy as np
-from joblib import Parallel, delayed
-from sklearn.covariance import MinCovDet
-from scipy.stats import chi2
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from src.tls2dseg.statistics_generalizable import multivariate_normal_outlier_removal
 
 
 def merge_list_of_2d_detections(dict_list: list[dict]) -> dict:
@@ -98,59 +96,9 @@ def _compute_2d_mask_features(mask_xy: np.ndarray, rng: float) -> np.ndarray:
 
     return features
 
-
-def robust_fit_multivariate_normal(data) -> tuple[np.ndarray, np.ndarray]:
-    """
-    Robust fit of Gaussian/Normal distribution using the Minimum Covariance Determinant estimator.
-
-    Parameters:
-      data: numpy array of shape (n_samples, n_dimensions)
-
-    Returns:
-      mean: Estimated nD mean.
-      cov:  Robust covariance matrix.
-    """
-    mcd = MinCovDet().fit(data)
-    mean = mcd.location_
-    cov = mcd.covariance_
-    return mean, cov
-
-
-def get_mahalanobis_distance(data, mean, cov) -> np.ndarray:
-    """
-    Compute the Mahalanobis distance for each data point.
-
-    Parameters:
-      data: numpy array of shape (n_samples, n_dimensions)
-      mean: Mean vector from robust_gaussian_fit.
-      cov: Covariance matrix from robust_gaussian_fit.
-
-    Returns:
-      m_dist: 1D array of Mahalanobis distances.
-    """
-    diff = data - mean
-    cov += 1e-6 * np.eye(cov.shape[0])  # for numerical stability
-    inv_cov = np.linalg.inv(cov)
-    left_term = np.dot(diff, inv_cov)
-    mh_dist = np.sqrt(np.sum(left_term * diff, axis=1))
-    return mh_dist
-
-
-def multivariate_normal_outlier_removal(data: np.ndarray, quantile: float = 0.99) -> np.ndarray:
-
-    # Robustly fit multivariate normal distribution to data
-    mean, cov = robust_fit_multivariate_normal(data)
-    # Get mahalanobis distance to each point
-    mh_dist = get_mahalanobis_distance(data, mean, cov)
-    # Get degrees of freedom
-    df = data.shape[1]
-    # Get chi2 test value
-    chi2_val = chi2.ppf(q=quantile, df=df)
-    # Detect outliers
-    is_outlier = mh_dist > np.sqrt(chi2_val)
-
-    return is_outlier
-
+def _compute_2d_mask_features_worker(args):
+    mask, rng = args
+    return _compute_2d_mask_features(mask, rng)
 
 def d2d_outlier_removal(d2d_collection: dict, task_parameters: dict, per_class_separation: bool = False,
                         confidence_interval: float = 0.99) -> tuple[dict, np.ndarray]:
@@ -168,7 +116,7 @@ def d2d_outlier_removal(d2d_collection: dict, task_parameters: dict, per_class_s
     features_or = np.empty((len(masks), 5), dtype=np.float32)
     #   run computing PCA-based features in parallel
     with ProcessPoolExecutor(max_workers=n_jobs) as exe:
-        for i, feat in enumerate(exe.map(lambda t: _compute_2d_mask_features(*t), work_items)):
+        for i, feat in enumerate(exe.map(_compute_2d_mask_features_worker, work_items)):
             features_or[i] = feat
 
     # Collapse different classes (optional):

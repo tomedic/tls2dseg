@@ -52,6 +52,7 @@ from src.tls2dseg.parameters_check import *
 from src.tls2dseg.detections_3d import *
 from src.tls2dseg.graph_clustering import *
 from src.tls2dseg.detections_2d import *
+from src.tls2dseg.pcd_collection import *
 
 # I/0 parameters:
 # pcd_path = "./data/wheat_heads_small.e57"  # Set path to point cloud
@@ -60,13 +61,14 @@ from src.tls2dseg.detections_2d import *
 
 # Task & I/0 parameters:
 task_parameters = {'input_path': "./data/wheat_heads/",  # Set path to input point clouds
-                   'checkpoint': False,  # if checkpoint True, start from already generated 3d3
+                   'checkpoint': True,  # if checkpoint True, start from already generated 3d3
                    'file_format': "e57",
                    'output_path': "./results",  # Set path for storing the results
                    'save_intermediate_results': True,  # Save intensity images, gDINO and SAM2 outputs
                    'task': "object_detection",  # Task choice
                    'results_aggregation_strategy': "object_memory_bank",  # OUT type choice: memory bank vs. voxel-grid
                    'n_workers': 12,  # Number of workers for parallel processing, default choices: 1 or N_cpu_cores -1
+                   'save_d2d': False,
                    }
 
 # PointCloud processing parameters
@@ -79,7 +81,7 @@ task_parameters = {'input_path': "./data/wheat_heads/",  # Set path to input poi
 
 # Wheat-heads settings:
 pcp_parameters = {'output_resolution': 0.003,  # Subsample point cloud
-                  'range_limits': [0., 3.],  # All points further then will be discarded
+                  'range_limits': [0., 5.],  # All points further then will be discarded
                   'roi_limits': [-12.5, -0.8, 491.7, 0.3, 7.5, 493.7],
                   # only region of interest (3D bounding box) is to be analyzed
                   'keep_confidences': False,  # keep confidence
@@ -125,13 +127,13 @@ image_generation_parameters = {'image_width': "scan_resolution",  # Scan-resolut
 # text_prompt = "wall.ceiling.plants.plant pot.leaf.leaves.desk.chair.bag.table.keyboard.floor.window.monitor"
 # text_prompt = "pine. pine tree"
 # text_prompt = "rock.stone.boulder.cliff.tree.pine"
-text_prompt = "wheat.wheat head.wheat ear.wheat spike.wheat spikelet.wheat grain.wheat fruit"
+text_prompt = "wheat.wheat head.wheat ear.wheat spike.wheat stalk.leaf.stem"
 
 # Inference model parameters:
 inference_models_parameters = {'with_slice_inference': True,
                                'bbox_model_id': 'IDEA-Research/grounding-dino-base',
-                               'box_threshold': 0.15,  # 0.35
-                               'text_threshold': 0.15,  # 0.25
+                               'box_threshold': 0.12,  # 0.35
+                               'text_threshold': 0.12,  # 0.25
                                'sam2-model-config': 'configs/sam2.1/sam2.1_hiera_l.yaml',
                                'sam2-checkpoint': '/scratch/projects/sam2/checkpoints/sam2.1_hiera_large.pt',
                                'large_object_removal_threshold': 0.20,
@@ -149,18 +151,18 @@ slice_inference_parameters = {'slice_width_height': (200, 200),
 d3d_parameters = {'bounding_box_type': 'obb',
                   'centroid_type': 'bbox_c',
                   'preprocess': True,
-                  'min_d3d_pcd_point_count': 50,
+                  'min_d3d_pcd_point_count': 25,
                   'merge_inst_of_same_class_only': False,
                   'sparse_connectivity_method': 'knn',  # Literal['knn','radius']
-                  'sparse_connectivity_threshold': 2,  # 'knn' -> k of nn per scan; 'radius' -> nn radius [m]
+                  'sparse_connectivity_threshold': 1,  # 'knn' -> k of nn per scan; 'radius' -> nn radius [m]
                   'supporters_iou_threshold': 0.15,  # necessary IoU between 3d bbox for signif. overlap
                   'remove_outliers_by_support': True,  # remove Detections3D if too large support (under-segmented)
                   'outlier_detection_method': 'negative_binomial',  # "iqr","mad","percentile","negative_binomial"
                   'outlier_detection_threshold': 0.01,  # different for each method, see fun. description
-                  'graph_clustering_method': 'leiden',  # 'leiden' | 'hcs' | 'pcc'
+                  'graph_clustering_method': 'hcs',  # 'leiden' | 'hcs' | 'pcc'
                   'min_supporters': 2,  # min. number of supporters necessary for a valid cluster
                   'leiden_resolution': 1,  # hyp.-p. for 'leiden' (<1 - fewer larger clusters, >1 vice versa)
-                  'small_cluster_removal_threshold': 3,  # How many times a cluster has to appear to be accepted
+                  'small_cluster_removal_threshold': 2,  # How many times a cluster has to appear to be accepted
                   }
 
 
@@ -182,6 +184,14 @@ def main():
     if save_intermediate_results:
         make_output_folders(output_dir_pathlib, image_generation_parameters, inference_models_parameters)
 
+    # Check if some point clouds already processed (step 1/2):
+    stage1_odir_partial = output_dir_pathlib / "intermediate" / "stage_1_partial"
+    stage1_odir_partial.mkdir(parents=True, exist_ok=True)
+    d3d_partial_paths = list(stage1_odir_partial.glob(f"d3d_ij_*.pkl"))
+    pcd_partial_paths = list(stage1_odir_partial.glob(f"pcd_ij_*.pkl"))
+    d3d_map = {id_from_path(p): p for p in d3d_partial_paths}
+    pcd_map = {id_from_path(p): p for p in pcd_partial_paths}
+
     # Set device
     device = "cuda" if torch.cuda.is_available() else "cpu"  # Set inference hardware
     inference_models_parameters['device'] = device  # Add to model parameters dictionary
@@ -202,6 +212,10 @@ def main():
     gdino_model, gdino_processor = initialize_gdino(inference_models_parameters)
     sam2_predictor = initialize_sam2(inference_models_parameters)
 
+    # Update hyper-parameters
+    inference_models_parameters['large_object_removal_threshold'] = inference_models_parameters[
+        'large_object_removal_threshold']
+
     # Get dictionary mapping "semantic classes" to unique IDs and vice versa (+ save in results)
     keys = text_prompt.split('.')  # → ['house','window','bicycle','door','grass','leaf']
     class_id_map = {k: i + 1 for i, k in enumerate(keys)}  # → {'house':1, 'window':2, ..., 'leaf':6}
@@ -210,10 +224,6 @@ def main():
     inverted_map_path = output_dir / Path('class_names_id_map.txt')
     with open(str(inverted_map_path), 'w', encoding='ascii') as f:
         json.dump(inverted_id_map, f, ensure_ascii=True)
-
-    # Update hyper-parameters
-    inference_models_parameters['large_object_removal_threshold'] = slice_inference_parameters[
-        'large_object_removal_threshold']
 
     # 1. Point Cloud Processing
     # ______________________________________________________________________________________________________________
@@ -224,26 +234,42 @@ def main():
     pcd_file_paths = list(data_folder_path.glob(f"*.{file_format}"))
     n_scans = len(pcd_file_paths)
 
-    # Jump over segmentation if already solved
+    # Generate SegPCDCollection object:
+    features = image_generation_parameters['features']
+    n_features = len(features)
+    # Jump over segmentation if already fully solved
     checkpoint = task_parameters['checkpoint']
-    if checkpoint is False:
+
+    have_processed_all = False
+    if len(pcd_map) == n_scans * n_features and len(d3d_map) == n_scans * n_features:
+        have_processed_all = True
+
+    # Start the inference loop if no wish to start from checkpoint or not all pcds already processed:
+    if not checkpoint or not have_processed_all:
 
         # Set-up results structure
         how_aggregate_results = task_parameters["results_aggregation_strategy"]
+        pcd_collection = SegPCDCollection(raw_pcd_paths=pcd_file_paths, features=features,
+                                          class_id_map=class_id_map)
         if how_aggregate_results == "object_memory_bank":
             d3d_collection = []
-            pcd_ij_collection = []
-            d2d_collection = []
+            if task_parameters['save_d2d']:
+                d2d_collection = []
         else:
             raise ValueError("Chosen results_aggregation_strategy is currently not supported!")
 
-        # Point cloud tracking (pcd_i -> original point cloud, pcd_ij -> pcd_i with segmentation based on feature j)
-        pcd_i_id, pcd_ij_id = 0, 0
         # Set common global shift for all point clouds (precaution, should not be necessary for small projects)
         common_global_shift = np.zeros((3,), dtype=np.float_)
 
-        for pcd_path_i in pcd_file_paths:
-            pcd_i_id += 1
+        for pcd_i_id, pcd_path_i in enumerate(pcd_file_paths, start=1):
+
+            # Check if some point clouds already processed (step 2/2) - pcd_i
+            pcd_collection, d3d_collection, load_flag = load_previously_saved_inference_results_if_any(pcd_i_id,
+                                                        pcd_collection, pcd_map, d3d_collection, d3d_map)
+
+            # Skip the rest of the inference loop if load_flag is True:
+            if load_flag:
+                continue
 
             # Load data
             pcd: PointCloudData = load_e57(pcd_path_i, stay_prcs=False, save_prcs_info=True)  # Load point cloud
@@ -252,7 +278,7 @@ def main():
             filter_pcd_roi_range(pcd, pcp_parameters)
 
             # Optional: Detect if point cloud upside-down, if yes - flip for theta degrees:
-            test_upsidedown = False
+            test_upsidedown, alpha_deg = False, 0.0
             if pcp_parameters["flip_upsidedown_scans"]:
                 alpha_deg = pcp_parameters["flip_upsidedown_scans"]
                 test_upsidedown = check_was_scanner_upsidedown(pcd)
@@ -293,8 +319,11 @@ def main():
             pcd = subsample_pcd_to_output_resolution(pcd, pcp_parameters)
             # Assure common global shift for further operations
             pcd, common_global_shift = assure_common_global_shift(pcd, common_global_shift, pcd_i_id)
+            pcd_collection.global_shift = common_global_shift
 
             # 2. Inference: Instance + semantic segmentation -----------------------------------------------------------
+            # Set segmented point cloud (pcd_ij) counter:
+            pcd_ij_id = pcd_i_id * 2 - 2
 
             # Run Grounded SAM2 inference (for all images of a point cloud pcd_i)
             for j, image_j in enumerate(images_of_pcd_i):
@@ -323,6 +352,10 @@ def main():
 
                 # Get per-mask depths:
                 get_per_mask_depth_parallel(results, images_of_pcd_i, n_jobs=task_parameters['n_workers'])
+
+                # Filter outlier masks (optionally per class):
+                results = d2d_outlier_removal(results, task_parameters, per_class_separation=False,
+                                              confidence_interval=0.99)[0]
 
                 # Save object detection (gdino) and segmentation (SAM2) results as .jpeg images and corresponding data in .json:
                 if save_intermediate_results:
@@ -353,81 +386,119 @@ def main():
 
                 # Remove background class (if task = object detection)
                 pcd_ij = remove_unclassified_points(pcd_ij, task_parameters)
-                # TODO: REMOVE THIS ONCE OUTLIER-REMOVAL IN PLACE:
+
                 # Remove too small object detections
                 pcd_ij = remove_small_instances(pcd_ij, d3d_parameters)
 
                 # Transform point cloud to global (project-related) coordinate system
                 #   first correct for rotation theta_deg used for more efficient spherical image generation
                 if theta_deg != 0.0:
-                    rotate_pcd_around_z(pcd_ij, theta=-theta_deg)
+                    rotate_pcd_around_z(pcd_ij, theta_deg=-theta_deg)
 
                 # second: correct for rotation alpha_deg for flipping upside-down scans
                 if test_upsidedown:
-                    rotate_pcd_around_x(pcd, alpha_deg=-alpha_deg)
+                    rotate_pcd_around_x(pcd_ij, alpha_deg=-alpha_deg)
 
                 #   then toggle to PRCS
                 pcd_ij = toggle_socs2prcs(pcd_ij)
+
+                # Apply global robust SOR filter to kick-out spurious points / floaters
+                apply_robust_sor_filter(pcd_ij, k_neighbors=50, std_ratio=2)
+
+                # Preprocess (clean) per-instance point clouds and extract related Detections3D data
+                # TODO: Possible additions/modifications to get_detections3d (check OneNote notes)
+                d3d_i, pcd_ij = clean_pcd_instances_and_get_detections3d(pcd_ij, pcd_ij_id-1,
+                                                                         d3d_parameters, pcp_parameters)
+
 
                 # Save individual station point clouds (currently aligned in PRCS, if toggle_socs2prcs works)
                 if save_intermediate_results:
                     save_segmented_pcd_ij(pcd_path_i, pcd_ij, inference_models_parameters, class_id_map, image_j)
 
-                # Save segmented point cloud
-                pcd_ij_collection.append(pcd_ij)
-                # Save 2d detections (bounding boxes, masks, confidences, class_ids,...)
-                d2d_collection.append(results)
+                # Create path to pickled point cloud, d2d and d3d objects
+                odir_pcd_ij = stage1_odir_partial / Path(f"pcd_ij_{pcd_ij_id}.pkl")
+                odir_d3d_ij = stage1_odir_partial / Path(f"d3d_ij_{pcd_ij_id}.pkl")
+                odir_d2d_ij = stage1_odir_partial / Path(f"d2d_ij_{pcd_ij_id}.pkl")
 
-                del pcd_ij
+
+                # Store segmented point cloud
+                # TODO: RE-IMPLEMENT storing path odir_pcd_ij
+                pcd_collection.seg_pcds[pcd_ij_id-1] = pcd_ij
+                inst_count = np.unique(pcd_ij.scalar_fields['instances']).size
+                pcd_collection.pcd_n_instances[pcd_ij_id-1] = inst_count
+
+                with open(odir_pcd_ij, 'wb') as f:
+                    pickle.dump(pcd_ij, f)
+
+                # Store 2d detections (bounding boxes, masks, confidences, class_ids,...)
+                if task_parameters['save_d2d']:
+                    # TODO: RE-IMPLEMENT storing path odir_d2d_ij
+                    d2d_collection.append(results)
+
+                    with open(odir_d2d_ij, 'wb') as f:
+                        pickle.dump(results, f)
+
+                # Store 3d detections
+                # TODO: RE-IMPLEMENT storing path odir_pcd_ij odir_d3d_ij
+                d3d_collection.append(d3d_i)
+                with open(odir_d3d_ij, 'wb') as f:
+                    pickle.dump(d3d_i, f)
+
+                del pcd_ij, d3d_i, image_j, image_j_numpy, results
                 gc.collect()
 
-        del pcd, images_of_pcd_i, image_j, image_j_numpy
-        gc.collect()
+            del pcd, images_of_pcd_i
+            gc.collect()
+
 
         # All point clouds looped through
         # --------------------------------------------------------------------------------------------------------------
 
-        # Pickle and save detections
+        # Pickle and save Stage 1 results
         if save_intermediate_results is True:
             # Set paths
             stage1_output_dir = inference_models_parameters['stage1_output_dir']
-            odir_pcd_collection = stage1_output_dir / Path("pcd_ij_collection.pkl")
-            odir_d2d_collection = stage1_output_dir / Path("d2d_collection.pkl")
+            odir_pcd_collection = stage1_output_dir / Path("pcd_collection.pkl")
+            if task_parameters['save_d2d']:
+                odir_d2d_collection = stage1_output_dir / Path("d2d_collection.pkl")
+            odir_d3d_collection = stage1_output_dir / Path("d3d_collection.pkl")
             # Save data
             with open(odir_pcd_collection, 'wb') as f:
-                pickle.dump(pcd_ij_collection, f)
-            with open(odir_d2d_collection, 'wb') as f:
+                pickle.dump(pcd_collection, f)
+            if task_parameters['save_d2d']:
+                with open(odir_d2d_collection, 'wb') as f:
+                    pickle.dump(d2d_collection, f)
+            with open(odir_d3d_collection, 'wb') as f:
                 pickle.dump(d3d_collection, f)
 
     else:
+        # Load Stage 1 results (if Grounded SAM2 was already applied on the data)
         # Set paths
         stage1_output_dir = inference_models_parameters['stage1_output_dir']
-        odir_pcd_collection = stage1_output_dir / Path("pcd_ij_collection.pkl")
-        odir_d2d_collection = stage1_output_dir / Path("d2d_collection.pkl")
+        odir_pcd_collection = stage1_output_dir / Path("pcd_collection.pkl")
+        if task_parameters['save_d2d']:
+            odir_d2d_collection = stage1_output_dir / Path("d2d_collection.pkl")
+        odir_d3d_collection = stage1_output_dir / Path("d3d_collection.pkl")
+
         # Load data
         with open(odir_pcd_collection, 'rb') as f:
-            pcd_ij_collection = pickle.load(f)
-        with open(odir_d2d_collection, 'rb') as f:
-            d2d_collection = pickle.load(f)
+            pcd_collection = pickle.load(f)
+        if task_parameters['save_d2d']:
+            with open(odir_d2d_collection, 'rb') as f:
+                d2d_collection = pickle.load(f)
+        with open(odir_d3d_collection, 'rb') as f:
+            d3d_collection = pickle.load(f)
 
     # SECOND PART OF THE CODE: -----------------------------------------------------------------------------------------
 
-    # 2D masks-based outlier removal:
-    d2d_collection = merge_list_of_2d_detections(d2d_collection)
-
-    d2d_collection, outliers_ids = d2d_outlier_removal(d2d_collection, task_parameters, per_class_separation=False,
-                                                       confidence_interval=0.99)
-
-
-
-    # Extract per-instance metadata:
-    # TODO: Possible additions/modifications to get_detections3d (check OneNote notes)
-    d3d_i = get_detections3d(pcd_ij, pcd_ij_id, d3d_parameters, pcp_parameters)
-    d3d_collection.append(d3d_i)
-
     # Merge all Detections3D objects into 1 large object
     d3d_collection = merge_detections3d(d3d_collection)
-    n_d3d = d3d_collection.pcd_ids.shape[0]
+    # squeeze_detections3d(d3d_collection)
+
+    # Apply statistical outlier removal using multivariate-normal distribution and mahalanobis distance
+    d3d_collection, pcd_or, inst_or = d3d_outlier_removal(d3d_collection, per_class_separation=False,
+                                                          confidence_interval=0.99)
+    pcd_collection.filter_out_instances(pcd_or, inst_or)
 
     # Get initial sparse connectivity (relevant/sparse nodes for the graph)
     semantic_gate = d3d_parameters["merge_inst_of_same_class_only"]
@@ -447,8 +518,10 @@ def main():
     or_method = d3d_parameters["outlier_detection_method"]
     or_threshold = d3d_parameters["outlier_detection_threshold"]
     if remove_outliers_by_support:
+        n_d3d = d3d_collection.pcd_ids.shape[0]
         counts = count_significant_overlaps(pairs=pairs, bbox_overlap=edges_iou, iou_threshold=iou_threshold, N=n_d3d)
         outliers, cutoff = detect_upper_tail_outliers(data=counts, method=or_method, alpha=or_threshold)
+        # TODO: so far not clear if works correctly - 0 outliers in the 1st test data
         d3d_collection, pairs, edges_supp = filter_outlier_detections3d_edges_and_nodes(d3d_collection=d3d_collection,
                                                                                         pairs=pairs,
                                                                                         edge_weights=edges_supp,
@@ -456,6 +529,7 @@ def main():
         n_d3d = d3d_collection.pcd_ids.shape[0]
 
     # Find corresponding Detections3D instances using graph clustering
+    #   return: cluster_ids / new instance labels with values from 1,2,..., N
     clustering_method = d3d_parameters['graph_clustering_method']
     min_supporters = d3d_parameters['min_supporters']
     leiden_resolution = d3d_parameters['leiden_resolution']
@@ -464,10 +538,13 @@ def main():
                                     leiden_resolution=leiden_resolution)
 
     # Kicking-out clusters with too small support (ID appearing less than a threshold times)
+    #   -> setting their cluster IDs to 0
     clusters_ids = small_cluster_removal(clusters_ids, d3d_parameters)
 
     # Assign new instance labels to point clouds and merge them together
-    pcd_result = get_segmented_and_merged_point_cloud(pcd_ij_collection, d3d_collection, clusters_ids, pcp_parameters)
+    pcd_result = get_segmented_and_merged_point_cloud(pcd_collection, d3d_collection, clusters_ids, pcp_parameters)
+
+    # TODO: Apply filters after merge (visually inspect for which ones) -> HDBSCAN, multi-variate statistics,...
 
     # Replace pcd RGB colour by random colors for each instance
     if pcp_parameters['assign_random_color_per_instance'] is True:
@@ -475,12 +552,8 @@ def main():
 
     # Save point cloud with final results
     save_segmented_pcd(data_folder_path, output_dir_pathlib, pcd_result, class_id_map)
-
-    # TODO: CLEAN MEMORY
-
     test = 1
-    banana = 2
-
+    # TODO: CLEAN MEMORY
 
 if __name__ == "__main__":
     main()

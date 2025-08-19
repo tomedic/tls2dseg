@@ -1,5 +1,5 @@
 import numpy as np
-from typing import Tuple
+from typing import Tuple, Union
 from pchandler.geometry import PointCloudData
 from pchandler.geometry.filters import RangeFilter, BoxFilter, VoxelDownsample, PointCloudFilter
 from pchandler.data_io import save_ply
@@ -9,6 +9,7 @@ from sklearn.cluster import DBSCAN
 from sklearn.neighbors import NearestNeighbors
 import hdbscan
 from scipy import stats
+import math
 
 # TODO: Separate functions operating on Nx3 np.ndarrays and on PointCloudData (above and below in the file)
 
@@ -208,7 +209,7 @@ def color_pcd_instances_by_random(pcd: PointCloudData) -> None:
     pcd : PointCloudData
     """
     # Extract the per-point instance IDs
-    instances = pcd.scalar_fields["instances"]
+    instances = pcd.scalar_fields["instances"].data
     # Find all unique
     unique_ids = np.unique(instances)
     # Generate one random color per unique ID, RGB triplet of uint8
@@ -223,8 +224,26 @@ def color_pcd_instances_by_random(pcd: PointCloudData) -> None:
         colored[i] = colors_for_ids[id_to_index[inst]]
 
     # Apply to the point cloud
-    pcd.set_color(colored)
+    PointCloudData.set_color(pcd, colored)
     # In-place point cloud change
+    return None
+
+
+def apply_robust_sor_filter(pcd: PointCloudData, k_neighbors: Union[float, int],
+                            std_ratio: Union[float, int]) -> None:
+    # Get point cloud points
+    pts = pcd.xyz
+    # Set knn (if provided as percentage of point cloud points)
+    if k_neighbors < 1:
+        k_neighbors = int(math.ceil(pts.shape[0] * k_neighbors))
+
+    sor_parameters = {'k': k_neighbors, 'std_ratio': std_ratio}
+
+    if pts.shape[0] > sor_parameters['k']:
+        mask = statistical_outlier_removal(pts, k=sor_parameters['k'],
+                                           std_ratio=sor_parameters['std_ratio'])
+        pcd.reduce(mask)
+
     return None
 
 

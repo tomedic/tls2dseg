@@ -2,8 +2,11 @@ from pathlib import Path
 from pchandler.geometry import PointCloudData
 from pchandler.geometry.transforms import lazy_global_shift_change
 import numpy as np
+from numpy.typing import NDArray
 from tls2dseg.pc_preprocessing import subsample_pcd_to_output_resolution
 from tls2dseg.detections_3d import Detections3D
+from tls2dseg.pcd_collection import SegPCDCollection
+import pickle
 
 
 def make_output_folders(output_dir_pathlib: Path, image_generation_parameters: dict,
@@ -64,11 +67,13 @@ def assure_common_global_shift(pcd_i: PointCloudData, common_global_shift: np.nd
     return pcd_i, common_global_shift
 
 
-def get_segmented_and_merged_point_cloud(pcd_ij_collection: list, d3d_collection: Detections3D,
-                                         clusters_ids: np.ndarray, pcp_parameters: dict) -> PointCloudData:
+def get_segmented_and_merged_point_cloud(pcd_collection: SegPCDCollection, d3d: Detections3D,
+                                         clusters_ids: NDArray, pcp_parameters: dict) -> PointCloudData:
     # Unpack necessary values
-    pcd_ids = d3d_collection.pcd_ids
-    instances = d3d_collection.instances
+    pcd_ids = d3d.pcd_ids
+    instances = d3d.instances
+    # Find all point clouds with valid 3d detection objects
+    unique_seg_pcds = np.unique(pcd_ids)
 
     # Leave for future work
     # classes = d3d_collection.classes
@@ -76,32 +81,39 @@ def get_segmented_and_merged_point_cloud(pcd_ij_collection: list, d3d_collection
     #  label per instance (in case they are allowed to have different class labels), optionally - resolve
     #  only instances now, classes in a point cloud form by majority voting
 
-    for ij, pcd_ij in enumerate(pcd_ij_collection, start=1):
+    pcd_all = None
+    clusters_ids = np.expand_dims(clusters_ids, axis=1)
 
+    for seg_pcd_ij_id in unique_seg_pcds:
         # Direct mapping between old and new instance labels of Detections3D (1-to-1 correspondence):
-        clusters_ids = np.expand_dims(clusters_ids, axis=1)
-        old_instances_ij = instances[pcd_ids == ij]
-        new_instances_ij = clusters_ids[pcd_ids == ij]
+        old_instances_ij = instances[pcd_ids == seg_pcd_ij_id]
+        new_instances_ij = clusters_ids[pcd_ids == seg_pcd_ij_id]
         # View to per point in PointCloudData instance label:
-        pcd_instances_ij_old = pcd_ij.scalar_fields["instances"].data
+        seg_pcd_ij_inst_old = pcd_collection.seg_pcds[seg_pcd_ij_id].scalar_fields["instances"].data
+
+        # Remove pcd points that are not related to any d3d instances:
+        keep_mask = np.in1d(seg_pcd_ij_inst_old, old_instances_ij)
+        if np.any(~keep_mask):
+            pcd_collection.seg_pcds[seg_pcd_ij_id].reduce(keep_mask)
+        # Refresh view to per point in PointCloudData instance label:
+        seg_pcd_ij_inst_old = pcd_collection.seg_pcds[seg_pcd_ij_id].scalar_fields["instances"].data
 
         # Mapping old instance labels between Detections3D and PointCloudData:
         inst_value_to_index = {val: idx for idx, val in enumerate(old_instances_ij)}
-        inst_map_d3d_to_pcd = np.fromiter((inst_value_to_index[val] for val in pcd_instances_ij_old), dtype=int)
+        inst_map_d3d_to_pcd = np.fromiter((inst_value_to_index[val] for val in seg_pcd_ij_inst_old), dtype=int)
 
         # Create and assign new instance labels for PointCloudData:
-        pcd_instances_ij_new = new_instances_ij[inst_map_d3d_to_pcd]
-        pcd_ij.scalar_fields["instances"] = np.squeeze(pcd_instances_ij_new)
+        seg_pcd_i_inst_new = new_instances_ij[inst_map_d3d_to_pcd]
+        seg_pcd_i_inst_new = seg_pcd_i_inst_new.astype(np.uint32)
+        pcd_collection.seg_pcds[seg_pcd_ij_id].scalar_fields["instances"] = np.squeeze(seg_pcd_i_inst_new)
 
-        if ij == 1:
-            pcd_all = pcd_ij.copy()
-        else:
-            pcd_all = PointCloudData.merge_pcd([pcd_all, pcd_ij])
-            # Subsample point cloud to desired output resolution (once images generated):
-            pcd_all = subsample_pcd_to_output_resolution(pcd_all, pcp_parameters)
+    pcd_all = PointCloudData.merge_pcd(pcd_collection.seg_pcds)
 
-        if "merge_id" in pcd_all.scalar_fields.keys():
-            pcd_all.scalar_fields.remove_field("merge_id")
+    # Subsample point cloud to desired output resolution (once images generated):
+    pcd_all = subsample_pcd_to_output_resolution(pcd_all, pcp_parameters)
+
+    if "merge_id" in pcd_all.scalar_fields.keys():
+        pcd_all.scalar_fields.remove_field("merge_id")
 
     return pcd_all
 
@@ -111,7 +123,7 @@ def small_cluster_removal(clusters_ids, d3d_parameters) -> np.ndarray:
     # Find unique values and their counts
     unique_ids, count_ids = np.unique(clusters_ids, return_counts=True)
     # Identify too small clusters
-    small_clusters = unique_ids[count_ids < threshold]
+    small_clusters = unique_ids[count_ids <= threshold]
     # Build mask of positions to zero out
     mask = np.isin(clusters_ids, small_clusters)
     # Zero out small clusters and return
@@ -120,3 +132,41 @@ def small_cluster_removal(clusters_ids, d3d_parameters) -> np.ndarray:
     return cluster_ids_new
 
 
+def id_from_path(p: Path) -> int:
+    # assumes names like d3d_ij_123.pkl → 123
+    return int(p.stem.split("_")[-1])
+
+
+def load_previously_saved_inference_results_if_any(pcd_i_id, pcd_collection, pcd_map, d3d_collection,
+                                                   d3d_map) -> (SegPCDCollection, list, bool):
+    # Initial load flag:
+    load_flag = False
+
+    # IDs expected for this point cloud (block of n_features):
+    nF = pcd_collection.n_features
+    start_id = (pcd_i_id - 1) * nF + 1
+    end_id = pcd_i_id * nF
+    expected_ids = list(range(start_id, end_id + 1))
+
+    # Check if all results already computed:
+    have_all = all((i in d3d_map) and (i in pcd_map) for i in expected_ids)
+
+    # If True - load corresponding segmented PointCloudData and Detections3D
+    if have_all:
+        # Load cached results
+        for id_ij in expected_ids:
+            try:
+                # Load PointCloudData
+                with open(pcd_map[id_ij], "rb") as f:
+                    pcd_collection.seg_pcds[id_ij-1] = pickle.load(f)
+                # Load Detections3D
+                with open(d3d_map[id_ij], "rb") as f:
+                    d3d_loaded = pickle.load(f)
+                d3d_collection.append(d3d_loaded)
+                # Point cloud loaded
+                load_flag = True
+            except:
+                print(f"Failed loading previously computed results of {pcd_i_id}th pcd,"
+                      f" running inference again.")
+
+    return pcd_collection, d3d_collection, load_flag

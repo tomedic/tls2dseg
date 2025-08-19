@@ -10,7 +10,6 @@ def compute_obb_iou_naive(
         extents: np.ndarray,
         quats: np.ndarray,
         pairs: np.ndarray,
-        engine: str = "scad"
 ) -> np.ndarray:
     """
     Compute 3D IoU for oriented bounding boxes (OBBs) using trimesh boolean intersection.
@@ -25,8 +24,6 @@ def compute_obb_iou_naive(
         Quaternions in [x, y, z, w] order.
     pairs : (M,2) int array
         Each row [i,j] indicates a pair of boxes.
-    engine : str
-        Boolean engine for trimesh (e.g. 'scad', 'blender', 'cork').
 
     Returns
     -------
@@ -60,7 +57,7 @@ def compute_obb_iou_naive(
 
         # Boolean intersection
         try:
-            inter = trimesh.boolean.intersection([box1, box2], engine=engine)
+            inter = trimesh.boolean.intersection([box1, box2], engine='manifold')
             inter_vol = inter.volume if inter is not None else 0.0
         except BaseException:
             inter_vol = 0.0
@@ -72,14 +69,14 @@ def compute_obb_iou_naive(
 
 
 def _compute_iou_from_packed(
-        args: Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, str]
+        args: Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]
 ) -> float:
-    ext_i, trans_i, ext_j, trans_j, engine = args
+    ext_i, trans_i, ext_j, trans_j = args
     box1 = trimesh.creation.box(extents=ext_i, transform=trans_i)
     box2 = trimesh.creation.box(extents=ext_j, transform=trans_j)
     v1, v2 = box1.volume, box2.volume
     try:
-        inter = trimesh.boolean.intersection([box1, box2], engine=engine)
+        inter = trimesh.boolean.intersection([box1, box2], engine='manifold')
         iv = inter.volume if inter else 0.0
     except Exception:
         iv = 0.0
@@ -92,7 +89,6 @@ def compute_obb_iou_parallel(
         extents: np.ndarray,
         quats: np.ndarray,
         pairs: np.ndarray,
-        engine: str = "scad",
         max_workers: Optional[int] = None
 ) -> np.ndarray:
     """
@@ -104,27 +100,26 @@ def compute_obb_iou_parallel(
     extents : (N,3)  OBB dimensions
     quats   : (N,4)  [x,y,z,w] quaternions
     pairs   : (M,2)  integer index pairs
-    engine  : bool engine for trimesh
     max_workers : # of processes
 
     Returns
     -------
     ious : (M,) float IoU per pair
     """
+    # Set float64 for hopefully better bool math...
+    extents = extents.astype(dtype=np.float64)
     # 1) Precompute all transforms
     r = R.from_quat(quat=quats)
     rots = r.as_matrix()  # (N,3,3)
     N = centers.shape[0]
-    transforms = np.tile(np.eye(4, dtype=np.float32), (N, 1, 1))
+    transforms = np.tile(np.eye(4, dtype=np.float64), (N, 1, 1))
     transforms[:, :3, :3] = rots
     transforms[:, :3, 3] = centers
 
     # 2) Pack per-pair arguments
     pack_args: List[Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, str]] = []
     for (i, j) in pairs:
-        pack_args.append((extents[i], transforms[i],
-                          extents[j], transforms[j],
-                          engine))
+        pack_args.append((extents[i], transforms[i], extents[j], transforms[j]))
 
     # 3) Parallel map
     with ProcessPoolExecutor(max_workers=max_workers) as exe:

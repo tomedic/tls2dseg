@@ -30,7 +30,7 @@ def pc2img_run(pcd: PointCloudData, pcd_path: Path, image_generation_parameters:
                                                 rasterization_method=rasterization_method, minimum_nb_points=0)])
 
     # Create image for each selected point cloud feature (default - intensity)
-    # Saving results in a list of tuples with: feature_name (str), image (NDArray[np.uint8]), path_to_saved_image (Path)
+    # Saving results in a list of tuples with: feature_name (str), image (NDArray[np.float64]), path_to_saved_image (Path)
     images_i = []
     for f in features:
         # Create image (2D np.ndarray)
@@ -38,12 +38,12 @@ def pc2img_run(pcd: PointCloudData, pcd_path: Path, image_generation_parameters:
                                                              normalize=True,
                                                              normilization_percentiles=(5, 95))
         # Replace NaN values with Max
-        spherical_image_data = np.nan_to_num(spherical_image_data, nan=np.nanmax(spherical_image_data))
+        spherical_image_data = np.nan_to_num(spherical_image_data, nan=np.nanmax(spherical_image_data), copy=False)
 
         # Save image in results
         if "output_dir_images" in image_generation_parameters:
             # Convert to RGB image
-            spherical_image = convert_to_image(spherical_image_data, "max", normalize=True, colormap='gray')  # gray
+            spherical_image = convert_to_image(spherical_image_data, "max", normalize=True, colormap=None)  # gray
             save_image_dir = image_generation_parameters["output_dir_images"]
             save_image_file = save_image_dir / f"{pcd_path.stem}_Spherical_{f}.png"
             iio.imwrite(save_image_file, spherical_image)
@@ -365,7 +365,7 @@ def rotate_pcd_to_azimuth_gap(pcd, image_generation_parameters) -> float:
     # 5. Rotate point cloud so that this gap’s centre → 0 °
     #    (i.e. rotate by -gap_center_deg)
     # -------------------------------------------------
-    rotate_pcd_around_z(pcd, theta=theta_deg)
+    rotate_pcd_around_z(pcd, theta_deg=theta_deg)
     return theta_deg
 
 
@@ -411,7 +411,7 @@ def resolve_rotate_pcd_parameter(pcd, image_generation_parameters) -> float:
         try:
             theta_deg = float(rotate_pcd)
             if theta_deg != 0.0:
-                rotate_pcd_around_z(pcd, theta=theta_deg)
+                rotate_pcd_around_z(pcd, theta_deg=theta_deg)
         except (TypeError, ValueError):
             raise ValueError(
                 "image_generation_parameters['rotate_pcd'] must be 'auto', a numeric value (in deg), or False"
@@ -685,11 +685,13 @@ def reduce_image_resolution(set_of_images: list, reduction_coefficient: float, i
         # Get image feature name
         feature = image_tuple_i[0]
         # Get image data (ndarray) from image tuple and cast to float32 (required by pyvips)
-        image_data_i = image_tuple_i[1].astype(np.float32)
+        image_data_i = np.ascontiguousarray(image_tuple_i[1], dtype=np.float32)
         # Remove all nan-values with max value
-        image_data_i = np.nan_to_num(image_data_i, nan=np.nanmax(image_data_i))
+        image_data_i = np.nan_to_num(image_data_i, nan=np.nanmax(image_data_i), copy=False)
         # Create pyvips object
-        image_data_i = pyvips.Image.new_from_array(image_data_i)
+        # image_data_i = pyvips.Image.new_from_array(image_data_i)  # -> Naive (creates a copy)
+        h, w = image_data_i.shape[0], image_data_i.shape[1]
+        image_data_i = pyvips.Image.new_from_memory(image_data_i.data, w, h, 1, format='float')
         # Resize image
         image_data_i = image_data_i.resize(reduction_coefficient, kernel='lanczos3')
         # Get new image height and width
@@ -697,12 +699,12 @@ def reduce_image_resolution(set_of_images: list, reduction_coefficient: float, i
         # Convert pyvis object back to numpy
         image_data_i = np.frombuffer(image_data_i.write_to_memory(), dtype=np.float32)
         image_data_i = image_data_i.reshape((height, width))
-        image_data_i = np.clip(image_data_i, 0, 1)
+        image_data_i = np.clip(image_data_i, 0, 1, out=image_data_i)
 
         # Save image in intermediate results
         if "output_dir_images" in image_generation_parameters:
             # Convert to RGB image
-            image_data_rgb_i = convert_to_image(image_data_i, "max", normalize=True, colormap='gray')  # gray
+            image_data_rgb_i = convert_to_image(image_data_i, "max", normalize=True, colormap=None)  # gray
             # Set saving parameters and save image
             save_image_dir = image_generation_parameters["output_dir_images"]
             save_image_file_i = save_image_dir / f"{pcd_path.stem}_Spherical_{feature}_reduced.png"
@@ -832,20 +834,20 @@ def get_per_mask_depth(detections_2d: dict, images_of_pcd_i: list) -> dict:
 
     return detections_2d
 
+# Helper function:
+def _compute_mask_median(args):
+    mask, range_image = args
+    # extract all range values under this mask, compute nan-median
+    return np.nanmedian(range_image[mask[:, 0], mask[:, 1]])
+
 
 def get_per_mask_depth_parallel(detections_2d: dict, images_of_pcd_i: list, n_jobs: int = None) -> dict:
     # Add a new field to detections_2d "object_distance" for each mask
-    # Helper function:
-    def _compute_mask_median(args):
-        mask, range_image = args
-        # extract all range values under this mask, compute nan-median
-        return np.nanmedian(range_image[mask[:, 0], mask[:, 1]])
-
     # Get masks:
     masks = detections_2d["masks"]
     # pull out the range image the same way you already do:
-    image_features = [i for i in images_of_pcd_i[0]]
-    range_image_index = image_features.index("range")
+    feature_names = [name[0] for name in images_of_pcd_i]
+    range_image_index = feature_names.index("range")
     range_image = images_of_pcd_i[range_image_index][1]
 
     # prep arguments so each worker gets (mask, range_image)

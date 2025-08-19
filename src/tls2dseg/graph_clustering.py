@@ -156,7 +156,6 @@ def get_edge_weights(
         pairs: np.ndarray,
         iou_threshold: float = 0.15,
         mode: Literal['iou', 'supporters', 'both'] = 'both',
-        boolean_engine: str = "scad",
         obb_workers: Optional[int] = None
 ) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
     """
@@ -168,7 +167,6 @@ def get_edge_weights(
     pairs : (M,2) int array
     iou_threshold : float, supporters IoU threshold
     mode : 'iou','supporters','both'
-    boolean_engine : trimesh boolean engine
     obb_workers : #workers for OBB IoU parallel
 
     Returns
@@ -193,7 +191,7 @@ def get_edge_weights(
     elif bboxes_type == 'obb':
         if mode in ('iou', 'both', 'supporters'):
             bbox_overlap = compute_obb_iou_parallel(centers=bboxes[:, :3], extents=bboxes[:, 3:6],
-                                                    quats=bboxes[:, 6:10], pairs=pairs, engine=boolean_engine,
+                                                    quats=bboxes[:, 6:10], pairs=pairs,
                                                     max_workers=obb_workers)
     else:
         raise ValueError("bboxes must have 6 or 10 columns")
@@ -324,22 +322,25 @@ def filter_outlier_detections3d_edges_and_nodes(
     filtered_weights : (M',) array or None
         edge_weights sliced to match filtered_pairs.
     """
-    # Filter out the detections themselves
-    keep_mask = ~np.isin(np.arange(d3d_collection.pcd_ids.shape[0]), outliers)
-    d3d_collection = filter_detections3d(d3d_collection, mask=keep_mask)
+    # Helping variables
+    N_old = int(d3d_collection.pcd_ids.shape[0])  # Before OR
+    outliers = np.asarray(outliers, dtype=int)  # outlier indices
+    # Keep mask
+    keep_mask = np.ones(N_old, dtype=bool)
+    keep_mask[outliers] = False
+    # Old to new map
+    old_to_new = np.full(N_old, -1, dtype=int)
+    old_to_new[keep_mask] = np.arange(keep_mask.sum(), dtype=int)
 
-    # 2) Build a map from old indices to new indices (or -1 if dropped)
-    new_index = np.full(d3d_collection.pcd_ids.shape[0], -1, dtype=int)
-    new_index[keep_mask] = np.nonzero(keep_mask)[0]
-
-    # 3) Remap pairs to the new indexing
-    remapped = new_index[pairs]  # shape (M,2), values in [-1...]
-    # 4) Keep only edges where both endpoints survived
-    keep_edge = np.all(remapped >= 0, axis=1)
-    pairs = remapped[keep_edge]
-
-    # 5) Slice edge_weights if provided
+    # Remap pairs to the new indexing
+    remapped_pairs = old_to_new[pairs]  # shape (M,2), values in [-1...]
+    # Keep only edges (pairs) where both endpoints survived
+    keep_edge = np.all(remapped_pairs >= 0, axis=1)
+    pairs = remapped_pairs[keep_edge]
+    # Update edge weights
     edge_weights = edge_weights[keep_edge]
+    # Update Detections3d
+    d3d_collection = filter_detections3d(d3d_collection, mask=keep_mask)
 
     return d3d_collection, pairs, edge_weights
 
@@ -445,7 +446,7 @@ def pcc_strict_nondecreasing(
     # ---- 4. final labels ---------------------------------------------
     roots = np.fromiter((uf.find(i) for i in range(num_nodes)), dtype=np.int32)
     uniq, labels = np.unique(roots, return_inverse=True)
-    return labels.astype(np.int32), active_sup
+    return labels.astype(np.int32) + 1, active_sup
 
 
 def graph_clustering(
@@ -484,7 +485,7 @@ def graph_clustering(
             weights="weight",
             resolution_parameter=leiden_resolution,
         )
-        labels = np.array(part.membership, dtype=np.int32)
+        labels = np.array(part.membership, dtype=np.int32) + 1
 
     elif method == "hcs":
         # Simple Python implementation based on recursive min-cut with NetworkX
@@ -494,7 +495,7 @@ def graph_clustering(
         G.add_weighted_edges_from([(int(i), int(j), float(w)) for (i, j), w in zip(pairs, edge_weights)])
 
         label = -np.ones(num_nodes, dtype=np.int32)
-        current_label = 0
+        current_label = 1
 
         def recurse(subg: nx.Graph):
             nonlocal current_label
@@ -517,7 +518,7 @@ def graph_clustering(
         labels = label.astype(np.int32)
 
     elif method == "pcc":
-        labels = pcc_strict_nondecreasing(num_nodes, pairs, edge_weights, min_supporters, quantiles)
+        labels, _ = pcc_strict_nondecreasing(num_nodes, pairs, edge_weights, min_supporters, quantiles)
     else:
         raise ValueError(f"Unknown method {method}")
 
