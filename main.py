@@ -63,7 +63,7 @@ from src.tls2dseg.pcd_collection import *
 task_parameters = {'input_path': "./data/wheat_heads/",  # Set path to input point clouds
                    'checkpoint': True,  # if checkpoint True, start from already generated 3d3
                    'file_format': "e57",
-                   'output_path': "./results",  # Set path for storing the results
+                   'output_path': "./results/results_wheat_only",  # Set path for storing the results
                    'save_intermediate_results': True,  # Save intensity images, gDINO and SAM2 outputs
                    'task': "object_detection",  # Task choice
                    'results_aggregation_strategy': "object_memory_bank",  # OUT type choice: memory bank vs. voxel-grid
@@ -81,12 +81,13 @@ task_parameters = {'input_path': "./data/wheat_heads/",  # Set path to input poi
 
 # Wheat-heads settings:
 pcp_parameters = {'output_resolution': 0.003,  # Subsample point cloud
-                  'range_limits': [0., 5.],  # All points further then will be discarded
-                  'roi_limits': [-12.5, -0.8, 491.7, 0.3, 7.5, 493.7],
+                  'range_limits': [0., 6.],  # All points further then will be discarded
+                  #'roi_limits': [-12.5, -0.8, 491.7, 0.3, 7.5, 493.7],  # min xyz, max xyz
+                  'roi_limits': [[-11.83, 7.53], [0.81, 0.29], [-0.09, -0.87], [-12.7, 6.37]],
                   # only region of interest (3D bounding box) is to be analyzed
                   'keep_confidences': False,  # keep confidence
-                  'assign_random_color_per_instance': True,
-                  'flip_upsidedown_scans': 180,  # falsy -> no-flip, number -> flip about x-axis in deg
+                  'assign_random_color_per_instance': False,
+                  'flip_upsidedown_scans': 90,  # falsy -> no-flip, number -> flip about x-axis in deg
                   }
 
 # Image generation parameters:
@@ -127,8 +128,8 @@ image_generation_parameters = {'image_width': "scan_resolution",  # Scan-resolut
 # text_prompt = "wall.ceiling.plants.plant pot.leaf.leaves.desk.chair.bag.table.keyboard.floor.window.monitor"
 # text_prompt = "pine. pine tree"
 # text_prompt = "rock.stone.boulder.cliff.tree.pine"
-text_prompt = "wheat.wheat head.wheat ear.wheat spike.wheat stalk.leaf.stem"
-
+# text_prompt = "wheat.wheat head.wheat ear.wheat spike.wheat stalk.leaf.stem"
+text_prompt = "wheat."
 # Inference model parameters:
 inference_models_parameters = {'with_slice_inference': True,
                                'bbox_model_id': 'IDEA-Research/grounding-dino-base',
@@ -160,9 +161,9 @@ d3d_parameters = {'bounding_box_type': 'obb',
                   'outlier_detection_method': 'negative_binomial',  # "iqr","mad","percentile","negative_binomial"
                   'outlier_detection_threshold': 0.01,  # different for each method, see fun. description
                   'graph_clustering_method': 'hcs',  # 'leiden' | 'hcs' | 'pcc'
-                  'min_supporters': 2,  # min. number of supporters necessary for a valid cluster
+                  'min_supporters': 1,  # min. number of supporters necessary for a valid cluster
                   'leiden_resolution': 1,  # hyp.-p. for 'leiden' (<1 - fewer larger clusters, >1 vice versa)
-                  'small_cluster_removal_threshold': 2,  # How many times a cluster has to appear to be accepted
+                  'small_cluster_removal_threshold': 1,  # How many times a cluster has to appear to be accepted
                   }
 
 

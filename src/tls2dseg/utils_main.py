@@ -123,7 +123,7 @@ def small_cluster_removal(clusters_ids, d3d_parameters) -> np.ndarray:
     # Find unique values and their counts
     unique_ids, count_ids = np.unique(clusters_ids, return_counts=True)
     # Identify too small clusters
-    small_clusters = unique_ids[count_ids <= threshold]
+    small_clusters = unique_ids[count_ids < threshold]
     # Build mask of positions to zero out
     mask = np.isin(clusters_ids, small_clusters)
     # Zero out small clusters and return

@@ -10,6 +10,8 @@ from sklearn.neighbors import NearestNeighbors
 import hdbscan
 from scipy import stats
 import math
+from src.tls2dseg.roi_filter import roi_mask_xy_rectaware
+from pchandler.geometry.transforms import toggle_socs2prcs
 
 # TODO: Separate functions operating on Nx3 np.ndarrays and on PointCloudData (above and below in the file)
 
@@ -93,33 +95,61 @@ def filter_pcd_roi_range(pcd: PointCloudData, pcp_parameters: dict) -> None:
         range_limits = pcp_parameters['range_limits']
         range_min, range_max = range_limits[0], range_limits[1]  # min and max range
         range_filter = RangeFilter(low=range_min, high=range_max)
-        mask = range_filter.mask(pcd)
-        pcd.reduce(mask)
+        keep_mask = range_filter.mask(pcd)
+        pcd.reduce(keep_mask)
 
     # Filter ROI:
     if pcp_parameters['roi_limits'] is not None:
         roi_limits = pcp_parameters['roi_limits']
-        # Transform roi_limits from PRCS to SOCS
-        #   - take minimum and maximum corner
-        minimum_corner = np.asarray(roi_limits[:3])
-        maximum_corner = np.asarray(roi_limits[3:])
-        #   - get all 8 corners of an axis aligned bounding box
-        all_8_corners_PRCS = get_all_bbox_corners_from_min_max_corners(minimum_corner, maximum_corner)
-        #   - numpy to PointCloudData object
-        roi_pcd = PointCloudData(xyz=all_8_corners_PRCS)
-        #   - apply transformation from PRCS_2_SOCS (inverse of SOCS_2_PRCS stored in pcd.transformation_matrix)
-        roi_pcd.transform(transformation_matrix=np.linalg.inv(pcd.tmat_socs2prcs))
-        #   - pointCloudData object to numpy
-        all_8_corners_SOCS = roi_pcd.xyz
-        #   - get new min and max corners in SOCS from all 8 corners
-        minimum_corner, maximum_corner = get_min_max_corners_from_all_bbox_corners(all_8_corners_SOCS)
-        #   - numpy to tuple
-        minimum_corner = tuple(minimum_corner.tolist())
-        maximum_corner = tuple(maximum_corner.tolist())
-        # -reduce point cloud for roi:
-        roi_filter = BoxFilter(minimum_corner=minimum_corner, maximum_corner=maximum_corner)
-        mask = roi_filter.mask(pcd)
-        pcd.reduce(mask)
+        roi_ndim = np.asarray(roi_limits).ndim
+        if roi_ndim == 1:
+
+            # Transform roi_limits from PRCS to SOCS
+            #   - take minimum and maximum corner
+            minimum_corner = np.asarray(roi_limits[:3])
+            maximum_corner = np.asarray(roi_limits[3:])
+            #   - get all 8 corners of an axis aligned bounding box
+            all_8_corners_PRCS = get_all_bbox_corners_from_min_max_corners(minimum_corner, maximum_corner)
+            #   - numpy to PointCloudData object
+            roi_pcd = PointCloudData(xyz=all_8_corners_PRCS)
+            #   - apply transformation from PRCS_2_SOCS (inverse of SOCS_2_PRCS stored in pcd.transformation_matrix)
+            roi_pcd.transform(transformation_matrix=np.linalg.inv(pcd.tmat_socs2prcs))
+            #   - pointCloudData object to numpy
+            all_8_corners_SOCS = roi_pcd.xyz
+            #   - get new min and max corners in SOCS from all 8 corners
+            minimum_corner, maximum_corner = get_min_max_corners_from_all_bbox_corners(all_8_corners_SOCS)
+            #   - numpy to tuple
+            minimum_corner = tuple(minimum_corner.tolist())
+            maximum_corner = tuple(maximum_corner.tolist())
+            # -reduce point cloud for roi:
+            roi_filter = BoxFilter(minimum_corner=minimum_corner, maximum_corner=maximum_corner)
+            keep_mask = roi_filter.mask(pcd)
+            pcd.reduce(keep_mask)
+
+        elif roi_ndim == 2 or roi_ndim == 3:
+            # Transform ROI definition from PRCS to SOCS
+            roi_limits = np.asarray(roi_limits)
+            if roi_ndim == 2:
+                n_pts = pcd.xyz.shape[0]
+                idx = np.linspace(0, n_pts - 1, num=min(1000, n_pts), dtype=int)
+                pcd_small = pcd.sample(idx)
+                pcd_small = toggle_socs2prcs(pcd_small)
+                mean_z = np.median(pcd_small.xyz[:, 2])
+                n_roi_vertices = roi_limits.shape[0]
+                roi_limits = np.hstack((roi_limits, np.ones((n_roi_vertices, 1))*mean_z))
+            roi_pcd = PointCloudData(xyz=roi_limits)
+            #   - apply transformation from PRCS_2_SOCS (inverse of SOCS_2_PRCS stored in pcd.transformation_matrix)
+            roi_pcd.transform(transformation_matrix=np.linalg.inv(pcd.tmat_socs2prcs))
+            #   - pointCloudData object to numpy
+            roi_limits_socs = roi_pcd.xyz
+
+            # Get ROI boolean mask (using 2d polygon definition, height ignored in current implementation)
+            roi_limits_socs = roi_limits_socs[:, :2]
+            pcd_xy = pcd.xyz[:, :2]
+            keep_mask = roi_mask_xy_rectaware(xy=pcd_xy, roi_xy=roi_limits_socs)
+            pcd.reduce(keep_mask)
+        else:
+            print("Invalid 'roi_limits' in pcp_parameters.")
 
     return None
 

@@ -15,11 +15,11 @@ def check_all_parameters(task_parameters, pcp_parameters, image_generation_param
             raise TypeError("Both elements of range_limits must be numbers (int or float)!")
 
     # Region of Interest (RoI)
-    if pcp_parameters['roi_limits'] is not None:
-        roi_limits = pcp_parameters['roi_limits']
-        if len(roi_limits) != 6:
-            raise ValueError(f"RoI limits provided, but len() != 6, not specifying min and max of X,Y and Z!")
-        if not all(isinstance(x, (int, float)) for x in roi_limits):
-            raise TypeError("All elements of roi_limits must be numbers (int or float)!")
+    # if pcp_parameters['roi_limits'] is not None:
+    #     roi_limits = pcp_parameters['roi_limits']
+    #     if len(roi_limits) != 6:
+    #         raise ValueError(f"RoI limits provided, but len() != 6, not specifying min and max of X,Y and Z!")
+    #     if not all(isinstance(x, (int, float)) for x in roi_limits):
+    #         raise TypeError("All elements of roi_limits must be numbers (int or float)!")
 
     return None
