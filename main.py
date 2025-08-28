@@ -275,6 +275,13 @@ def main():
             # Load data
             pcd: PointCloudData = load_e57(pcd_path_i, stay_prcs=False, save_prcs_info=True)  # Load point cloud
 
+            # Get scan resolution along azimuth and elevation in radians (before any manipulations)
+            imw = image_generation_parameters["image_width"]
+            if isinstance(imw, str) and "scan_resolution" in imw:
+                d_azim_rad, d_elev_rad = resolve_scanning_resolution_parameter(pcd, image_generation_parameters)
+            else:
+                d_azim_rad, d_elev_rad = np.nan
+
             # Filter point cloud for ranges and RoI (region of interest)
             filter_pcd_roi_range(pcd, pcp_parameters)
 
@@ -290,12 +297,13 @@ def main():
             theta_deg = resolve_rotate_pcd_parameter(pcd, image_generation_parameters)
 
             # Compute image dimensions (w and h) in pixels and scan resolution (azimuth and elevation) in radians
-            image_width, image_height, d_azim_deg, d_elev_deg = compute_image_dimensions(pcd,
-                                                                                         image_generation_parameters)
+            image_width, image_height = compute_image_dimensions(pcd, image_generation_parameters,
+                                                                 d_azim_rad, d_elev_rad)
+
             print(f"Image height x width: {image_height} x {image_width}")
 
             # Resolve necessary image resolution
-            reduction_coefficient = resolve_necessary_image_resolution(pcd, pcp_parameters, d_azim_deg)
+            reduction_coefficient = resolve_necessary_image_resolution(pcd, pcp_parameters, d_azim_rad)
 
             # Generate images of point cloud i
             print("Generating desired image(s)")

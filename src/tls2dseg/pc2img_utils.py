@@ -222,7 +222,8 @@ def resolve_scanning_resolution_parameter(pcd: PointCloudData,
         raise ValueError(f"Unsupported scanning_resolution: {scanning_resolution}")
 
 
-def compute_image_dimensions(pcd: PointCloudData, image_generation_parameters: dict) -> tuple[int, int, float, float]:
+def compute_image_dimensions(pcd: PointCloudData, image_generation_parameters: dict,
+                             d_azim_rad: float, d_elev_rad: float) -> tuple[int, int]:
     """
     Compute image width and height (in pixels)
     Input:
@@ -240,8 +241,6 @@ def compute_image_dimensions(pcd: PointCloudData, image_generation_parameters: d
     elev_span = pcd.fov.elevation_max - pcd.fov.elevation_min
     azim_span = pcd.fov.horizontal_max - pcd.fov.horizontal_min
 
-    # Conditionally resolving image_width and image_height
-    d_azim = d_elev = np.NaN
     # parse image_width parameter
     if isinstance(image_width, int):
         # Image width already given in pixels
@@ -253,10 +252,8 @@ def compute_image_dimensions(pcd: PointCloudData, image_generation_parameters: d
             # Image width already given in pixels (but str, instead of int)
             width_px = int(s)
         else:
-            # Get scan resolution along azimuth and elevation in radians
-            d_azim, d_elev = resolve_scanning_resolution_parameter(pcd, image_generation_parameters)
             # Number of pixels for a full resolution image given span and increments in degrees
-            full_width = int(np.ceil(azim_span / d_azim))
+            full_width = int(np.ceil(azim_span / d_azim_rad))
             if s == "scan_resolution":
                 # Image_width matches full scan resolution
                 width_px = full_width
@@ -277,10 +274,7 @@ def compute_image_dimensions(pcd: PointCloudData, image_generation_parameters: d
     # set image_height to preserve angular aspect ratio
     height_px = int(np.ceil(width_px * (elev_span / azim_span)))
 
-    # Return image_width and image_height in pixels, scan resolution in degrees
-    d_azim_deg = np.rad2deg(d_azim)
-    d_elev_deg = np.rad2deg(d_elev)
-    return width_px, height_px, d_azim_deg, d_elev_deg
+    return width_px, height_px
 
 
 def rotate_pcd_to_azimuth_gap(pcd, image_generation_parameters) -> float:
@@ -662,7 +656,7 @@ def project_a_mask_2_pcd_as_scalarfield(pcd: PointCloudData, mask: np.ndarray, m
     return None
 
 
-def resolve_necessary_image_resolution(pcd: PointCloudData, pcp_parameters: dict, d_azim_deg: float) -> float:
+def resolve_necessary_image_resolution(pcd: PointCloudData, pcp_parameters: dict, d_azim_rad: float) -> float:
     """
     Function computes reduction_coefficient for down scaling the spherical image resolution based on the original scan
     resolution, maximum range, and desired output point cloud resolution (in meters)
@@ -674,7 +668,7 @@ def resolve_necessary_image_resolution(pcd: PointCloudData, pcp_parameters: dict
     # compute corresponding required angular resolution
     required_ang_res = np.arcsin(output_resolution / range_max)
     # get scanning resolution in rad
-    scanning_resolution = np.deg2rad(d_azim_deg)
+    scanning_resolution = d_azim_rad
     # compute image size (image_height and image_width) reduction coefficient
     reduction_coefficient = np.round(scanning_resolution / required_ang_res, 2)
     return reduction_coefficient
