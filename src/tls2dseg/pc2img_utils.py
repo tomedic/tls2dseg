@@ -145,7 +145,9 @@ def estimate_scanning_resolution(pcd, image_generation_parameters) -> tuple[floa
 
     # 3) find the bin with the median point density (the most representative one)
     # idx_flat = np.argmax(H)
-    idx_flat = np.argmin((np.abs(H - np.median(H))))  # Find the bin with the median number of points!
+    H_nan = H.copy()
+    H_nan[H_nan == 0] = np.nan
+    idx_flat = np.argmin((np.abs(H - np.nanmedian(H_nan))))  # Find the bin with the median number of points!
     i_e, i_a = np.unravel_index(idx_flat, H.shape)
     elev_min_p = elev_edges[i_e]
     elev_max_p = elev_edges[i_e + 1]

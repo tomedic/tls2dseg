@@ -160,7 +160,7 @@ d3d_parameters = {'bounding_box_type': 'obb',
                   'remove_outliers_by_support': True,  # remove Detections3D if too large support (under-segmented)
                   'outlier_detection_method': 'negative_binomial',  # "iqr","mad","percentile","negative_binomial"
                   'outlier_detection_threshold': 0.01,  # different for each method, see fun. description
-                  'graph_clustering_method': 'hcs',  # 'leiden' | 'hcs' | 'pcc'
+                  'graph_clustering_method': 'leiden',  # 'leiden' | 'hcs' | 'pcc'
                   'min_supporters': 1,  # min. number of supporters necessary for a valid cluster
                   'leiden_resolution': 1,  # hyp.-p. for 'leiden' (<1 - fewer larger clusters, >1 vice versa)
                   'small_cluster_removal_threshold': 1,  # How many times a cluster has to appear to be accepted
