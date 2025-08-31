@@ -63,7 +63,7 @@ from src.tls2dseg.pcd_collection import *
 task_parameters = {'input_path': "./data/wheat_heads/",  # Set path to input point clouds
                    'checkpoint': True,  # if checkpoint True, start from already generated 3d3
                    'file_format': "e57",
-                   'output_path': "./results/results_wheat_only",  # Set path for storing the results
+                   'output_path': "./results/results_wheat_only_2",  # Set path for storing the results
                    'save_intermediate_results': True,  # Save intensity images, gDINO and SAM2 outputs
                    'task': "object_detection",  # Task choice
                    'results_aggregation_strategy': "object_memory_bank",  # OUT type choice: memory bank vs. voxel-grid
@@ -133,17 +133,17 @@ text_prompt = "wheat."
 # Inference model parameters:
 inference_models_parameters = {'with_slice_inference': True,
                                'bbox_model_id': 'IDEA-Research/grounding-dino-base',
-                               'box_threshold': 0.12,  # 0.35
-                               'text_threshold': 0.12,  # 0.25
+                               'box_threshold': 0.10,  # 0.12 (old: 0.35)
+                               'text_threshold': 0.10,  # 0.12 (old: 0.25)
                                'sam2-model-config': 'configs/sam2.1/sam2.1_hiera_l.yaml',
                                'sam2-checkpoint': '/scratch/projects/sam2/checkpoints/sam2.1_hiera_large.pt',
-                               'large_object_removal_threshold': 0.20,
+                               'large_object_removal_threshold': 0.30,  # 0.20
                                'partial_detection_edge_touching_threshold': 5,
                                'sam_box_prompt_batch_size': 32}
 
 # Additional parameters for slice inference (necessary only if inference with SAHI)
 slice_inference_parameters = {'slice_width_height': (200, 200),
-                              'overlap_width_height': (100, 100),
+                              'overlap_width_height': (150, 150),  # (100, 100)
                               'iou_threshold': 0.80,
                               'overlap_filter_strategy': 'nms',
                               'empty_slice_removal_threshold': 0.95}
@@ -160,9 +160,9 @@ d3d_parameters = {'bounding_box_type': 'obb',
                   'remove_outliers_by_support': True,  # remove Detections3D if too large support (under-segmented)
                   'outlier_detection_method': 'negative_binomial',  # "iqr","mad","percentile","negative_binomial"
                   'outlier_detection_threshold': 0.01,  # different for each method, see fun. description
-                  'graph_clustering_method': 'leiden',  # 'leiden' | 'hcs' | 'pcc'
+                  'graph_clustering_method': 'pcc',  # 'leiden' | 'hcs' | 'pcc'
                   'min_supporters': 1,  # min. number of supporters necessary for a valid cluster
-                  'leiden_resolution': 1,  # hyp.-p. for 'leiden' (<1 - fewer larger clusters, >1 vice versa)
+                  'leiden_resolution': 250,  # hyp.-p. for 'leiden' (<1 - fewer larger clusters, >1 vice versa)
                   'small_cluster_removal_threshold': 1,  # How many times a cluster has to appear to be accepted
                   }
 
@@ -363,8 +363,8 @@ def main():
                 get_per_mask_depth_parallel(results, images_of_pcd_i, n_jobs=task_parameters['n_workers'])
 
                 # Filter outlier masks (optionally per class):
-                results = d2d_outlier_removal(results, task_parameters, per_class_separation=False,
-                                              confidence_interval=0.99)[0]
+                # results = d2d_outlier_removal(results, task_parameters, per_class_separation=False,
+                #                              confidence_interval=0.99)[0]
 
                 # Save object detection (gdino) and segmentation (SAM2) results as .jpeg images and corresponding data in .json:
                 if save_intermediate_results:

@@ -386,8 +386,8 @@ def pcc_strict_nondecreasing(
     # --- 1. Initial Counter for each node -------------------------------
     Support = [Counter() for _ in range(num_nodes)]
     for (i, j), sup in zip(pairs, supporters):
-        Support[i][j] += 1
-        Support[j][i] += 1
+        Support[i][j] += sup
+        Support[j][i] += sup
 
     # Sorted edge order
     order = np.argsort(-supporters)
