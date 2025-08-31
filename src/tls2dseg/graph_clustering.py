@@ -449,6 +449,101 @@ def pcc_strict_nondecreasing(
     return labels.astype(np.int32) + 1, active_sup
 
 
+def hcs_labels(num_nodes: int,
+               pairs: np.ndarray,          # shape (M, 2), int
+               edge_weights: np.ndarray,   # shape (M,), float/int
+               min_weight_for_connectivity: float = 1.0,  # treat w<=0 as "no edge"
+               ) -> np.ndarray:
+    """
+    HCS via recursive global min-cut with robust connectivity handling.
+    Returns 1-based cluster labels of shape (num_nodes,).
+    """
+    import networkx as nx
+    from collections import defaultdict
+    from typing import Iterable
+
+    # Accumulate weights per undirected edge, filter <= 0 if desired --
+    acc = defaultdict(float)
+    for (i, j), w in zip(pairs, edge_weights):
+        if i == j:
+            continue  # skip self-loops for min-cut
+        w = float(w)
+        if w < min_weight_for_connectivity:
+            continue  # drop zero/negative supporter edges
+        if j < i:
+            i, j = j, i
+        acc[(int(i), int(j))] += w
+
+    # Build graph only from the edges we keep
+    G = nx.Graph()
+    if acc:
+        G.add_weighted_edges_from([(u, v, w) for (u, v), w in acc.items()], weight="weight")
+
+    # We still want every node to receive a label. Nodes not present in G become singletons.
+    present = set(G.nodes())
+    all_nodes = set(range(num_nodes))
+    missing = sorted(all_nodes - present)
+
+    labels = -np.ones(num_nodes, dtype=np.int32)
+    current_label = 1
+
+    def finalize(nodes: Iterable[int]):
+        nonlocal current_label
+        for n in nodes:
+            labels[n] = current_label
+        current_label += 1
+
+    # Label isolated / missing nodes (no positive-weight edges)
+    # You can choose: each as its own cluster, or group them together.
+    for n in missing:
+        finalize([n])
+
+    # ---- 2) Recurse per connected component (guarantees connectivity) -------
+    def recurse(H: nx.Graph):
+        nonlocal current_label
+
+        n = H.number_of_nodes()
+        m = H.number_of_edges()
+
+        # Base cases
+        if n <= 1 or m == 0:
+            finalize(H.nodes())
+            return
+
+        # Ensure connectivity (paranoia guard)
+        comps = list(nx.connected_components(H))
+        if len(comps) > 1:
+            # Recurse per connected component; do NOT call stoer_wagner here
+            for comp in comps:
+                recurse(H.subgraph(comp).copy())
+            return
+
+        # Now safe: connected and has edges
+        cut_value, (A, B) = nx.stoer_wagner(H, weight="weight")
+
+        # HCS stopping rule — common heuristic uses min-cut > |V|/2
+        # Adjust if your edge scale differs (e.g., normalize by average degree/weight).
+        if cut_value > n / 2:
+            finalize(H.nodes())
+            return
+
+        # Otherwise split and recurse
+        recurse(H.subgraph(A).copy())
+        recurse(H.subgraph(B).copy())
+
+    # Kick off recursion for each component in G
+    for comp in nx.connected_components(G):
+        sub = G.subgraph(comp).copy()
+        recurse(sub)
+
+    # Safety: any unlabeled node gets its own label (shouldn’t happen now)
+    unlab = np.where(labels < 0)[0]
+    for u in unlab:
+        finalize([int(u)])
+
+    return labels
+
+
 def graph_clustering(
     num_nodes: int,
     pairs: np.ndarray,            # (M,2) int32
@@ -488,34 +583,9 @@ def graph_clustering(
         labels = np.array(part.membership, dtype=np.int32) + 1
 
     elif method == "hcs":
-        # Simple Python implementation based on recursive min-cut with NetworkX
-        import networkx as nx
-        G = nx.Graph()
-        G.add_nodes_from(range(num_nodes))
-        G.add_weighted_edges_from([(int(i), int(j), float(w)) for (i, j), w in zip(pairs, edge_weights)])
-
-        label = -np.ones(num_nodes, dtype=np.int32)
-        current_label = 1
-
-        def recurse(subg: nx.Graph):
-            nonlocal current_label
-            if len(subg) == 0:
-                return
-            # min-cut size
-            mc_value = nx.algorithms.connectivity.stoer_wagner(subg)[0]
-            if mc_value > len(subg) / 2:
-                # highly connected → assign label
-                for node in subg.nodes:
-                    label[node] = current_label
-                current_label += 1
-            else:
-                # split at min-cut
-                A, B = nx.algorithms.connectivity.stoer_wagner(subg)[1]
-                recurse(subg.subgraph(A).copy())
-                recurse(subg.subgraph(B).copy())
-
-        recurse(G)
-        labels = label.astype(np.int32)
+        # Simple implementation of highly-connected-subgraphs ("quasi-clique") based on recursive min-cut with NetworkX
+        labels = hcs_labels(num_nodes, pairs, edge_weights, min_weight_for_connectivity=1.0)
+        labels = labels.astype(np.int32)
 
     elif method == "pcc":
         labels, _ = pcc_strict_nondecreasing(num_nodes, pairs, edge_weights, min_supporters, quantiles)
