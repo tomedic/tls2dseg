@@ -551,7 +551,7 @@ def graph_clustering(
     method: Literal["leiden", "hcs", "pcc"] = "leiden",
     *,
     # PCC-specific
-    min_supporters: int = 2,
+    min_supporters: int = 1,
     quantiles: List[int] = (90, 80, 70, 60, 50, 40, 30, 20, 10),
     # Leiden parameters
     leiden_resolution: float = 1.0,

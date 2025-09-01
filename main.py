@@ -152,7 +152,7 @@ slice_inference_parameters = {'slice_width_height': (200, 200),
 d3d_parameters = {'bounding_box_type': 'obb',
                   'centroid_type': 'bbox_c',
                   'preprocess': True,
-                  'min_d3d_pcd_point_count': 25,
+                  'min_d3d_pcd_point_count': 50,
                   'merge_inst_of_same_class_only': False,
                   'sparse_connectivity_method': 'knn',  # Literal['knn','radius']
                   'sparse_connectivity_threshold': 1,  # 'knn' -> k of nn per scan; 'radius' -> nn radius [m]
@@ -397,7 +397,7 @@ def main():
                 pcd_ij = remove_unclassified_points(pcd_ij, task_parameters)
 
                 # Remove too small object detections
-                pcd_ij = remove_small_instances(pcd_ij, d3d_parameters)
+                pcd_ij = remove_small_instances(pcd_ij, min_pts=50)
 
                 # Transform point cloud to global (project-related) coordinate system
                 #   first correct for rotation theta_deg used for more efficient spherical image generation
@@ -551,17 +551,35 @@ def main():
     clusters_ids = small_cluster_removal(clusters_ids, d3d_parameters)
 
     # Assign new instance labels to point clouds and merge them together
-    pcd_result = get_segmented_and_merged_point_cloud(pcd_collection, d3d_collection, clusters_ids, pcp_parameters)
+    pcd_merged = get_segmented_and_merged_point_cloud(pcd_collection, d3d_collection, clusters_ids, pcp_parameters)
 
-    # TODO: Apply filters after merge (visually inspect for which ones) -> HDBSCAN, multi-variate statistics,...
+    # Subsample point cloud to desired output resolution:
+    pcd_merged = subsample_pcd_to_output_resolution(pcd_merged, pcp_parameters)
+
+    # Refining instance segmentation using DBSCAN (optional HDBSCAN, parameter tuning -> within the function)
+    #pcd_merged = unsupervised_pcd_instance_segmentation(pcd_merged, pcp_parameters, d3d_parameters)
+
+    # Remove background class (if task = object detection)
+    pcd_merged = remove_unclassified_points(pcd_merged, task_parameters)
+
+    # Final instance-based outlier-removal: current implementation - multi-variate statistics
+    # TODO: Consider changing with unsupervised embedding space, few-shots, ...
+    # d3d_merged, pcd_merged = clean_pcd_instances_and_get_detections3d(pcd_merged, 0, d3d_parameters, pcp_parameters)
+    # d3d_collection, _, inst_or = d3d_outlier_removal(d3d_collection, per_class_separation=False,
+    #                                                       confidence_interval=0.99)
+    # points_to_keep = ~np.isin(pcd_merged.scalar_fields['instances'].data, inst_or)
+    # pcd_merged.reduce(points_to_keep)
+
+    # Remove too small merged instances:
+    pcd_merged = remove_small_instances(pcd_merged, min_pts=150)
+
 
     # Replace pcd RGB colour by random colors for each instance
     if pcp_parameters['assign_random_color_per_instance'] is True:
-        color_pcd_instances_by_random(pcd_result)
+        color_pcd_instances_by_random(pcd_merged)
 
     # Save point cloud with final results
-    save_segmented_pcd(data_folder_path, output_dir_pathlib, pcd_result, class_id_map)
-    test = 1
+    save_segmented_pcd(data_folder_path, output_dir_pathlib, pcd_merged, class_id_map)
     # TODO: CLEAN MEMORY
 
 if __name__ == "__main__":

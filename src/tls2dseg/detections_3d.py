@@ -121,8 +121,13 @@ def clean_pcd_instances_and_get_detections3d(pcd: PointCloudData, pcd_id: float,
             # TODO: alternatively to try: connected components, density peak clustering, ...
             if npts_i > min_npts:
                 expected_point_spacing = pcp_parameters["output_resolution"] * np.sqrt(3) * 1.1
-                min_samples = int(math.ceil(0.005 * npts_i))
+                clusterer_type = 'hdbscan'  # 'dbscan', 'hdbscan'
                 min_cluster_size = int(math.ceil(0.25 * npts_i))
+                if clusterer_type == 'hdbscan':
+                    min_samples = int(math.ceil(0.005 * npts_i))
+                elif clusterer_type == 'dbscan':
+                    min_samples = 5
+
                 clusterer_definition = {'type': 'hdbscan', 'epsilon': expected_point_spacing, 'min_samples': min_samples,
                                         'min_cluster_size': min_cluster_size,
                                         'epsilon_hdbscan': 0.0}

@@ -30,10 +30,13 @@ def get_min_max_corners_from_all_bbox_corners(corners: np.ndarray) -> Tuple[np.n
     return min_corner, max_corner
 
 
-def main_cluster_extraction(data: np.ndarray, clusterer_definition: dict) -> np.ndarray:
+def run_dbscan_hdbscan(data: np.ndarray, clusterer_definition: dict) -> np.ndarray:
     # Run DBSCAN or HDBSCAN
     algorithm_type = clusterer_definition['type']
-    min_samples = int(clusterer_definition['min_samples'])
+    if clusterer_definition['min_samples']:
+        min_samples = int(clusterer_definition['min_samples'])
+    else:
+        min_samples = None
     cluster_selection_epsilon = clusterer_definition['epsilon_hdbscan']
     if algorithm_type == 'dbscan':
         epsilon = clusterer_definition['epsilon']
@@ -46,6 +49,12 @@ def main_cluster_extraction(data: np.ndarray, clusterer_definition: dict) -> np.
         raise ValueError('Incorrect clusterer definition: clusterer_type invalid!')
 
     labels = clusterer.fit_predict(data[:, :3])
+    return labels
+
+
+def main_cluster_extraction(data: np.ndarray, clusterer_definition: dict) -> np.ndarray:
+    # Run DBSCAN or HDBSCAN to cluster the data
+    labels = run_dbscan_hdbscan(data, clusterer_definition)
 
     # Identify the largest cluster
     unique_labels, counts = np.unique(labels, return_counts=True)
@@ -53,6 +62,34 @@ def main_cluster_extraction(data: np.ndarray, clusterer_definition: dict) -> np.
     # Return Boolean Mask related to points of the largest cluster
     mask = labels == largest_cluster_label
     return mask
+
+
+def unsupervised_pcd_instance_segmentation(pcd: PointCloudData, pcp_parameters: dict,
+                                           d3d_parameters: dict) -> PointCloudData:
+    # Get data for clustering
+    xyz = pcd.xyz
+
+    # Set DBSCAN or HDBSCAN
+    expected_point_spacing = pcp_parameters["output_resolution"] * np.sqrt(3) * 1.1
+    clusterer_type = 'dbscan'  # 'dbscan', 'hdbscan'
+    min_cluster_size = int(d3d_parameters['min_d3d_pcd_point_count'])
+    if clusterer_type == 'dbscan':
+        min_samples = 8
+    else:
+        min_samples = None
+    clusterer_definition = {'type': 'hdbscan', 'epsilon': expected_point_spacing, 'min_samples': min_samples,
+                            'min_cluster_size': min_cluster_size,
+                            'epsilon_hdbscan': 0.0}
+    # Run HDBSCAN
+    labels = run_dbscan_hdbscan(data=xyz, clusterer_definition=clusterer_definition)
+    # By default, noisy labels are -1, valid clusters are 0,1,...,n_clusters -> push to positive integers
+    labels += 1
+    # Substitute instance labels with new ones
+    if labels.shape[0] == pcd.scalar_fields['instances'].data.shape[0]:
+        pcd.scalar_fields['instances'] = np.squeeze(labels).astype(np.uint32)
+    else:
+        raise ValueError("Labels after DBSCAN/HDBSCAN clustering have wrong size/length")
+    return pcd
 
 
 def statistical_outlier_removal(data: np.ndarray, k: int = 10, std_ratio: [int, float] = 2.0) -> np.ndarray:
@@ -213,20 +250,19 @@ def subsample_pcd_to_output_resolution(pcd: PointCloudData, pcp_parameters: dict
 def remove_unclassified_points(pcd: PointCloudData, task_parameters: dict) -> PointCloudData:
     task = task_parameters["task"]
     if task == "object_detection":
-            mask = pcd.scalar_fields["classes"].data != 0
-            pcd.reduce(mask)
+        mask = np.logical_and(pcd.scalar_fields["classes"].data != 0, pcd.scalar_fields["instances"].data != 0)
+        pcd.reduce(mask)
     else:
         raise ValueError(f"Unsupported task_parameter 'task', provided: {task}")
     return pcd
 
 
-def remove_small_instances(pcd: PointCloudData, d3d_parameters: dict) -> PointCloudData:
-    min_pcd_size = d3d_parameters["min_d3d_pcd_point_count"]
-    instances = pcd.scalar_fields["instances"]
+def remove_small_instances(pcd: PointCloudData, min_pts: Union[float, int]) -> PointCloudData:
+    instances = pcd.scalar_fields["instances"].data
     # Per instance point counts (+ inverse index for mapping back)
     _, inv_idx, counts = np.unique(instances, return_inverse=True, return_counts=True)
     # Mask returning points of all instances that are bigger than a threshold
-    mask = counts[inv_idx] > min_pcd_size
+    mask = counts[inv_idx] > min_pts
     pcd.reduce(mask)
     return pcd
 
