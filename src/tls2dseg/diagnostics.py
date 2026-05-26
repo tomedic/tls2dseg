@@ -1,4 +1,5 @@
 """Environment diagnostics. All probes are best-effort and never raise."""
+
 from __future__ import annotations
 
 import importlib.util
@@ -59,7 +60,7 @@ def _probe_torch_cuda() -> dict[str, Any]:
             "detail": "torch installed; CUDA unavailable",
             "hint": "Pipeline runs on CPU but slower; check NVIDIA driver and CUDA install.",
         }
-    except Exception as e:  # noqa: BLE001 — best-effort per D-11
+    except Exception as e:  # best-effort per D-11; broad catch is intentional
         return {"status": "error", "detail": f"torch import failed: {e}"}
 
 
@@ -74,7 +75,7 @@ def _probe_rapids() -> dict[str, Any]:
         import cuml
 
         return {"status": "ok", "detail": f"cuml {cuml.__version__}"}
-    except Exception as e:  # noqa: BLE001 — best-effort per D-11
+    except Exception as e:  # best-effort per D-11; broad catch is intentional
         return {"status": "error", "detail": f"cuml import failed: {e}"}
 
 
@@ -95,7 +96,7 @@ def _probe_libvips() -> dict[str, Any]:
                 f"{pyvips.base.version(2)}"
             ),
         }
-    except Exception as e:  # noqa: BLE001 — best-effort per D-11
+    except Exception as e:  # best-effort per D-11; broad catch is intentional
         return {"status": "error", "detail": f"pyvips import failed: {e}"}
 
 
