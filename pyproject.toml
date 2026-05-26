@@ -106,3 +106,53 @@ quote-style = "double"
 indent-style = "space"
 line-ending = "auto"
 docstring-code-format = false   # don't reformat code inside docstrings (NumPy-style examples have intentional spacing)
+
+# ----------------------------------------------------------------------------
+# Mypy — static type checker (D-06 graded strictness; CI-only, never in pre-commit)
+# ----------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.11"         # D-07; matches [project] requires-python = ">=3.11"
+mypy_path = "src"               # mandatory for src-layout (RESEARCH.md Pattern 4)
+namespace_packages = true
+explicit_package_bases = true
+
+# Lenient global defaults — most existing modules are partially typed.
+# Per-file strictness ratchet (below) holds new Phase 1 modules to a higher bar.
+ignore_missing_imports = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+disallow_untyped_defs = false
+disallow_untyped_calls = false
+check_untyped_defs = false
+
+# Belt-and-suspenders per RESEARCH.md Pitfall 6 — CI invokes `mypy src/tls2dseg`
+# (which already scopes around main.py), but the exclude protects developers running
+# `mypy .` ad-hoc. Phase 2 HYGN-01 will delete main.py.
+exclude = [
+    "main.py",
+]
+
+# D-06 per-module strictness ratchet. Phase 3 extends this list (config, runtime);
+# Phase 4 extends further (engines). The pattern is the ratchet mechanism — new files
+# land strict; older files get tightened module-by-module as they are refactored.
+[[tool.mypy.overrides]]
+module = ["tls2dseg.cli", "tls2dseg.diagnostics"]
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+warn_return_any = true
+
+# ----------------------------------------------------------------------------
+# Pytest — test runner config (D-15 in pyproject.toml only; no pytest.ini / setup.cfg)
+# ----------------------------------------------------------------------------
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+pythonpath = ["src"]            # canonical src-layout pattern (RESEARCH.md Pattern 5); enables `from tls2dseg import ...` without editable install
+markers = [
+    "tier_a: lightweight, always-on, < 5 min, no GPU (Phase 4+)",
+    "tier_b_light: moderate fixtures, mocked/CPU inference (Phase 7)",
+    "tier_b_heavy: real GPU / heavy deps / large fixtures (Phase 7 self-hosted)",
+    "gpu: requires CUDA (Phase 4+)",
+    "cpu_only: explicitly CPU-only (Phase 3)",
+]
+# No `addopts` in Phase 1 — `--strict-markers` deferred to Phase 4 once real tests use markers (D-18).
