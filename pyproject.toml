@@ -50,9 +50,11 @@ Changelog = "https://github.com/gseg-ethz/PythonTemplate/blob/main/CHANGELOG.md"
 [project.optional-dependencies]
 doc = ["sphinx"]
 dev = [
-    "black",  # Code formatter to make it consistant with PEP rules
-    "flake8", # Code linter: Analyzes source code for errors, vulnerabilities, and stylistic issues
+    "ruff == 0.15.14",  # Lint + format (replaces black + flake8); strict pin per RESEARCH.md Pitfall 1 — ruff ships rule-changes monthly
+    "mypy == 1.20.2",   # Static type checker; pinned to latest 1.20.x per GOV-04 (2.x out of scope)
+    "pytest == 8.3.5",  # Test runner; 8.x line (9.x's native TOML migration deferred)
+    # pre-commit intentionally NOT listed here — it's a per-machine meta-tool (`pip install pre-commit && pre-commit install`)
 ]
 
-# [project.scripts]
-# moduleA-cli = "ModuleA.cli:main_cli"
+[project.scripts]
+tls2dseg = "tls2dseg.cli:main"  # Phase 1 HYGN-09 mechanic (D-09); Phase 2/3 retargets to ":app" once Typer lands (D-10)
