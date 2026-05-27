@@ -41,10 +41,14 @@ jobs:
           cache: pip
       - name: Install mypy
         run: pip install "mypy==1.20.2"
-      # `mypy -p tls2dseg` (package mode) vs `mypy src/tls2dseg` (path mode):
-      # path mode + `mypy_path = "src"` causes "Source file found twice under
-      # different module names". Plan 01-06 D-?? originally used path mode;
-      # confirmed broken on first CI run (gh run 26499455035). Package mode
-      # resolves cleanly given the src-layout + mypy_path setting.
-      - name: mypy -p tls2dseg
-        run: mypy -p tls2dseg
+      # Run mypy from inside src/ in package mode. Two collisions otherwise:
+      # (1) `mypy src/tls2dseg` (path mode) + `mypy_path = "src"` →
+      #     "Source file found twice" (tls2dseg.* vs src.tls2dseg.*).
+      # (2) `mypy -p tls2dseg` from repo root → same dup, because cwd is also
+      #     treated as a package base under `explicit_package_bases = true`.
+      # Running from inside src/ eliminates the ambiguity: src/ is the only
+      # package base, and `tls2dseg` resolves uniquely. Confirmed broken in
+      # gh run 26499455035; verified locally with mypy 2.1 + the project's
+      # pyproject.toml mypy block.
+      - name: mypy -p tls2dseg (from src/)
+        run: cd src && mypy -p tls2dseg
