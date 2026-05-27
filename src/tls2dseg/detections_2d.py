@@ -21,10 +21,7 @@ def merge_list_of_2d_detections(dict_list: list[dict]) -> dict:
             merged_dict[key_i] = [item for sublist in vals_i for item in sublist]
         # rais an error if dtype under same key not consistent or not supported
         else:
-            raise TypeError(
-                "not all dictionaries within a list of dictionary are consistently"
-                " lists or np.ndarrays"
-            )
+            raise TypeError("not all dictionaries within a list of dictionary are consistently lists or np.ndarrays")
 
     return merged_dict
 
@@ -41,9 +38,7 @@ def filter_out_samples_in_2d_detections(detections_2d: dict, remove_mask: np.nda
         if isinstance(vals, np.ndarray):
             detections_2d_filtered[key] = vals[keep_mask]
         elif isinstance(vals, list):
-            detections_2d_filtered[key] = [
-                v for v, keep in zip(vals, keep_mask, strict=False) if keep
-            ]
+            detections_2d_filtered[key] = [v for v, keep in zip(vals, keep_mask, strict=False) if keep]
         else:
             raise TypeError(f"Filtering not supported for type {type(vals)} in key: '{key}'")
 
@@ -149,9 +144,7 @@ def d2d_outlier_removal(
             is_outlier_i = multivariate_normal_outlier_removal(features_i, confidence_interval)
             is_outlier[class_mask] = is_outlier_i
         else:
-            print(
-                f"Warning: 2d statistical outlier removal skipped for class {cls} due to too few samples"
-            )
+            print(f"Warning: 2d statistical outlier removal skipped for class {cls} due to too few samples")
 
     # Filter out 2d detections
     d2d_collection = filter_out_samples_in_2d_detections(d2d_collection, is_outlier)

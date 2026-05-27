@@ -133,9 +133,7 @@ def sparse_connectivity_pairs2csr_matrix(
     return adj
 
 
-def compute_supporter_counts(
-    pairs: np.ndarray, bbox_overlap: np.ndarray, iou_threshold: float = 0.3
-) -> np.ndarray:
+def compute_supporter_counts(pairs: np.ndarray, bbox_overlap: np.ndarray, iou_threshold: float = 0.3) -> np.ndarray:
     M = pairs.shape[0]
     neigh = {i: set() for i in np.unique(pairs)}
     for (i, j), iou in zip(pairs, bbox_overlap, strict=False):
@@ -210,9 +208,7 @@ def get_edge_weights(
         raise ValueError(f"mode must be 'iou', 'supporters' or 'both', got {mode} instead")
 
 
-def count_significant_overlaps(
-    pairs: np.ndarray, bbox_overlap: np.ndarray, iou_threshold: float, N: int
-) -> np.ndarray:
+def count_significant_overlaps(pairs: np.ndarray, bbox_overlap: np.ndarray, iou_threshold: float, N: int) -> np.ndarray:
     """
     Count, for each of N detections (its 3D bbox), with how many other detections (3D bboxes) it has a significant
      overlap with (overlaps > iou_threshold).
@@ -594,9 +590,7 @@ def graph_clustering(
         labels = labels.astype(np.int32)
 
     elif method == "pcc":
-        labels, _ = pcc_strict_nondecreasing(
-            num_nodes, pairs, edge_weights, min_supporters, quantiles
-        )
+        labels, _ = pcc_strict_nondecreasing(num_nodes, pairs, edge_weights, min_supporters, quantiles)
     else:
         raise ValueError(f"Unknown method {method}")
 

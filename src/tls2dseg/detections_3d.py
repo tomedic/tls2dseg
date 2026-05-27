@@ -92,9 +92,7 @@ def clean_pcd_instances_and_get_detections3d(
         # Oriented bounding box: 3x centroid, 3x axis extent, 4x quaternions
         bbox_d3d = np.zeros((N_d3d, 10), dtype=np.float64)
     else:
-        raise ValueError(
-            f"bounding_box_type must be 'aabb' or 'obb', got {bounding_box_type} instead."
-        )
+        raise ValueError(f"bounding_box_type must be 'aabb' or 'obb', got {bounding_box_type} instead.")
 
     for i, uid in enumerate(unique_d3d):
         mask = instances_pcd == uid
@@ -156,9 +154,7 @@ def clean_pcd_instances_and_get_detections3d(
         elif centroid_type == "bbox_c":
             pass
         else:
-            raise ValueError(
-                f"centroid_type must be 'mean', 'median' or 'bbox_c', got {centroid_type} instead"
-            )
+            raise ValueError(f"centroid_type must be 'mean', 'median' or 'bbox_c', got {centroid_type} instead")
 
         if npts_i > min_npts:
             # axis-aligned bounding box
@@ -355,9 +351,7 @@ def d3d_outlier_removal(
             is_outlier_i = multivariate_normal_outlier_removal(features_i, confidence_interval)
             is_outlier[class_mask] = is_outlier_i
         else:
-            print(
-                f"Skipped statistical outlier removal for class {cls}: only {nr_samples} samples (<{nd * 10})."
-            )
+            print(f"Skipped statistical outlier removal for class {cls}: only {nr_samples} samples (<{nd * 10}).")
 
     # Get which instance in which point cloud is an outlier:
     pcd_or = d3d.pcd_ids[is_outlier]

@@ -42,8 +42,9 @@ def pc2img_run(
         ],
     )
 
-    # Create image for each selected point cloud feature (default - intensity)
-    # Saving results in a list of tuples with: feature_name (str), image (NDArray[np.float64]), path_to_saved_image (Path)
+    # Create image for each selected point cloud feature (default - intensity).
+    # Saving results in a list of tuples with:
+    #   (feature_name: str, image: NDArray[np.float64], path_to_saved_image: Path)
     images_i = []
     for f in features:
         # Create image (2D np.ndarray)
@@ -51,16 +52,12 @@ def pc2img_run(
             pcd_image_link.available_stacks[0], f, normalize=True, normilization_percentiles=(5, 95)
         )
         # Replace NaN values with Max
-        spherical_image_data = np.nan_to_num(
-            spherical_image_data, nan=np.nanmax(spherical_image_data), copy=False
-        )
+        spherical_image_data = np.nan_to_num(spherical_image_data, nan=np.nanmax(spherical_image_data), copy=False)
 
         # Save image in results
         if "output_dir_images" in image_generation_parameters:
             # Convert to RGB image
-            spherical_image = convert_to_image(
-                spherical_image_data, "max", normalize=True, colormap=None
-            )  # gray
+            spherical_image = convert_to_image(spherical_image_data, "max", normalize=True, colormap=None)  # gray
             save_image_dir = image_generation_parameters["output_dir_images"]
             save_image_file = save_image_dir / f"{pcd_path.stem}_Spherical_{f}.png"
             iio.imwrite(save_image_file, spherical_image)
@@ -171,9 +168,7 @@ def estimate_scanning_resolution(pcd, image_generation_parameters) -> tuple[floa
     # idx_flat = np.argmax(H)
     H_nan = H.copy()
     H_nan[H_nan == 0] = np.nan
-    idx_flat = np.argmin(
-        np.abs(H - np.nanmedian(H_nan))
-    )  # Find the bin with the median number of points!
+    idx_flat = np.argmin(np.abs(H - np.nanmedian(H_nan)))  # Find the bin with the median number of points!
     i_e, i_a = np.unravel_index(idx_flat, H.shape)
     elev_min_p = elev_edges[i_e]
     elev_max_p = elev_edges[i_e + 1]
@@ -220,9 +215,7 @@ def resolve_scanning_resolution_parameter(
 
     # 2) "mm@<m>" pattern
     if isinstance(scanning_resolution, str) and "mm@" in scanning_resolution.lower():
-        m = re.match(
-            r"^\s*([\d\.]+)\s*mm\s*@\s*([\d\.]+)\s*m\s*$", scanning_resolution, re.IGNORECASE
-        )
+        m = re.match(r"^\s*([\d\.]+)\s*mm\s*@\s*([\d\.]+)\s*m\s*$", scanning_resolution, re.IGNORECASE)
         if not m:
             raise ValueError(f"Invalid mm@ format: {scanning_resolution}")
         mm_val = float(m.group(1))
@@ -329,9 +322,7 @@ def rotate_pcd_to_azimuth_gap(pcd, image_generation_parameters) -> float:
     azim = azim[idx]  # radians → degrees in (-180,180]
 
     # 2) 1-D histogram  (-π..π with 1° bins)
-    bin_width_rad = np.deg2rad(
-        bin_width_deg
-    )  # bin width by default 1 degree (converted in radians)
+    bin_width_rad = np.deg2rad(bin_width_deg)  # bin width by default 1 degree (converted in radians)
     edges = np.arange(-np.pi, np.pi, bin_width_rad)  # Should be 360 edges
     if edges[-1] != np.pi:
         edges = np.concatenate([edges, [np.pi]])  # make sure edges includes +π
@@ -441,9 +432,7 @@ def resolve_rotate_pcd_parameter(pcd, image_generation_parameters) -> float:
     return theta_deg
 
 
-def get_instance_and_semantic_mask(
-    results: dict, text_prompt
-) -> tuple[np.ndarray, np.ndarray, dict]:
+def get_instance_and_semantic_mask(results: dict, text_prompt) -> tuple[np.ndarray, np.ndarray, dict]:
     """
     Creates 1 representative instance and 1 semantic segmentation mask from N individual object masks.
 
@@ -468,9 +457,7 @@ def get_instance_and_semantic_mask(
     keys = text_prompt.split(".")  # → ['house','window','bicycle','door','grass','leaf']
     id_map = {k: i + 1 for i, k in enumerate(keys)}  # → {'house':1, 'window':2, ..., 'leaf':6}
     class_ids = [id_map[q] for q in results["class_names"]]  # a list of corresponding class IDs
-    results["class_ids"] = (
-        class_ids  # Store real class IDs corresponding to detected classes, not range(#C)
-    )
+    results["class_ids"] = class_ids  # Store real class IDs corresponding to detected classes, not range(#C)
 
     # Sorting masks from biggest to smallest, so if overlapping, the big ones do not superimpose the small ones
     mask_sizes = np.zeros(N, dtype=int)
@@ -485,9 +472,7 @@ def get_instance_and_semantic_mask(
 
     for i in range(N):
         # Get the instance mask
-        mask_i = (
-            results["masks"][sorted_indices[i]].toarray().astype(bool)
-        )  # Shape: (H, W), dtype: bool
+        mask_i = results["masks"][sorted_indices[i]].toarray().astype(bool)  # Shape: (H, W), dtype: bool
         # Assign a unique label to each instance in the instance mask
         # Labels start from 1 (to have 0 for background)
         instance_label = i + 1
@@ -529,9 +514,7 @@ def get_instance_and_semantic_mask_with_confidence(
     keys = text_prompt.split(".")  # → ['house','window','bicycle','door','grass','leaf']
     id_map = {k: i + 1 for i, k in enumerate(keys)}  # → {'house':1, 'window':2, ..., 'leaf':6}
     class_ids = [id_map[q] for q in results["class_names"]]  # a list of corresponding class IDs
-    results["class_ids"] = (
-        class_ids  # Store real class IDs corresponding to detected classes, not range(#C)
-    )
+    results["class_ids"] = class_ids  # Store real class IDs corresponding to detected classes, not range(#C)
 
     # Get confidences
     confidences = results["confidences"]
@@ -632,9 +615,7 @@ def project_masks2pcd_as_scalarfields(pcd: PointCloudData, instance_mask, semant
     return None
 
 
-def project_a_mask_2_pcd_as_scalarfield(
-    pcd: PointCloudData, mask: np.ndarray, mask_name: str
-) -> None:
+def project_a_mask_2_pcd_as_scalarfield(pcd: PointCloudData, mask: np.ndarray, mask_name: str) -> None:
     """
     Assigns arbitrary values from an image to each point in the point cloud based on spherical coordinates.
 
@@ -694,9 +675,7 @@ def project_a_mask_2_pcd_as_scalarfield(
     return None
 
 
-def resolve_necessary_image_resolution(
-    pcd: PointCloudData, pcp_parameters: dict, d_azim_rad: float
-) -> float:
+def resolve_necessary_image_resolution(pcd: PointCloudData, pcp_parameters: dict, d_azim_rad: float) -> float:
     """
     Function computes reduction_coefficient for down scaling the spherical image resolution based on the original scan
     resolution, maximum range, and desired output point cloud resolution (in meters)
@@ -744,9 +723,7 @@ def reduce_image_resolution(
         # Save image in intermediate results
         if "output_dir_images" in image_generation_parameters:
             # Convert to RGB image
-            image_data_rgb_i = convert_to_image(
-                image_data_i, "max", normalize=True, colormap=None
-            )  # gray
+            image_data_rgb_i = convert_to_image(image_data_i, "max", normalize=True, colormap=None)  # gray
             # Set saving parameters and save image
             save_image_dir = image_generation_parameters["output_dir_images"]
             save_image_file_i = save_image_dir / f"{pcd_path.stem}_Spherical_{feature}_reduced.png"
@@ -801,8 +778,7 @@ def img_1to3_channels_encoding(
     # Checks for other cases:
     if img.ndim != 2:
         raise ValueError(
-            "Input must be a 2-D array, check if your image is not already"
-            " 3 channel image with 0-255 value range!"
+            "Input must be a 2-D array, check if your image is not already 3 channel image with 0-255 value range!"
         )
 
     if output_dtype not in ("uint8", "float32", None):
@@ -838,10 +814,8 @@ def img_1to3_channels_encoding(
 
     # ---- 2) normalise slice-wise ------------------------------------------
     if normalize is not None and normalize in ("0-1", "0-255"):
-        if img_max == img_min:  # constant slice
-            img = np.zeros_like(img, dtype=np.float32)
-        else:
-            img = (img - img_min) / (img_max - img_min)
+        # constant slice -> all zeros, otherwise rescale to [0, 1]
+        img = np.zeros_like(img, dtype=np.float32) if img_max == img_min else (img - img_min) / (img_max - img_min)
         if normalize == "0-255":
             img = img * 255.0
     elif normalize is None:
@@ -855,10 +829,7 @@ def img_1to3_channels_encoding(
         img = img.astype(output_dtype_np)
 
     # ---- 4) replicate channels ---------------------------------------
-    if broadcast:
-        img = np.broadcast_to(img[..., None], (*img.shape, 3))
-    else:
-        img = np.repeat(img[..., None], 3, axis=2)
+    img = np.broadcast_to(img[..., None], (*img.shape, 3)) if broadcast else np.repeat(img[..., None], 3, axis=2)
 
     return img
 
@@ -889,9 +860,7 @@ def _compute_mask_median(args):
     return np.nanmedian(range_image[mask[:, 0], mask[:, 1]])
 
 
-def get_per_mask_depth_parallel(
-    detections_2d: dict, images_of_pcd_i: list, n_jobs: int | None = None
-) -> dict:
+def get_per_mask_depth_parallel(detections_2d: dict, images_of_pcd_i: list, n_jobs: int | None = None) -> dict:
     # Add a new field to detections_2d "object_distance" for each mask
     # Get masks:
     masks = detections_2d["masks"]

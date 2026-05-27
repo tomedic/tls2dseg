@@ -63,7 +63,11 @@ tls2dseg = "tls2dseg.cli:main"  # Phase 1 HYGN-09 mechanic (D-09); Phase 2/3 ret
 # Ruff — lint + format (single tool replacing black + flake8 + isort) per D-01
 # ----------------------------------------------------------------------------
 [tool.ruff]
-line-length = 100               # D-05
+# D-05 originally pinned line-length = 100. Raised to 120 in Phase 1 Push 2
+# to accommodate research-code long expressions (numpy math, long type
+# annotations, scientific docstrings). 78 of 81 E501 violations were cleared
+# by this change; 3 remaining outliers were refactored or per-file-ignored.
+line-length = 120
 target-version = "py311"        # matches [project] requires-python = ">=3.11"
 exclude = [
     "main.py",                  # MANDATORY per RESEARCH.md Pitfall 6 — Phase 2 HYGN-01 deletes main.py; lint excludes until then
@@ -85,22 +89,7 @@ select = [
     "SIM",  # flake8-simplify (readability auto-fixes)
     "RUF",  # ruff-native (incl. RUF012 mutable class-var defaults)
 ]
-ignore = [
-    # ─── PHASE 1 BASELINE — TEMPORARY ────────────────────────────────────
-    # The Phase 1 ruff sweep auto-fixed 110 violations + reformatted 17 files.
-    # 171 violations remain that ruff cannot auto-fix. These are silenced
-    # here as a TRANSIENT Phase 1 baseline so the lint job can verify the
-    # CI infrastructure works (criteria #2 + #4). Push 2 of the Phase 1
-    # ruff cleanup will revisit each code and either (a) fix the underlying
-    # violations and remove the code from this list, or (b) move it to
-    # per-file-ignores / a permanent ignore with a documented reason.
-    # See parking-lot.md @ 2026-05-27 for the Push 2 plan.
-    #
-    # Counts in parens are the violations remaining as of gh run 26499455035
-    # post-auto-fix:
-    "E501",   # line-too-long (81)  — long expressions; consider raising line-length to 120
-    # ─── END TEMPORARY BLOCK — DO NOT EXTEND ─────────────────────────────
-]
+ignore = []
 
 [tool.ruff.lint.per-file-ignores]
 # Test files often import fixtures for side-effect and redefine names (parametrized fixtures).
@@ -116,7 +105,7 @@ ignore = [
 # `import numpy` at line 183 (the "vectorized impl" half). File is parked
 # for deletion in Phase 2 HYGN-06; per-file-ignore is cheaper than
 # rewriting code that's going away.
-"src/tls2dseg/bboxes_iou_gpt_brew.py" = ["RUF001", "RUF002", "RUF003", "E402"]
+"src/tls2dseg/bboxes_iou_gpt_brew.py" = ["RUF001", "RUF002", "RUF003", "E402", "E501"]
 # detections_3d.py — calls warnings.filterwarnings() and logging.setLevel()
 # BEFORE the imports that emit the suppressed messages (numpy/sklearn
 # FutureWarning, tokenizers log spam). The filter MUST execute before the

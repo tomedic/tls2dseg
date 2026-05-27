@@ -39,12 +39,8 @@ def initialize_gdino(
     # build grounding dino (IDEA huggingface workflow) - set up the model and data processing pipeline
     model_id = inference_models_parameters["bbox_model_id"]
     device = inference_models_parameters["device"]
-    gdino_processor = AutoProcessor.from_pretrained(
-        model_id
-    )  # Set correct data preprocessing pipeline
-    gdino_model = AutoModelForZeroShotObjectDetection.from_pretrained(model_id).to(
-        device
-    )  # Load model in CPU/GPU
+    gdino_processor = AutoProcessor.from_pretrained(model_id)  # Set correct data preprocessing pipeline
+    gdino_model = AutoModelForZeroShotObjectDetection.from_pretrained(model_id).to(device)  # Load model in CPU/GPU
     return gdino_model, gdino_processor
 
 
@@ -114,9 +110,7 @@ def callback(
     # __________________________________________________________________________________________________________________
     #   - Preprocess data: normalize and rescale images, tokenize text, transform into tensor
     device = inference_models_parameters["device"]
-    inputs = gdino_processor(
-        images=image_slice, text=text_prompt, return_tensors="pt", do_rescale=False
-    ).to(device)
+    inputs = gdino_processor(images=image_slice, text=text_prompt, return_tensors="pt", do_rescale=False).to(device)
     #   - Run inference
     with torch.no_grad():
         outputs = gdino_model(**inputs)
@@ -153,9 +147,7 @@ def callback(
         # Set image
         sam2_predictor.set_image(image_slice)
         # Run batched inference
-        masks = run_sam2_bbox_prompt_inference_in_batches(
-            sam2_predictor, input_boxes, sam_box_prompt_batch_size, masks
-        )
+        masks = run_sam2_bbox_prompt_inference_in_batches(sam2_predictor, input_boxes, sam_box_prompt_batch_size, masks)
 
     masks = convert_masks_to_sparse_masks(masks)
 
@@ -209,9 +201,7 @@ def run_grounded_sam2(
     image_height, image_width = image.shape[:2]
     # Run Grounded DINO
     #   - Preprocess data: normalize and rescale images, tokenize text, transform into tensor
-    inputs = gdino_processor(
-        images=image, text=text_prompt, return_tensors="pt", do_rescale=False
-    ).to(device)
+    inputs = gdino_processor(images=image, text=text_prompt, return_tensors="pt", do_rescale=False).to(device)
     #   - Run inference
     with torch.no_grad():
         outputs = gdino_model(**inputs)
@@ -241,9 +231,7 @@ def run_grounded_sam2(
     sam_box_prompt_batch_size = inference_models_parameters["sam_box_prompt_batch_size"]
     masks: list = []
     # Run batched inference
-    masks = run_sam2_bbox_prompt_inference_in_batches(
-        sam2_predictor, input_boxes, sam_box_prompt_batch_size, masks
-    )
+    masks = run_sam2_bbox_prompt_inference_in_batches(sam2_predictor, input_boxes, sam_box_prompt_batch_size, masks)
     masks = convert_masks_to_sparse_masks(masks)
 
     # Clear GPU/CPU memory
@@ -256,8 +244,7 @@ def run_grounded_sam2(
     confidences = confidences.astype(float).tolist()
 
     labels = [
-        f"{class_name} {confidence:.2f}"
-        for class_name, confidence in zip(class_names, confidences, strict=False)
+        f"{class_name} {confidence:.2f}" for class_name, confidence in zip(class_names, confidences, strict=False)
     ]
 
     # Store results in a dictionary
@@ -339,9 +326,7 @@ def run_grounded_sam2_with_sahi(
 
     # Get class_ids relative to the original text_prompt and corresponding to class_names
     keys = text_prompt.split(".")  # → ['house','window','bicycle','door','grass','leaf']
-    class_id_map = {
-        k: i + 1 for i, k in enumerate(keys)
-    }  # → {'house':1, 'window':2, ..., 'leaf':6}
+    class_id_map = {k: i + 1 for i, k in enumerate(keys)}  # → {'house':1, 'window':2, ..., 'leaf':6}
     inverted_map = {v: k for k, v in class_id_map.items()}
 
     # Set main output variables
@@ -353,8 +338,7 @@ def run_grounded_sam2_with_sahi(
 
     # Create mask labels (class name + confidence scores)
     labels = [
-        f"{class_name} {confidence:.2f}"
-        for class_name, confidence in zip(class_names, confidences, strict=False)
+        f"{class_name} {confidence:.2f}" for class_name, confidence in zip(class_names, confidences, strict=False)
     ]
 
     # Store results in a dictionary
@@ -377,9 +361,7 @@ def run_grounded_sam2_with_sahi(
     return results
 
 
-def save_gsam2_results(
-    image: tuple[str, np.ndarray, Path], results: dict, inference_models_parameters
-) -> None:
+def save_gsam2_results(image: tuple[str, np.ndarray, Path], results: dict, inference_models_parameters) -> None:
     # 1. Create JPEG files
     # --------------------
 
@@ -434,9 +416,7 @@ def save_gsam2_results(
     annotated_frame = box_annotator.annotate(scene=image_data.copy(), detections=detections)
 
     label_annotator = sv.LabelAnnotator(color=ColorPalette.from_hex(CUSTOM_COLOR_MAP))
-    annotated_frame = label_annotator.annotate(
-        scene=annotated_frame, detections=detections, labels=labels
-    )
+    annotated_frame = label_annotator.annotate(scene=annotated_frame, detections=detections, labels=labels)
 
     #   - set output directory and file names for object detection
     output_dir_od = inference_models_parameters["output_dir_od"]
@@ -444,26 +424,20 @@ def save_gsam2_results(
         output_jpg_od = f"{image_path.stem}_od_RANDOM_SUBSAMPLE_16.jpg"
     else:
         output_jpg_od = f"{image_path.stem}_od.jpg"
-    cv2.imwrite(
-        os.path.join(output_dir_od, output_jpg_od), annotated_frame.astype(np.dtype("uint8"))
-    )
+    cv2.imwrite(os.path.join(output_dir_od, output_jpg_od), annotated_frame.astype(np.dtype("uint8")))
 
     # Save .jpg images of SAM masks (mask, semantic label, score)
     #   - "supervision" library commands
 
     mask_annotator = sv.MaskAnnotator(color=ColorPalette.from_hex(CUSTOM_COLOR_MAP))
-    annotated_frame = mask_annotator.annotate(
-        scene=annotated_frame.astype(np.dtype("uint8")), detections=detections
-    )
+    annotated_frame = mask_annotator.annotate(scene=annotated_frame.astype(np.dtype("uint8")), detections=detections)
     #   - set output directory and file names for object detection
     output_dir_sam2 = inference_models_parameters["output_dir_sam2"]
     if subsampled_masks_flag:
         output_jpg_sam2 = f"{image_path.stem}_sam2_RANDOM_SUBSAMPLE_16.jpg"
     else:
         output_jpg_sam2 = f"{image_path.stem}_sam2.jpg"
-    cv2.imwrite(
-        os.path.join(output_dir_sam2, output_jpg_sam2), annotated_frame.astype(np.dtype("uint8"))
-    )
+    cv2.imwrite(os.path.join(output_dir_sam2, output_jpg_sam2), annotated_frame.astype(np.dtype("uint8")))
 
     # 2. Create JSON file
     # -------------------
@@ -486,9 +460,7 @@ def save_gsam2_results(
                     "segmentation": mask_rle,
                     "score": score,
                 }
-                for class_name, box, mask_rle, score in zip(
-                    class_names, input_boxes, mask_rles, scores, strict=False
-                )
+                for class_name, box, mask_rle, score in zip(class_names, input_boxes, mask_rles, scores, strict=False)
             ],
             "box_format": "xyxy",
             "img_width": image_data.shape[1],

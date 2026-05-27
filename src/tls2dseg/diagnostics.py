@@ -51,8 +51,7 @@ def _probe_torch_cuda() -> dict[str, Any]:
             return {
                 "status": "ok",
                 "detail": (
-                    f"CUDA available; device count={torch.cuda.device_count()}, "
-                    f"name={torch.cuda.get_device_name(0)}"
+                    f"CUDA available; device count={torch.cuda.device_count()}, name={torch.cuda.get_device_name(0)}"
                 ),
             }
         return {
@@ -91,10 +90,7 @@ def _probe_libvips() -> dict[str, Any]:
 
         return {
             "status": "ok",
-            "detail": (
-                f"libvips {pyvips.base.version(0)}.{pyvips.base.version(1)}."
-                f"{pyvips.base.version(2)}"
-            ),
+            "detail": (f"libvips {pyvips.base.version(0)}.{pyvips.base.version(1)}.{pyvips.base.version(2)}"),
         }
     except Exception as e:  # best-effort per D-11; broad catch is intentional
         return {"status": "error", "detail": f"pyvips import failed: {e}"}
@@ -133,8 +129,7 @@ def _probe_sam2_checkpoint() -> dict[str, Any]:
         "detail": "no SAM2 *.pt checkpoint found",
         "hint": (
             "Set $SAM2_CHECKPOINT_PATH to your checkpoint file, OR place one of "
-            "(sam2.1_hiera_large.pt, sam2.1_hiera_base.pt, ...) into one of: "
-            + ", ".join(str(p) for p in search_paths)
+            "(sam2.1_hiera_large.pt, sam2.1_hiera_base.pt, ...) into one of: " + ", ".join(str(p) for p in search_paths)
         ),
     }
 

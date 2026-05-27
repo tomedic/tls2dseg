@@ -15,9 +15,7 @@ def make_output_folders(
     output_dir_pathlib: Path, image_generation_parameters: dict, inference_models_parameters: dict
 ) -> None:
     # Set intermediate results directory (parent)
-    output_dir_intermediate = (
-        output_dir_pathlib / "intermediate"
-    )  # Create output_dir for intermediate results
+    output_dir_intermediate = output_dir_pathlib / "intermediate"  # Create output_dir for intermediate results
 
     # Set image generation result directory (children)
     image_generation_output_dir = output_dir_intermediate / "images"
@@ -107,16 +105,12 @@ def get_segmented_and_merged_point_cloud(
 
         # Mapping old instance labels between Detections3D and PointCloudData:
         inst_value_to_index = {val: idx for idx, val in enumerate(old_instances_ij)}
-        inst_map_d3d_to_pcd = np.fromiter(
-            (inst_value_to_index[val] for val in seg_pcd_ij_inst_old), dtype=int
-        )
+        inst_map_d3d_to_pcd = np.fromiter((inst_value_to_index[val] for val in seg_pcd_ij_inst_old), dtype=int)
 
         # Create and assign new instance labels for PointCloudData:
         seg_pcd_i_inst_new = new_instances_ij[inst_map_d3d_to_pcd]
         seg_pcd_i_inst_new = seg_pcd_i_inst_new.astype(np.uint32)
-        pcd_collection.seg_pcds[seg_pcd_ij_id].scalar_fields["instances"] = np.squeeze(
-            seg_pcd_i_inst_new
-        )
+        pcd_collection.seg_pcds[seg_pcd_ij_id].scalar_fields["instances"] = np.squeeze(seg_pcd_i_inst_new)
 
     pcd_all = PointCloudData.merge_pcd(pcd_collection.seg_pcds)
 
@@ -178,9 +172,6 @@ def load_previously_saved_inference_results_if_any(
                 # Point cloud loaded
                 load_flag = True
             except Exception:
-                print(
-                    f"Failed loading previously computed results of {pcd_i_id}th pcd,"
-                    f" running inference again."
-                )
+                print(f"Failed loading previously computed results of {pcd_i_id}th pcd, running inference again.")
 
     return pcd_collection, d3d_collection, load_flag

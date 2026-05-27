@@ -17,9 +17,7 @@ from tls2dseg.roi_filter import roi_mask_xy_rectaware
 # TODO: Separate functions operating on Nx3 np.ndarrays and on PointCloudData (above and below in the file)
 
 
-def get_all_bbox_corners_from_min_max_corners(
-    minimum_corner: np.ndarray, maximum_corner: np.ndarray
-) -> np.ndarray:
+def get_all_bbox_corners_from_min_max_corners(minimum_corner: np.ndarray, maximum_corner: np.ndarray) -> np.ndarray:
     # Gets all eight (8) corners of an axis-aligned bounding box (aabb) from 2 corners (min_xyz max_xyz)
     all_bbox_corners = np.stack(
         np.meshgrid(*zip(minimum_corner, maximum_corner, strict=False), indexing="ij"), axis=-1
@@ -37,10 +35,7 @@ def get_min_max_corners_from_all_bbox_corners(corners: np.ndarray) -> tuple[np.n
 def run_dbscan_hdbscan(data: np.ndarray, clusterer_definition: dict) -> np.ndarray:
     # Run DBSCAN or HDBSCAN
     algorithm_type = clusterer_definition["type"]
-    if clusterer_definition["min_samples"]:
-        min_samples = int(clusterer_definition["min_samples"])
-    else:
-        min_samples = None
+    min_samples = int(clusterer_definition["min_samples"]) if clusterer_definition["min_samples"] else None
     cluster_selection_epsilon = clusterer_definition["epsilon_hdbscan"]
     if algorithm_type == "dbscan":
         epsilon = clusterer_definition["epsilon"]
@@ -104,9 +99,7 @@ def unsupervised_pcd_instance_segmentation(
     return pcd
 
 
-def statistical_outlier_removal(
-    data: np.ndarray, k: int = 10, std_ratio: [int, float] = 2.0
-) -> np.ndarray:
+def statistical_outlier_removal(data: np.ndarray, k: int = 10, std_ratio: [int, float] = 2.0) -> np.ndarray:
     """
     Perform statistical outlier removal on a point cloud.
     Parameters:
@@ -159,9 +152,7 @@ def filter_pcd_roi_range(pcd: PointCloudData, pcp_parameters: dict) -> None:
             minimum_corner = np.asarray(roi_limits[:3])
             maximum_corner = np.asarray(roi_limits[3:])
             #   - get all 8 corners of an axis aligned bounding box
-            all_8_corners_PRCS = get_all_bbox_corners_from_min_max_corners(
-                minimum_corner, maximum_corner
-            )
+            all_8_corners_PRCS = get_all_bbox_corners_from_min_max_corners(minimum_corner, maximum_corner)
             #   - numpy to PointCloudData object
             roi_pcd = PointCloudData(xyz=all_8_corners_PRCS)
             #   - apply transformation from PRCS_2_SOCS (inverse of SOCS_2_PRCS stored in pcd.transformation_matrix)
@@ -169,9 +160,7 @@ def filter_pcd_roi_range(pcd: PointCloudData, pcp_parameters: dict) -> None:
             #   - pointCloudData object to numpy
             all_8_corners_SOCS = roi_pcd.xyz
             #   - get new min and max corners in SOCS from all 8 corners
-            minimum_corner, maximum_corner = get_min_max_corners_from_all_bbox_corners(
-                all_8_corners_SOCS
-            )
+            minimum_corner, maximum_corner = get_min_max_corners_from_all_bbox_corners(all_8_corners_SOCS)
             #   - numpy to tuple
             minimum_corner = tuple(minimum_corner.tolist())
             maximum_corner = tuple(maximum_corner.tolist())
@@ -220,16 +209,12 @@ def save_segmented_pcd_ij(
     output_dir_socs_pcds = inference_models_parameters["output_dir_segmented_pcds"]
     feature_name = "_" + image_j[0]
     cs_name = "_prcs" if pcd.xyz_is_prcs else "_socs"
-    output_pcd_name = (
-        pcd_path_pathlib.stem + feature_name + cs_name + "_seg.ply"
-    )  # _seg for segmented
+    output_pcd_name = pcd_path_pathlib.stem + feature_name + cs_name + "_seg.ply"  # _seg for segmented
     output_pcd_path = output_dir_socs_pcds / Path(output_pcd_name)
     save_ply(output_pcd_path, pcd, retain_colors=True, retain_normals=True, scalar_fields=None)
 
     # Save related transformation matrix (for local-to-global conversion)
-    transformation_matrix_output_path = output_dir_socs_pcds / Path(
-        pcd_path_pathlib.stem + "_socs2prcs_T.txt"
-    )
+    transformation_matrix_output_path = output_dir_socs_pcds / Path(pcd_path_pathlib.stem + "_socs2prcs_T.txt")
     np.savetxt(transformation_matrix_output_path, pcd.tmat_socs2prcs, fmt="%.8f", delimiter=" ")
 
     # Save class name - to - class id map in ascii
@@ -265,9 +250,7 @@ def subsample_pcd_to_output_resolution(pcd: PointCloudData, pcp_parameters: dict
     if output_resolution is None:
         return pcd
     else:
-        voxel_downsampler = VoxelDownsample(
-            voxel_size=output_resolution, weigthing_method="nearest"
-        )
+        voxel_downsampler = VoxelDownsample(voxel_size=output_resolution, weigthing_method="nearest")
         pcd = voxel_downsampler.sample(pcd)
         return pcd
 
@@ -275,9 +258,7 @@ def subsample_pcd_to_output_resolution(pcd: PointCloudData, pcp_parameters: dict
 def remove_unclassified_points(pcd: PointCloudData, task_parameters: dict) -> PointCloudData:
     task = task_parameters["task"]
     if task == "object_detection":
-        mask = np.logical_and(
-            pcd.scalar_fields["classes"].data != 0, pcd.scalar_fields["instances"].data != 0
-        )
+        mask = np.logical_and(pcd.scalar_fields["classes"].data != 0, pcd.scalar_fields["instances"].data != 0)
         pcd.reduce(mask)
     else:
         raise ValueError(f"Unsupported task_parameter 'task', provided: {task}")
@@ -306,9 +287,7 @@ def color_pcd_instances_by_random(pcd: PointCloudData) -> None:
     # Find all unique
     unique_ids = np.unique(instances)
     # Generate one random color per unique ID, RGB triplet of uint8
-    colors_for_ids = np.random.randint(
-        low=0, high=256, size=(unique_ids.shape[0], 3), dtype=np.uint8
-    )
+    colors_for_ids = np.random.randint(low=0, high=256, size=(unique_ids.shape[0], 3), dtype=np.uint8)
 
     # Build a lookup: instance ID -> row in colors_for_ids
     id_to_index = {uid: idx for idx, uid in enumerate(unique_ids)}
@@ -324,9 +303,7 @@ def color_pcd_instances_by_random(pcd: PointCloudData) -> None:
     return None
 
 
-def apply_robust_sor_filter(
-    pcd: PointCloudData, k_neighbors: float | int, std_ratio: float | int
-) -> None:
+def apply_robust_sor_filter(pcd: PointCloudData, k_neighbors: float | int, std_ratio: float | int) -> None:
     # Get point cloud points
     pts = pcd.xyz
     # Set knn (if provided as percentage of point cloud points)
@@ -336,9 +313,7 @@ def apply_robust_sor_filter(
     sor_parameters = {"k": k_neighbors, "std_ratio": std_ratio}
 
     if pts.shape[0] > sor_parameters["k"]:
-        mask = statistical_outlier_removal(
-            pts, k=sor_parameters["k"], std_ratio=sor_parameters["std_ratio"]
-        )
+        mask = statistical_outlier_removal(pts, k=sor_parameters["k"], std_ratio=sor_parameters["std_ratio"])
         pcd.reduce(mask)
 
     return None

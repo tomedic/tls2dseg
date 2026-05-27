@@ -158,9 +158,7 @@ def compute_bbox_corners(bbox_data: np.ndarray):
     v5_local = np.array([half[0], -half[1], half[2]])
     v6_local = np.array([half[0], half[1], half[2]])
     v7_local = np.array([-half[0], half[1], half[2]])
-    local_corners = np.array(
-        [v0_local, v1_local, v2_local, v3_local, v4_local, v5_local, v6_local, v7_local]
-    )
+    local_corners = np.array([v0_local, v1_local, v2_local, v3_local, v4_local, v5_local, v6_local, v7_local])
     # Transform local corners into global coordinates.
     corners = (R3x3 @ local_corners.T).T + center.T
 
@@ -206,9 +204,7 @@ def visualize_bbox_3d(point_cloud: np.ndarray, bbox_data: dict) -> None:
     ]
 
     # Create a Poly3DCollection for the bounding box faces.
-    bbox_mesh = Poly3DCollection(
-        faces, alpha=bbox_opacity, facecolor=bbox_face_color, edgecolor=bbox_edge_color
-    )
+    bbox_mesh = Poly3DCollection(faces, alpha=bbox_opacity, facecolor=bbox_face_color, edgecolor=bbox_edge_color)
     ax.add_collection3d(bbox_mesh)
 
     # Set equal aspect ratio.

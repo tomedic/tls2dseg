@@ -20,13 +20,9 @@ class SegPCDCollection:
     seg_pcd_id: NDArray[np.uint16] = field(default_factory=lambda: np.array([], dtype=np.uint16))
     class_ids: NDArray[np.uint16] = field(default_factory=lambda: np.array([], dtype=np.uint16))
     class_names: list[str] = field(default_factory=list)
-    global_shift: NDArray[np.float64] = field(
-        default_factory=lambda: np.zeros([3], dtype=np.float64)
-    )
+    global_shift: NDArray[np.float64] = field(default_factory=lambda: np.zeros([3], dtype=np.float64))
     # Self-populated later:
-    pcd_n_instances: NDArray[np.uint64] = field(
-        default_factory=lambda: np.array([], dtype=np.uint64)
-    )
+    pcd_n_instances: NDArray[np.uint64] = field(default_factory=lambda: np.array([], dtype=np.uint64))
     seg_pcds: list = field(default_factory=list)
     # TODO: Eventually add other point-cloud processing related parameters (e.g. theta, alpha)
 
@@ -37,13 +33,9 @@ class SegPCDCollection:
         self.n_seg_pcds = self.n_raw_pcds * self.n_features
 
         if self.raw_pcd_id.size == 0:
-            self.raw_pcd_id = np.repeat(
-                np.arange(self.n_raw_pcds, dtype=np.uint16), self.n_features
-            )
+            self.raw_pcd_id = np.repeat(np.arange(self.n_raw_pcds, dtype=np.uint16), self.n_features)
         if self.feature_id.size == 0:
-            self.feature_id = np.repeat(
-                np.arange(self.n_features, dtype=np.uint16), self.n_raw_pcds
-            )
+            self.feature_id = np.repeat(np.arange(self.n_features, dtype=np.uint16), self.n_raw_pcds)
         if self.seg_pcd_id.size == 0:
             self.seg_pcd_id = np.arange(self.n_seg_pcds, dtype=np.uint16)
 
