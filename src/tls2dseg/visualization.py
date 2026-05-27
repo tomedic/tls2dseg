@@ -1,8 +1,5 @@
-import matplotlib
-import numpy as np
-
-matplotlib.use("TkAgg")
 import matplotlib.pyplot as plt
+import numpy as np
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 from scipy.spatial.transform import Rotation as R
 
