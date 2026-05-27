@@ -16,8 +16,8 @@ from numpy.typing import NDArray
 from pchandler.geometry import PointCloudData
 from scipy.spatial.transform import Rotation as R
 
-from src.tls2dseg.statistics_generalizable import multivariate_normal_outlier_removal
 from tls2dseg.pc_preprocessing import apply_robust_sor_filter, main_cluster_extraction
+from tls2dseg.statistics_generalizable import multivariate_normal_outlier_removal
 
 # from tls2dseg.visualization import *
 

@@ -8,7 +8,7 @@ from sam2.build_sam import build_sam2
 matplotlib.use("TkAgg")  # or 'Qt5Agg'
 import matplotlib.pyplot as plt
 
-from src.tls2dseg.pc2img_utils import img_1to3_channels_encoding
+from tls2dseg.pc2img_utils import img_1to3_channels_encoding
 
 
 def show_anns(anns, borders=True):

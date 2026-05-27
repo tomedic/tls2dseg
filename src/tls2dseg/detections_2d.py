@@ -2,7 +2,7 @@ from concurrent.futures import ProcessPoolExecutor
 
 import numpy as np
 
-from src.tls2dseg.statistics_generalizable import multivariate_normal_outlier_removal
+from tls2dseg.statistics_generalizable import multivariate_normal_outlier_removal
 
 
 def merge_list_of_2d_detections(dict_list: list[dict]) -> dict:

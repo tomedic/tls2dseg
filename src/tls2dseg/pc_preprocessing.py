@@ -12,7 +12,7 @@ from scipy import stats
 from sklearn.cluster import DBSCAN
 from sklearn.neighbors import NearestNeighbors
 
-from src.tls2dseg.roi_filter import roi_mask_xy_rectaware
+from tls2dseg.roi_filter import roi_mask_xy_rectaware
 
 # TODO: Separate functions operating on Nx3 np.ndarrays and on PointCloudData (above and below in the file)
 

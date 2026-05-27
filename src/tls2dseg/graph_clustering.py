@@ -6,7 +6,7 @@ from scipy.sparse import coo_matrix, csr_matrix
 from scipy.spatial import cKDTree  # fast radius search :contentReference[oaicite:2]{index=2}
 from scipy.stats import nbinom
 
-from tls2dseg.bboxes_iou import *
+from tls2dseg.bboxes_iou import compute_aabb_iou_vectorized, compute_obb_iou_parallel
 
 # Internal dependencies:
 from tls2dseg.detections_3d import Detections3D, filter_detections3d
