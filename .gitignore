@@ -17,3 +17,6 @@ __pycache__/
 .mypy_cache/
 .pytest_cache/
 .ruff_cache/
+
+# Build artifacts (setuptools)
+src/*.egg-info/
