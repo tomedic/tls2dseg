@@ -172,7 +172,7 @@ def clean_pcd_instances_and_get_detections3d(
             elif bounding_box_type == "obb":
                 # oriented bounding box OBB via PCA
                 c = np.mean(pts_i, axis=0)  # get center of pts_i
-                # compute covariance & eigen‐decomposition
+                # compute covariance & eigen-decomposition
                 cov = np.cov(pts_i, rowvar=False)
                 eigvals, eigvecs = np.linalg.eigh(cov)
                 # sort by descending variance
@@ -192,7 +192,7 @@ def clean_pcd_instances_and_get_detections3d(
                 if centroid_type == "bbox_c":
                     centroids_d3d[i] = obb_center
 
-                # Get quaternion from 3×3 matrix (axes stored column-wise)
+                # Get quaternion from 3x3 matrix (axes stored column-wise)
                 rotation = R.from_matrix(axes)
                 quaternion = rotation.as_quat()  # [x, y, z, w]
 

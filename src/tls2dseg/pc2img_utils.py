@@ -120,10 +120,10 @@ def estimate_scanning_resolution(pcd, image_generation_parameters) -> tuple[floa
     Estimate the angular scanning resolution (d_azim, d_elev) of a point cloud.
 
     Steps:
-    1. Randomly subsample `subsample_frac` of the full cloud’s points.
+    1. Randomly subsample `subsample_frac` of the full cloud's points.
     2. Build a 2D histogram over (elevation, azimuth) with
        bins = floor(1/patch_frac) along each axis.
-    3. Pick the bin with the median count of points → that patch’s angular bounds.
+    3. Pick the bin with the median count of points → that patch's angular bounds.
     4. Extract the full, ORIGINAL points lying in that patch.
     5. Estimate median 2D nearest-neighbor distance → d_azim = d_elev
 
@@ -201,7 +201,7 @@ def resolve_scanning_resolution_parameter(
     Acceptable values:
       - "auto": run estimate_scanning_resolution(...)
       - "<mm>@<m>": parse mm and m, compute d_azim = d_elev = arctan(s/r), where s=mm/1000, r=m
-      - numeric or numeric‐string: treat as degrees and convert to radians
+      - numeric or numeric-string: treat as degrees and convert to radians
     """
 
     # Unpack necessary variables
@@ -231,7 +231,7 @@ def resolve_scanning_resolution_parameter(
         d_azim = d_elev = np.arcsin((mm_val / 1000.0) / m_val)
         return d_azim, d_elev
 
-    # 3) numeric or numeric‐string => degrees → radians
+    # 3) numeric or numeric-string => degrees → radians
     try:
         # Scanning resolution in degrees
         deg = float(scanning_resolution)
@@ -301,7 +301,7 @@ def compute_image_dimensions(
 
 def rotate_pcd_to_azimuth_gap(pcd, image_generation_parameters) -> float:
     """
-    Rotate the point cloud so that a “gap” (bin/azimuth direction with 0 -or- few points) is centred at 0°.
+    Rotate the point cloud so that a "gap" (bin/azimuth direction with 0 -or- few points) is centred at 0°.
     Goal: Avoid spherical image edges cutting the object/region of interest.
 
     Parameters
@@ -340,14 +340,14 @@ def rotate_pcd_to_azimuth_gap(pcd, image_generation_parameters) -> float:
 
     # 3) If the ±1° bins around 0 have no points → nothing to do
     edge_zone = np.zeros_like(counts, dtype=bool)
-    edge_zone[0] = True  # the bin covering [-π, -π+1°)
-    edge_zone[-1] = True  # the bin covering [π−1°, π)
+    edge_zone[0] = True  # the bin covering [-pi, -pi+1deg)
+    edge_zone[-1] = True  # the bin covering [pi-1deg, pi)
 
     if counts[edge_zone].sum() == 0:
         theta_deg = 0.0
         return theta_deg  # no rotation applied
 
-    # 4) Find best “gap” bin to re-centre
+    # 4) Find best "gap" bin to re-centre
     #    • Prefer bins with 0 points.
     #    • If none has 0 points, take bins with the minimum point count.
     #    • For ties, choose the middle of the longest consecutive run of zero or small count bins.
@@ -382,7 +382,7 @@ def rotate_pcd_to_azimuth_gap(pcd, image_generation_parameters) -> float:
     theta_deg = np.rad2deg(theta_rad)
 
     # -------------------------------------------------
-    # 5. Rotate point cloud so that this gap’s centre → 0 °
+    # 5. Rotate point cloud so that this gap's centre → 0 °
     #    (i.e. rotate by -gap_center_deg)
     # -------------------------------------------------
     rotate_pcd_around_z(pcd, theta_deg=theta_deg)
@@ -767,7 +767,7 @@ def img_1to3_channels_encoding(
     broadcast: bool = True,
 ) -> np.ndarray:
     """
-    Convert a H×W×, channel grayscale array with arbitrary value range and dtype into a H×W×3 channel grayscale array
+    Convert a HxWx, channel grayscale array with arbitrary value range and dtype into a HxWx3 channel grayscale array
     of selected dtype with 0-255 value range. Goal: Preparing image data for deep learning frameworks
     (e.g. HuggingFace transformers library, SAM/SAM2 by Facebook/Meta).
 
