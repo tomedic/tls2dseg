@@ -313,7 +313,7 @@ def color_pcd_instances_by_random(pcd: PointCloudData) -> None:
     # Build a lookup: instance ID -> row in colors_for_ids
     id_to_index = {uid: idx for idx, uid in enumerate(unique_ids)}
 
-    # Map each point’s instance to its color
+    # Map each point's instance to its color
     colored = np.empty((instances.shape[0], 3), dtype=np.uint8)
     for i, inst in enumerate(instances):
         colored[i] = colors_for_ids[id_to_index[inst]]

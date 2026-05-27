@@ -16,11 +16,11 @@ from tls2dseg.detections_3d import Detections3D, filter_detections3d
 
 def get_initial_sparse_connectivity(
     centroids: np.ndarray,  # (N,3) float32/float64
-    class_ids: np.ndarray | None = None,  # (N,) int  – needed if semantic_gate=True
-    n_scans: float = 1,  # float – needed for knn-threshold
+    class_ids: np.ndarray | None = None,  # (N,) int  - needed if semantic_gate=True
+    n_scans: float = 1,  # float - needed for knn-threshold
     *,
     method: str = "knn",  # "knn"  or  "radius"
-    knn_ps: int = 2,  # 1‒3, used only if method=="knn"
+    knn_ps: int = 2,  # 1-3, used only if method=="knn"
     radius: float = 0.20,  # metres, used only if method=="radius"
     semantic_gate: bool = False,  # require identical class_ids?
 ) -> np.ndarray:
@@ -247,19 +247,19 @@ def detect_upper_tail_outliers(
     alpha: float = 0.05,
 ) -> tuple[np.ndarray, float]:
     """
-    Detect upper‐tail outliers in a 1D positive integer array.
+    Detect upper-tail outliers in a 1D positive integer array.
 
     Parameters
     ----------
     data : (N,) array
-        Any (developed for the per‐detection counts)
+        Any (developed for the per-detection counts)
     method : {"iqr","mad","percentile","negative_binomial"}
     iqr_factor : float
         multiplier for IQR fence: cutoff = Q3 + iqr_factor*(Q3-Q1)
     mad_factor : float
         multiplier for MAD fence: cutoff = median + mad_factor*MAD
     percentile : float
-        for "percentile" method, cutoff = percentile‐th quantile of data
+        for "percentile" method, cutoff = percentile-th quantile of data
     alpha : float
         for "negative_binomial" method, cutoff = nbinom.ppf(1 - alpha, r, p)
 
@@ -540,7 +540,7 @@ def hcs_labels(
         sub = G.subgraph(comp).copy()
         recurse(sub)
 
-    # Safety: any unlabeled node gets its own label (shouldn’t happen now)
+    # Safety: any unlabeled node gets its own label (shouldn't happen now)
     unlab = np.where(labels < 0)[0]
     for u in unlab:
         finalize([int(u)])

@@ -100,9 +100,6 @@ ignore = [
     # post-auto-fix:
     "E501",   # line-too-long (81)  — long expressions; consider raising line-length to 120
     "E402",   # module-import-not-at-top (11) — late imports for circular-dep workarounds
-    "RUF001", # ambiguous-unicode-in-string (4) — × ‑ … in ChatGPT-brewed file
-    "RUF002", # ambiguous-unicode-in-docstring (10) — same source
-    "RUF003", # ambiguous-unicode-in-comment (13)   — en-dashes in comments
     # ─── END TEMPORARY BLOCK — DO NOT EXTEND ─────────────────────────────
 ]
 
@@ -115,6 +112,11 @@ ignore = [
 # __init__.py uses re-export pattern + late imports; F401/E402 silence those.
 # Note: existing __init__.py has the `all = ...` typo — Phase 2 HYGN-04 fixes that.
 "src/tls2dseg/__init__.py" = ["F401", "E402"]
+# bboxes_iou_gpt_brew.py — ChatGPT-generated docstrings contain Unicode
+# typographic characters (×, en-dash, hyphen). File is parked for deletion
+# in Phase 2 HYGN-06; per-file-ignore is cheaper than replacing unicode in
+# code that's going away.
+"src/tls2dseg/bboxes_iou_gpt_brew.py" = ["RUF001", "RUF002", "RUF003"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["tls2dseg"]
