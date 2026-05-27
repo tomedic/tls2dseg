@@ -238,8 +238,8 @@ def resolve_scanning_resolution_parameter(
         # Scanning resolution in radians
         d_azim = d_elev = np.deg2rad(deg)
         return d_azim, d_elev
-    except Exception:
-        raise ValueError(f"Unsupported scanning_resolution: {scanning_resolution}")
+    except Exception as err:
+        raise ValueError(f"Unsupported scanning_resolution: {scanning_resolution}") from err
 
 
 def compute_image_dimensions(
@@ -432,10 +432,10 @@ def resolve_rotate_pcd_parameter(pcd, image_generation_parameters) -> float:
             theta_deg = float(rotate_pcd)
             if theta_deg != 0.0:
                 rotate_pcd_around_z(pcd, theta_deg=theta_deg)
-        except (TypeError, ValueError):
+        except (TypeError, ValueError) as err:
             raise ValueError(
                 "image_generation_parameters['rotate_pcd'] must be 'auto', a numeric value (in deg), or False"
-            )
+            ) from err
 
     # Return the rotation angle in degrees (so it can be reversed later)
     return theta_deg
@@ -890,7 +890,7 @@ def _compute_mask_median(args):
 
 
 def get_per_mask_depth_parallel(
-    detections_2d: dict, images_of_pcd_i: list, n_jobs: int = None
+    detections_2d: dict, images_of_pcd_i: list, n_jobs: int | None = None
 ) -> dict:
     # Add a new field to detections_2d "object_distance" for each mask
     # Get masks:

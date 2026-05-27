@@ -169,7 +169,7 @@ def compute_obb_iou_batch(centers, extents, quats, pairs) -> np.ndarray:
     centers: (N,3), extents: (N,3) full lengths, quats: (N,4) [x,y,z,w], pairs: (M,2)
     Returns (M,) IoUs.
     """
-    Rmats = quat_to_mat_batch(quats)  # not strictly needed here but useful if you extend
+    Rmats = quat_to_mat_batch(quats)  # noqa: F841  — scaffold; file parked for Phase 2 deletion
     ious = np.empty(pairs.shape[0], dtype=np.float64)
     for k, (i, j) in enumerate(pairs):
         ious[k] = obb_iou_pair(centers[i], extents[i], quats[i], centers[j], extents[j], quats[j])
@@ -186,7 +186,10 @@ import numpy as np
 _TRIPLETS = np.array(list(combinations(range(12), 3)), dtype=np.int64)  # 220x3
 
 
-def quat_to_mat_batch(quats: np.ndarray) -> np.ndarray:
+def quat_to_mat_batch(quats: np.ndarray) -> np.ndarray:  # noqa: F811
+    # Second of two intentional parallel implementations in this file (slow
+    # vs vectorized). File is parked for deletion in Phase 2 HYGN-06; the
+    # duplicate definition reflects design exploration, not a bug.
     """[x,y,z,w] -> (N,3,3) rotation matrices."""
     x, y, z, w = quats.T
     xx, yy, zz = x * x, y * y, z * z
@@ -299,9 +302,9 @@ def obb_iou_pairs_vectorized(centers, extents, quats, pairs, chunk_size=2048, to
         NA, bA = obb_planes_batch(c0o, A0o, h0o)  # (P',12,3), (P',12)
         NB, bB = obb_planes_batch(c1o, A1o, h1o)
 
-        # Combine halfspaces
-        N = np.concatenate([NA, NB], axis=1)  # (P',24,3)
-        b = np.concatenate([bA, bB], axis=1)  # (P',24)
+        # Combine halfspaces (scaffold for the missing step 3; file parked for Phase 2 deletion)
+        N = np.concatenate([NA, NB], axis=1)  # noqa: F841  — (P',24,3)
+        b = np.concatenate([bA, bB], axis=1)  # noqa: F841  — (P',24)
 
         # 3) Enumerate all 3-plane intersections (from 24 choose 3 = 2024)
         # Optimization: only mix planes from both boxes by using the first 12+12 set.

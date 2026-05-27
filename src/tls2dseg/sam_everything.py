@@ -88,9 +88,7 @@ def run_sam2_everything(
     sam2_everything: SAM2AutomaticMaskGenerator,
     inference_models_parameters: dict,
 ) -> dict:
-
-    # Set inference hardware
-    device = inference_models_parameters["device"]
+    # Inference hardware comes from sam2_everything (already initialized with device).
 
     image = img_1to3_channels_encoding(
         image, normalize="0-1", output_dtype="float32", replace_nan_with="max", broadcast=True
@@ -108,5 +106,4 @@ def run_sam2_everything(
     plt.show()
     # TODO: SAVING DOES NOT WORK
     # plt.savefig("results/intermediate/sam2/sam2_everything_masks_debug.png", dpi=150, bbox_inches='tight')
-    testis = 1
     return masks

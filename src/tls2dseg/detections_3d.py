@@ -70,7 +70,6 @@ def clean_pcd_instances_and_get_detections3d(
     classes_pcd = pcd.scalar_fields["classes"]
     if pcp_parameters["keep_confidences"]:
         confidences_pcd = pcd.scalar_fields["confidence"]
-    pts_pcd = pcd.xyz  # (P,3)
 
     # Get unique identifiers of detected 3d objects (d3d = detection 3d) and the number of them
     unique_d3d = np.unique(instances_pcd).astype(np.uint32)

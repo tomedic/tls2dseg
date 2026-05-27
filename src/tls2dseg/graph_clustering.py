@@ -51,7 +51,6 @@ def get_initial_sparse_connectivity(
         Edge list [i,j] with i<j for which adj[i,j]=True.
     """
 
-    N = centroids.shape[0]
     if method not in {"knn", "radius"}:
         raise ValueError("method must be 'knn' or 'radius'")
     if method == "knn" and n_scans is None:

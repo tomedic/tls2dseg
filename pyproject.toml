@@ -100,17 +100,12 @@ ignore = [
     # post-auto-fix:
     "E501",   # line-too-long (81)  — long expressions; consider raising line-length to 120
     "E402",   # module-import-not-at-top (11) — late imports for circular-dep workarounds
-    "E722",   # bare-except (1)     — fix inline (Push 2)
     "F403",   # import-star-used (2)         — wildcard imports
     "F405",   # may-be-undefined-from-star-import (14) — resolves with F403 fix
-    "F811",   # redefined-while-unused (1)   — likely delete duplicate definition
-    "F841",   # unused-variable (8)          — delete or prefix with _
-    "B904",   # raise-without-from-inside-except (2) — add `from err`
     "B905",   # zip-without-explicit-strict (10)     — add strict= to each call
     "RUF001", # ambiguous-unicode-in-string (4) — × ‑ … in ChatGPT-brewed file
     "RUF002", # ambiguous-unicode-in-docstring (10) — same source
     "RUF003", # ambiguous-unicode-in-comment (13)   — en-dashes in comments
-    "RUF013", # implicit-optional (1) — real type-safety issue, fix in Push 2
     "RUF046", # unnecessary-int-conversion (3)
     "RUF059", # unused-unpacked-variable (2)
     "SIM103", # needless-bool (2) — refactor return-True/False to direct return

@@ -174,7 +174,6 @@ def roi_mask_xy(
         yi_b = yi[None, :]
         yj_b = yj[None, :]
         xi_b = xi[None, :]
-        xj_b = xj[None, :]
         ex_b = ex[None, :]
         ey_b = ey[None, :]
         elen_b = elen[None, :]

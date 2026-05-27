@@ -177,7 +177,7 @@ def load_previously_saved_inference_results_if_any(
                 d3d_collection.append(d3d_loaded)
                 # Point cloud loaded
                 load_flag = True
-            except:
+            except Exception:
                 print(
                     f"Failed loading previously computed results of {pcd_i_id}th pcd,"
                     f" running inference again."
