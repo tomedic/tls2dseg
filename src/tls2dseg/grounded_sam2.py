@@ -239,7 +239,7 @@ def run_grounded_sam2(
 
     # Batch detected bounding boxes to avoid memory explosion when running inference with SAM!
     sam_box_prompt_batch_size = inference_models_parameters["sam_box_prompt_batch_size"]
-    masks = []
+    masks: list = []
     # Run batched inference
     masks = run_sam2_bbox_prompt_inference_in_batches(
         sam2_predictor, input_boxes, sam_box_prompt_batch_size, masks
