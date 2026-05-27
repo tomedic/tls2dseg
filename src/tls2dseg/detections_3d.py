@@ -230,7 +230,7 @@ def clean_pcd_instances_and_get_detections3d(
 
     # Update the point cloud with clean instances (only valid ones)
     pcd = PointCloudData.merge_pcd(pcds_clean)
-    if "merge_id" in pcd.scalar_fields.keys():
+    if "merge_id" in pcd.scalar_fields:
         pcd.scalar_fields.remove_field("merge_id")
 
     return detections_3d, pcd

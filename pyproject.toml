@@ -108,9 +108,6 @@ ignore = [
     "RUF003", # ambiguous-unicode-in-comment (13)   — en-dashes in comments
     "RUF046", # unnecessary-int-conversion (3)
     "RUF059", # unused-unpacked-variable (2)
-    "SIM103", # needless-bool (2) — refactor return-True/False to direct return
-    "SIM108", # if-else-block-instead-of-if-exp (4) — ternary preference
-    "SIM118", # in-dict-keys (2) — `key in d.keys()` → `key in d`
     # ─── END TEMPORARY BLOCK — DO NOT EXTEND ─────────────────────────────
 ]
 

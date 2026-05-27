@@ -126,10 +126,7 @@ def sparse_connectivity_pairs2csr_matrix(
     col = np.concatenate([pairs[:, 1], pairs[:, 0]])
 
     # Infer N from the maximum node index
-    if M > 0:
-        N = int(pairs.max()) + 1
-    else:
-        N = 0
+    N = int(pairs.max()) + 1 if M > 0 else 0
 
     # Construct CSR matrix
     adj = coo_matrix((data, (row, col)), shape=(N, N)).tocsr()

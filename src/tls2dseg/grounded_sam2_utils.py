@@ -45,10 +45,7 @@ def check_if_img_slice_empty(image_slice: np.ndarray, slice_inference_parameters
     #   if more pixels than a threshold have value = max_val -> slice predominantly empty and will not be processed
     empty_slice_removal_threshold = slice_inference_parameters["empty_slice_removal_threshold"]
 
-    if (max_count / all_count) > empty_slice_removal_threshold:
-        return False
-    else:
-        return True
+    return (max_count / all_count) <= empty_slice_removal_threshold
 
 
 def check_if_img_slice_complete(image_slice: np.ndarray, slice_inference_parameters: dict) -> bool:
@@ -57,10 +54,7 @@ def check_if_img_slice_complete(image_slice: np.ndarray, slice_inference_paramet
     #   get expected image slice height and width
     slice_height_expected, slice_width_expected = slice_inference_parameters["slice_width_height"]
     #   if not matching -> exit
-    if slice_height != slice_height_expected or slice_width != slice_width_expected:
-        return False
-    else:
-        return True
+    return slice_height == slice_height_expected and slice_width == slice_width_expected
 
 
 def parse_gdino_results(gdino_results, text_prompt: str) -> tuple:
@@ -215,10 +209,7 @@ def post_process_gdino_results(
     )
 
     #   - everything is empty flag
-    if not class_names:
-        empty_results_flag = True
-    else:
-        empty_results_flag = False
+    empty_results_flag = not class_names
 
     return input_boxes, class_names, class_ids, confidences, empty_results_flag
 

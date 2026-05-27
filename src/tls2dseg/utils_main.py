@@ -123,7 +123,7 @@ def get_segmented_and_merged_point_cloud(
     # Subsample point cloud to desired output resolution (once images generated):
     pcd_all = subsample_pcd_to_output_resolution(pcd_all, pcp_parameters)
 
-    if "merge_id" in pcd_all.scalar_fields.keys():
+    if "merge_id" in pcd_all.scalar_fields:
         pcd_all.scalar_fields.remove_field("merge_id")
 
     return pcd_all

@@ -84,10 +84,7 @@ def unsupervised_pcd_instance_segmentation(
     expected_point_spacing = pcp_parameters["output_resolution"] * np.sqrt(3) * 1.1
     clusterer_type = "dbscan"  # 'dbscan', 'hdbscan'
     min_cluster_size = int(d3d_parameters["min_d3d_pcd_point_count"])
-    if clusterer_type == "dbscan":
-        min_samples = 8
-    else:
-        min_samples = None
+    min_samples = 8 if clusterer_type == "dbscan" else None
     clusterer_definition = {
         "type": "hdbscan",
         "epsilon": expected_point_spacing,
@@ -222,10 +219,7 @@ def save_segmented_pcd_ij(
     print("Saving Single-station point clouds")
     output_dir_socs_pcds = inference_models_parameters["output_dir_segmented_pcds"]
     feature_name = "_" + image_j[0]
-    if pcd.xyz_is_prcs:
-        cs_name = "_prcs"
-    else:
-        cs_name = "_socs"
+    cs_name = "_prcs" if pcd.xyz_is_prcs else "_socs"
     output_pcd_name = (
         pcd_path_pathlib.stem + feature_name + cs_name + "_seg.ply"
     )  # _seg for segmented
