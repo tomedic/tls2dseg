@@ -99,7 +99,6 @@ ignore = [
     # Counts in parens are the violations remaining as of gh run 26499455035
     # post-auto-fix:
     "E501",   # line-too-long (81)  — long expressions; consider raising line-length to 120
-    "E402",   # module-import-not-at-top (11) — late imports for circular-dep workarounds
     # ─── END TEMPORARY BLOCK — DO NOT EXTEND ─────────────────────────────
 ]
 
@@ -113,10 +112,17 @@ ignore = [
 # Note: existing __init__.py has the `all = ...` typo — Phase 2 HYGN-04 fixes that.
 "src/tls2dseg/__init__.py" = ["F401", "E402"]
 # bboxes_iou_gpt_brew.py — ChatGPT-generated docstrings contain Unicode
-# typographic characters (×, en-dash, hyphen). File is parked for deletion
-# in Phase 2 HYGN-06; per-file-ignore is cheaper than replacing unicode in
-# code that's going away.
-"src/tls2dseg/bboxes_iou_gpt_brew.py" = ["RUF001", "RUF002", "RUF003"]
+# typographic characters (×, en-dash, hyphen). File also has duplicate
+# `import numpy` at line 183 (the "vectorized impl" half). File is parked
+# for deletion in Phase 2 HYGN-06; per-file-ignore is cheaper than
+# rewriting code that's going away.
+"src/tls2dseg/bboxes_iou_gpt_brew.py" = ["RUF001", "RUF002", "RUF003", "E402"]
+# detections_3d.py — calls warnings.filterwarnings() and logging.setLevel()
+# BEFORE the imports that emit the suppressed messages (numpy/sklearn
+# FutureWarning, tokenizers log spam). The filter MUST execute before the
+# importing library scans for warnings; restructuring this is not possible.
+# Intentional pattern.
+"src/tls2dseg/detections_3d.py" = ["E402"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["tls2dseg"]
