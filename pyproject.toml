@@ -100,12 +100,8 @@ ignore = []
 # __init__.py uses re-export pattern + late imports; F401/E402 silence those.
 # Note: existing __init__.py has the `all = ...` typo — Phase 2 HYGN-04 fixes that.
 "src/tls2dseg/__init__.py" = ["F401", "E402"]
-# bboxes_iou_gpt_brew.py — ChatGPT-generated docstrings contain Unicode
-# typographic characters (×, en-dash, hyphen). File also has duplicate
-# `import numpy` at line 183 (the "vectorized impl" half). File is parked
-# for deletion in Phase 2 HYGN-06; per-file-ignore is cheaper than
-# rewriting code that's going away.
-"src/tls2dseg/bboxes_iou_gpt_brew.py" = ["RUF001", "RUF002", "RUF003", "E402", "E501"]
+# bboxes_iou_gpt_brew.py per-file-ignore removed in Phase 2 02-01-PLAN
+# Task 3 (HYGN-06): file deleted (see parking-lot.md @ tls2dseg eceaece).
 # detections_3d.py — calls warnings.filterwarnings() and logging.setLevel()
 # BEFORE the imports that emit the suppressed messages (numpy/sklearn
 # FutureWarning, tokenizers log spam). The filter MUST execute before the
@@ -162,14 +158,8 @@ disallow_untyped_defs = true
 disallow_incomplete_defs = true
 warn_return_any = true
 
-# bboxes_iou_gpt_brew.py contains intentional parallel-implementation
-# duplicates (e.g. quat_to_mat_batch defined at line 21 AND line 189, for
-# slow-vs-vectorized comparison). The file is parked for Phase 2 HYGN-06
-# deletion; ignore-errors here is cheaper than a per-line type: ignore
-# annotation that we'd just delete next phase.
-[[tool.mypy.overrides]]
-module = ["tls2dseg.bboxes_iou_gpt_brew"]
-ignore_errors = true
+# bboxes_iou_gpt_brew.py mypy ignore_errors override removed in Phase 2
+# 02-01-PLAN Task 3 (HYGN-06): file deleted (see parking-lot.md @ tls2dseg eceaece).
 
 # ----------------------------------------------------------------------------
 # Pytest — test runner config (D-15 in pyproject.toml only; no pytest.ini / setup.cfg)
