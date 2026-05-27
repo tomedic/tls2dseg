@@ -162,7 +162,7 @@ def clean_pcd_instances_and_get_detections3d(
                 mx = pts_i.max(axis=0)
                 bbox_d3d[i] = np.hstack((mn, mx))
                 if centroid_type == "bbox_c":
-                    centroids_d3d = (mx + mn) / 2
+                    centroids_d3d[i] = (mx + mn) / 2
             elif bounding_box_type == "obb":
                 # oriented bounding box OBB via PCA
                 c = np.mean(pts_i, axis=0)  # get center of pts_i
