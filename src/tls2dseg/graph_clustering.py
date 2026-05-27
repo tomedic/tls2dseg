@@ -66,7 +66,7 @@ def get_initial_sparse_connectivity(
         neighbour_lists = tree.query_ball_tree(tree, r=radius)
     else:  # "knn"
         k_total = int(knn_ps * n_scans + 1)  # +1 to include self
-        dists, idxs = tree.query(centroids, k=k_total, workers=-1)
+        _dists, idxs = tree.query(centroids, k=k_total, workers=-1)
         neighbour_lists = [row[1:] for row in idxs]  # drop self
 
     # ----------  assemble edges ----------
@@ -447,7 +447,7 @@ def pcc_strict_nondecreasing(
 
     # ---- 4. final labels ---------------------------------------------
     roots = np.fromiter((uf.find(i) for i in range(num_nodes)), dtype=np.int32)
-    uniq, labels = np.unique(roots, return_inverse=True)
+    _uniq, labels = np.unique(roots, return_inverse=True)
     return labels.astype(np.int32) + 1, active_sup
 
 

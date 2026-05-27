@@ -121,9 +121,9 @@ def clean_pcd_instances_and_get_detections3d(
             if npts_i > min_npts:
                 expected_point_spacing = pcp_parameters["output_resolution"] * np.sqrt(3) * 1.1
                 clusterer_type = "hdbscan"  # 'dbscan', 'hdbscan'
-                min_cluster_size = int(math.ceil(0.25 * npts_i))
+                min_cluster_size = math.ceil(0.25 * npts_i)
                 if clusterer_type == "hdbscan":
-                    min_samples = int(math.ceil(0.005 * npts_i))
+                    min_samples = math.ceil(0.005 * npts_i)
                 elif clusterer_type == "dbscan":
                     min_samples = 5
 

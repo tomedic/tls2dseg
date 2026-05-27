@@ -331,7 +331,7 @@ def apply_robust_sor_filter(
     pts = pcd.xyz
     # Set knn (if provided as percentage of point cloud points)
     if k_neighbors < 1:
-        k_neighbors = int(math.ceil(pts.shape[0] * k_neighbors))
+        k_neighbors = math.ceil(pts.shape[0] * k_neighbors)
 
     sor_parameters = {"k": k_neighbors, "std_ratio": std_ratio}
 

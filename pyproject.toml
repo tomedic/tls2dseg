@@ -106,8 +106,6 @@ ignore = [
     "RUF001", # ambiguous-unicode-in-string (4) — × ‑ … in ChatGPT-brewed file
     "RUF002", # ambiguous-unicode-in-docstring (10) — same source
     "RUF003", # ambiguous-unicode-in-comment (13)   — en-dashes in comments
-    "RUF046", # unnecessary-int-conversion (3)
-    "RUF059", # unused-unpacked-variable (2)
     # ─── END TEMPORARY BLOCK — DO NOT EXTEND ─────────────────────────────
 ]
 
