@@ -19,8 +19,6 @@ from scipy.spatial.transform import Rotation as R
 from tls2dseg.pc_preprocessing import apply_robust_sor_filter, main_cluster_extraction
 from tls2dseg.statistics_generalizable import multivariate_normal_outlier_removal
 
-# from tls2dseg.visualization import *
-
 
 @dataclass
 class Detections3D:

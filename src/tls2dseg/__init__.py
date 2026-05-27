@@ -1,6 +1,12 @@
-# from .version import __version__
-# from tls2dseg.version import __version__
+"""tls2dseg — TLS point cloud semantic + instance segmentation via Grounded-DINO + SAM2."""
 
-from . import core, pc2img_utils, supervision_utils, utils_main, visualization
+from . import pc2img_utils, supervision_utils, utils_main, visualization
+from ._version import __version__
 
-all = ["__version__", "core", "utils", "visualization", "pc2img_utils", "supervision_utils"]
+__all__ = [
+    "__version__",
+    "pc2img_utils",
+    "supervision_utils",
+    "utils_main",
+    "visualization",
+]

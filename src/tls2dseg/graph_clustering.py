@@ -11,8 +11,6 @@ from tls2dseg.bboxes_iou import compute_aabb_iou_vectorized, compute_obb_iou_par
 # Internal dependencies:
 from tls2dseg.detections_3d import Detections3D, filter_detections3d
 
-# from tls2dseg.visualization import *
-
 
 def get_initial_sparse_connectivity(
     centroids: np.ndarray,  # (N,3) float32/float64
