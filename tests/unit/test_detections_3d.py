@@ -30,7 +30,7 @@ from tls2dseg.detections_3d import clean_pcd_instances_and_get_detections3d
 
 
 @pytest.mark.tier_a
-def test_aabb_centroid_per_instance_not_overwritten() -> None:
+def test_aabb_centroid_per_instance_not_overwritten(monkeypatch: pytest.MonkeyPatch) -> None:
     """Two synthetic AABB clusters → two distinct centroids, not one shared (3,) row.
 
     Constructs a ``PointCloudData`` with two well-separated point clusters
@@ -41,6 +41,17 @@ def test_aabb_centroid_per_instance_not_overwritten() -> None:
     ``IndexError`` during the trailing ``centroids_d3d[keep_mask]`` filter
     or collapses both centroids onto the last cluster — either failure
     mode is detected by the assertions below.
+
+    The function unconditionally calls ``PointCloudData.merge_pcd(pcds_clean)``
+    after the loop (line 226), but the AABB branch never appends to
+    ``pcds_clean`` (only the OBB branch does — a separate pre-existing
+    quirk in this file, out of scope for the BUGS-01 surgical fix). To
+    isolate the BUGS-01 assertion from that downstream merge step, this
+    test monkeypatches ``PointCloudData.merge_pcd`` to a stub that returns
+    the input pcd unchanged. Without the monkeypatch, the post-fix call
+    would crash inside ``ScalarFieldManager.merge`` on the empty
+    ``pcds_clean`` list — which is unrelated to the centroid-overwrite
+    bug we're locking.
     """
     # Deterministic synthetic clusters — RandomState(0) for reproducibility.
     rng = np.random.RandomState(0)
@@ -59,6 +70,17 @@ def test_aabb_centroid_per_instance_not_overwritten() -> None:
     pcd = PointCloudData(
         xyz=pts,
         scalar_fields={"instances": instances, "classes": classes},
+    )
+
+    # Stub out the trailing PointCloudData.merge_pcd(pcds_clean) call. The
+    # AABB branch never appends to pcds_clean (separate quirk — OBB-only
+    # bookkeeping), so the live merge_pcd would receive [] and crash inside
+    # ScalarFieldManager.merge. We don't care about the merged pcd here; we
+    # only assert on the returned Detections3D.centroids.
+    monkeypatch.setattr(
+        PointCloudData,
+        "merge_pcd",
+        classmethod(lambda cls, _pcds_clean: pcd),
     )
 
     # Exercise the buggy code path: AABB bounding box + bbox_c centroid.
