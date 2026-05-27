@@ -12,3 +12,8 @@ __pycache__/
 *.e57
 *.jpeg
 *.jpg
+
+# Tool caches
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/

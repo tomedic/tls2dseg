@@ -1,13 +1,17 @@
 # tls2dseg/.github/workflows/ci.yml
-# Phase 1 CI skeleton: ruff + mypy on every PR + main push.
+# Phase 1 CI skeleton: ruff + mypy on every PR + every push.
 # No pytest job — see Phase 3 CICD-01 for pytest in CI.
+#
+# NOTE: `push:` is currently unscoped (all branches) so that Phase 1's
+# success criterion #4 can be verified on a feature branch without merging
+# to main. The plan's D-20 decision pinned this to `branches: [main]` —
+# revisit once verification is complete. See parking-lot.md entry 2026-05-27.
 
 name: CI
 
 on:
   pull_request:
   push:
-    branches: [main]
 
 jobs:
   lint:
