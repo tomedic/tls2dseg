@@ -1,7 +1,7 @@
-import numpy as np
 from itertools import combinations
+
+import numpy as np
 from scipy.spatial import ConvexHull
-from typing import Tuple
 
 """
 Notes
@@ -23,21 +23,22 @@ def quat_to_mat_batch(quats: np.ndarray) -> np.ndarray:
     Convert N quaternions [x,y,z,w] to rotation matrices (N,3,3).
     """
     x, y, z, w = quats.T
-    xx, yy, zz = x*x, y*y, z*z
-    xy, xz, yz = x*y, x*z, y*z
-    wx, wy, wz = w*x, w*y, w*z
+    xx, yy, zz = x * x, y * y, z * z
+    xy, xz, yz = x * y, x * z, y * z
+    wx, wy, wz = w * x, w * y, w * z
 
     R = np.empty((quats.shape[0], 3, 3), dtype=np.float64)
-    R[:, 0, 0] = 1 - 2*(yy + zz)
-    R[:, 0, 1] = 2*(xy - wz)
-    R[:, 0, 2] = 2*(xz + wy)
-    R[:, 1, 0] = 2*(xy + wz)
-    R[:, 1, 1] = 1 - 2*(xx + zz)
-    R[:, 1, 2] = 2*(yz - wx)
-    R[:, 2, 0] = 2*(xz - wy)
-    R[:, 2, 1] = 2*(yz + wx)
-    R[:, 2, 2] = 1 - 2*(xx + yy)
+    R[:, 0, 0] = 1 - 2 * (yy + zz)
+    R[:, 0, 1] = 2 * (xy - wz)
+    R[:, 0, 2] = 2 * (xz + wy)
+    R[:, 1, 0] = 2 * (xy + wz)
+    R[:, 1, 1] = 1 - 2 * (xx + zz)
+    R[:, 1, 2] = 2 * (yz - wx)
+    R[:, 2, 0] = 2 * (xz - wy)
+    R[:, 2, 1] = 2 * (yz + wx)
+    R[:, 2, 2] = 1 - 2 * (xx + yy)
     return R
+
 
 def obb_sat_overlap(c0, A0, h0, c1, A1, h1, eps=1e-9) -> bool:
     """
@@ -75,7 +76,8 @@ def obb_sat_overlap(c0, A0, h0, c1, A1, h1, eps=1e-9) -> bool:
                 return False
     return True
 
-def obb_planes(c: np.ndarray, A: np.ndarray, h: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+
+def obb_planes(c: np.ndarray, A: np.ndarray, h: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """
     Return 12 planes (normals N and offsets b) that define the OBB as {x | N @ x <= b}.
     For each axis k:  n = +A[:,k], b = n·(c) + h[k];  and  n = -A[:,k], b = (-n)·(c) + h[k].
@@ -85,9 +87,14 @@ def obb_planes(c: np.ndarray, A: np.ndarray, h: np.ndarray) -> Tuple[np.ndarray,
     idx = 0
     for k in range(3):
         n = A[:, k]
-        N[idx] = n;     b[idx] = n @ c + h[k]; idx += 1
-        N[idx] = -n;    b[idx] = (-n) @ c + h[k]; idx += 1
+        N[idx] = n
+        b[idx] = n @ c + h[k]
+        idx += 1
+        N[idx] = -n
+        b[idx] = (-n) @ c + h[k]
+        idx += 1
     return N, b
+
 
 def intersection_volume_planes(NA, bA, NB, bB, tol=1e-8) -> float:
     """
@@ -95,13 +102,13 @@ def intersection_volume_planes(NA, bA, NB, bB, tol=1e-8) -> float:
         NA x <= bA  and  NB x <= bB
     via enumerating 3-plane intersections among the combined 12 planes.
     """
-    N = np.vstack([NA, NB])     # (12,3)
-    b = np.hstack([bA, bB])     # (12,)
+    N = np.vstack([NA, NB])  # (12,3)
+    b = np.hstack([bA, bB])  # (12,)
     verts = []
 
     # Enumerate all 3-plane combos (220)
     for i, j, k in combinations(range(12), 3):
-        M = np.stack([N[i], N[j], N[k]], axis=0)   # 3x3
+        M = np.stack([N[i], N[j], N[k]], axis=0)  # 3x3
         det = np.linalg.det(M)
         if abs(det) < tol:
             continue
@@ -124,6 +131,7 @@ def intersection_volume_planes(NA, bA, NB, bB, tol=1e-8) -> float:
         return float(hull.volume)
     except Exception:
         return 0.0
+
 
 # --------- main IoU API ---------
 def obb_iou_pair(c0, e0, q0, c1, e1, q1, exact=True) -> float:
@@ -155,6 +163,7 @@ def obb_iou_pair(c0, e0, q0, c1, e1, q1, exact=True) -> float:
     union = v0 + v1 - iv
     return iv / union if union > 0 else 0.0
 
+
 def compute_obb_iou_batch(centers, extents, quats, pairs) -> np.ndarray:
     """
     centers: (N,3), extents: (N,3) full lengths, quats: (N,4) [x,y,z,w], pairs: (M,2)
@@ -163,39 +172,39 @@ def compute_obb_iou_batch(centers, extents, quats, pairs) -> np.ndarray:
     Rmats = quat_to_mat_batch(quats)  # not strictly needed here but useful if you extend
     ious = np.empty(pairs.shape[0], dtype=np.float64)
     for k, (i, j) in enumerate(pairs):
-        ious[k] = obb_iou_pair(centers[i], extents[i], quats[i],
-                               centers[j], extents[j], quats[j])
+        ious[k] = obb_iou_pair(centers[i], extents[i], quats[i], centers[j], extents[j], quats[j])
     return ious
+
 
 """
 Vectorized computationally efficient implementation:
 """
 
 import numpy as np
-from itertools import combinations
-from scipy.spatial import ConvexHull
 
 # ---------- math utils ----------
 _TRIPLETS = np.array(list(combinations(range(12), 3)), dtype=np.int64)  # 220x3
 
+
 def quat_to_mat_batch(quats: np.ndarray) -> np.ndarray:
     """[x,y,z,w] -> (N,3,3) rotation matrices."""
     x, y, z, w = quats.T
-    xx, yy, zz = x*x, y*y, z*z
-    xy, xz, yz = x*y, x*z, y*z
-    wx, wy, wz = w*x, w*y, w*z
+    xx, yy, zz = x * x, y * y, z * z
+    xy, xz, yz = x * y, x * z, y * z
+    wx, wy, wz = w * x, w * y, w * z
 
     R = np.empty((quats.shape[0], 3, 3), dtype=np.float64)
-    R[:, 0, 0] = 1 - 2*(yy + zz)
-    R[:, 0, 1] = 2*(xy - wz)
-    R[:, 0, 2] = 2*(xz + wy)
-    R[:, 1, 0] = 2*(xy + wz)
-    R[:, 1, 1] = 1 - 2*(xx + zz)
-    R[:, 1, 2] = 2*(yz - wx)
-    R[:, 2, 0] = 2*(xz - wy)
-    R[:, 2, 1] = 2*(yz + wx)
-    R[:, 2, 2] = 1 - 2*(xx + yy)
+    R[:, 0, 0] = 1 - 2 * (yy + zz)
+    R[:, 0, 1] = 2 * (xy - wz)
+    R[:, 0, 2] = 2 * (xz + wy)
+    R[:, 1, 0] = 2 * (xy + wz)
+    R[:, 1, 1] = 1 - 2 * (xx + zz)
+    R[:, 1, 2] = 2 * (yz - wx)
+    R[:, 2, 0] = 2 * (xz - wy)
+    R[:, 2, 1] = 2 * (yz + wx)
+    R[:, 2, 2] = 1 - 2 * (xx + yy)
     return R
+
 
 def obb_planes_batch(c: np.ndarray, A: np.ndarray, h: np.ndarray):
     """
@@ -207,30 +216,31 @@ def obb_planes_batch(c: np.ndarray, A: np.ndarray, h: np.ndarray):
     b = np.empty((P, 12), dtype=np.float64)
     # +x,-x,+y,-y,+z,-z per pair
     for k in range(3):
-        n = A[:, :, k]                       # (P,3)
-        N[:, 2*k,     :] = n
-        b[:, 2*k    ] = np.einsum('pi,pi->p', n, c) + h[:, k]
-        N[:, 2*k + 1, :] = -n
-        b[:, 2*k + 1]   = np.einsum('pi,pi->p', -n, c) + h[:, k]
+        n = A[:, :, k]  # (P,3)
+        N[:, 2 * k, :] = n
+        b[:, 2 * k] = np.einsum("pi,pi->p", n, c) + h[:, k]
+        N[:, 2 * k + 1, :] = -n
+        b[:, 2 * k + 1] = np.einsum("pi,pi->p", -n, c) + h[:, k]
     return N, b
+
 
 def sat_overlap_batch(c0, A0, h0, c1, A1, h1, eps=1e-9) -> np.ndarray:
     """
     Batch (P,) boolean SAT for OBB overlap.
     """
     AT0 = np.transpose(A0, (0, 2, 1))
-    R = AT0 @ A1                       # (P,3,3)
-    t = (AT0 @ (c1 - c0)[..., None])[..., 0]   # (P,3)
+    R = AT0 @ A1  # (P,3,3)
+    t = (AT0 @ (c1 - c0)[..., None])[..., 0]  # (P,3)
     absR = np.abs(R) + eps
 
     # Test box0 axes
-    rb0 = np.einsum('pj,pij->pi', h1, absR)   # (P,3) rb for i=0..2
-    cond0 = np.abs(t) > (h0 + rb0)            # (P,3)
+    rb0 = np.einsum("pj,pij->pi", h1, absR)  # (P,3) rb for i=0..2
+    cond0 = np.abs(t) > (h0 + rb0)  # (P,3)
 
     # Test box1 axes
-    ra1 = np.einsum('pi,pij->pj', h0, absR)   # (P,3) ra for j=0..2
-    lhs1 = np.abs(np.einsum('pi,pij->pj', t, R))
-    cond1 = lhs1 > (ra1 + h1)                 # (P,3)
+    ra1 = np.einsum("pi,pij->pj", h0, absR)  # (P,3) ra for j=0..2
+    lhs1 = np.abs(np.einsum("pi,pij->pj", t, R))
+    cond1 = lhs1 > (ra1 + h1)  # (P,3)
 
     # Cross products (9 tests) – small Python loop, vectorized across P
     condX = np.zeros(c0.shape[0], dtype=bool)
@@ -238,13 +248,14 @@ def sat_overlap_batch(c0, A0, h0, c1, A1, h1, eps=1e-9) -> np.ndarray:
         i1, i2 = (i + 1) % 3, (i + 2) % 3
         for j in range(3):
             j1, j2 = (j + 1) % 3, (j + 2) % 3
-            ra = h0[:, i1]*absR[:, i2, j] + h0[:, i2]*absR[:, i1, j]
-            rb = h1[:, j1]*absR[:, i, j2] + h1[:, j2]*absR[:, i, j1]
-            term = np.abs(t[:, i2]*R[:, i1, j] - t[:, i1]*R[:, i2, j])
+            ra = h0[:, i1] * absR[:, i2, j] + h0[:, i2] * absR[:, i1, j]
+            rb = h1[:, j1] * absR[:, i, j2] + h1[:, j2] * absR[:, i, j1]
+            term = np.abs(t[:, i2] * R[:, i1, j] - t[:, i1] * R[:, i2, j])
             condX |= term > (ra + rb)
 
     sep = cond0.any(axis=1) | cond1.any(axis=1) | condX
     return ~sep  # True = overlap
+
 
 # ---------- main: vectorized IoU ----------
 def obb_iou_pairs_vectorized(centers, extents, quats, pairs, chunk_size=2048, tol=1e-9):
@@ -254,7 +265,7 @@ def obb_iou_pairs_vectorized(centers, extents, quats, pairs, chunk_size=2048, to
     """
     centers = centers.astype(np.float64, copy=False)
     extents = extents.astype(np.float64, copy=False)
-    quats   = quats.astype(np.float64,   copy=False)
+    quats = quats.astype(np.float64, copy=False)
 
     A_all = quat_to_mat_batch(quats)
     h_all = 0.5 * extents
@@ -285,12 +296,12 @@ def obb_iou_pairs_vectorized(centers, extents, quats, pairs, chunk_size=2048, to
         v0o, v1o = v0[idx], v1[idx]
 
         # 2) Build planes for overlapping pairs (vectorized)
-        NA, bA = obb_planes_batch(c0o, A0o, h0o)     # (P',12,3), (P',12)
+        NA, bA = obb_planes_batch(c0o, A0o, h0o)  # (P',12,3), (P',12)
         NB, bB = obb_planes_batch(c1o, A1o, h1o)
 
         # Combine halfspaces
-        N = np.concatenate([NA, NB], axis=1)         # (P',24,3)
-        b = np.concatenate([bA, bB], axis=1)         # (P',24)
+        N = np.concatenate([NA, NB], axis=1)  # (P',24,3)
+        b = np.concatenate([bA, bB], axis=1)  # (P',24)
 
         # 3) Enumerate all 3-plane intersections (from 24 choose 3 = 2024)
         # Optimization: only mix planes from both boxes by using the first 12+12 set.
@@ -302,28 +313,28 @@ def obb_iou_pairs_vectorized(centers, extents, quats, pairs, chunk_size=2048, to
         b12 = np.concatenate([bA, bB], axis=1)[:, :12]
 
         # Gather 3x3 M and 3x1 rhs for each pair and triplet (vectorized)
-        Mmat = N12[:, _TRIPLETS, :]                     # (P',220,3,3)
-        rhs  = b12[:, _TRIPLETS]                        # (P',220,3)
+        Mmat = N12[:, _TRIPLETS, :]  # (P',220,3,3)
+        rhs = b12[:, _TRIPLETS]  # (P',220,3)
 
         # 4) Solve M x = rhs where invertible
-        det = np.linalg.det(Mmat)                       # (P',220)
+        det = np.linalg.det(Mmat)  # (P',220)
         invertible = np.abs(det) > 1e-12
         # Make safe copies for solve
         eye = np.eye(3, dtype=np.float64)
         Msafe = np.where(invertible[..., None, None], Mmat, eye)
-        bsafe = np.where(invertible[..., None],       rhs,  0.0)
-        X = np.linalg.solve(Msafe, bsafe)              # (P',220,3)
+        bsafe = np.where(invertible[..., None], rhs, 0.0)
+        X = np.linalg.solve(Msafe, bsafe)  # (P',220,3)
         X[~invertible] = np.nan
 
         # 5) Keep points inside all halfspaces (vectorized)
         # Check N @ x <= b + tol ; N here is the 12-plane set N12
-        vals = np.einsum('pnc,ptc->pnt', N12, X)       # (P',12,220)
+        vals = np.einsum("pnc,ptc->pnt", N12, X)  # (P',12,220)
         inside = np.all(vals <= (b12[:, :, None] + 1e-8), axis=1)  # (P',220)
 
         # 6) Per overlapping pair: compute convex hull volume
         iv = np.zeros(idx.size, dtype=np.float64)
         for u in range(idx.size):
-            pts = X[u, inside[u]]      # (K,3)
+            pts = X[u, inside[u]]  # (K,3)
             if pts.shape[0] < 4 or not np.all(np.isfinite(pts)):
                 iv[u] = 0.0
                 continue
@@ -333,7 +344,7 @@ def obb_iou_pairs_vectorized(centers, extents, quats, pairs, chunk_size=2048, to
                 iv[u] = 0.0
                 continue
             try:
-                hull = ConvexHull(pts, qhull_options='QJ')  # joggle for robustness
+                hull = ConvexHull(pts, qhull_options="QJ")  # joggle for robustness
                 iv[u] = float(hull.volume)
             except Exception:
                 iv[u] = 0.0

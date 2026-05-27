@@ -1,28 +1,28 @@
-import numpy as np
-from typing import Tuple, Optional, Union, List, Literal
-from scipy.spatial import cKDTree  # fast radius search :contentReference[oaicite:2]{index=2}
-from scipy.sparse import coo_matrix, csr_matrix
 from collections import Counter
-import igraph as ig
-import leidenalg as la
-import trimesh
+from typing import Literal
+
+import numpy as np
+from scipy.sparse import coo_matrix, csr_matrix
+from scipy.spatial import cKDTree  # fast radius search :contentReference[oaicite:2]{index=2}
 from scipy.stats import nbinom
+
+from tls2dseg.bboxes_iou import *
 
 # Internal dependencies:
 from tls2dseg.detections_3d import Detections3D, filter_detections3d
-from tls2dseg.bboxes_iou import *
+
 # from tls2dseg.visualization import *
 
 
 def get_initial_sparse_connectivity(
-        centroids: np.ndarray,  # (N,3) float32/float64
-        class_ids: Optional[np.ndarray] = None,  # (N,) int  – needed if semantic_gate=True
-        n_scans: float = 1,  # float – needed for knn-threshold
-        *,
-        method: str = "knn",  # "knn"  or  "radius"
-        knn_ps: int = 2,  # 1‒3, used only if method=="knn"
-        radius: float = 0.20,  # metres, used only if method=="radius"
-        semantic_gate: bool = False,  # require identical class_ids?
+    centroids: np.ndarray,  # (N,3) float32/float64
+    class_ids: np.ndarray | None = None,  # (N,) int  – needed if semantic_gate=True
+    n_scans: float = 1,  # float – needed for knn-threshold
+    *,
+    method: str = "knn",  # "knn"  or  "radius"
+    knn_ps: int = 2,  # 1‒3, used only if method=="knn"
+    radius: float = 0.20,  # metres, used only if method=="radius"
+    semantic_gate: bool = False,  # require identical class_ids?
 ) -> np.ndarray:
     """
     Fast KD-tree based neighbour discovery -> boolean CSR adjacency.
@@ -86,8 +86,7 @@ def get_initial_sparse_connectivity(
 
 
 def sparse_connectivity_pairs2csr_matrix(
-        pairs: Union[np.ndarray, list],
-        edge_weights: Optional[np.ndarray] = None
+    pairs: np.ndarray | list, edge_weights: np.ndarray | None = None
 ) -> csr_matrix:
     """
     Convert a list/array of node-pairs (i, j) into a symmetric CSR adjacency matrix,
@@ -138,7 +137,9 @@ def sparse_connectivity_pairs2csr_matrix(
     return adj
 
 
-def compute_supporter_counts(pairs: np.ndarray, bbox_overlap: np.ndarray, iou_threshold: float = 0.3) -> np.ndarray:
+def compute_supporter_counts(
+    pairs: np.ndarray, bbox_overlap: np.ndarray, iou_threshold: float = 0.3
+) -> np.ndarray:
     M = pairs.shape[0]
     neigh = {i: set() for i in np.unique(pairs)}
     for (i, j), iou in zip(pairs, bbox_overlap):
@@ -152,12 +153,12 @@ def compute_supporter_counts(pairs: np.ndarray, bbox_overlap: np.ndarray, iou_th
 
 
 def get_edge_weights(
-        detections3d: Detections3D,
-        pairs: np.ndarray,
-        iou_threshold: float = 0.15,
-        mode: Literal['iou', 'supporters', 'both'] = 'both',
-        obb_workers: Optional[int] = None
-) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
+    detections3d: Detections3D,
+    pairs: np.ndarray,
+    iou_threshold: float = 0.15,
+    mode: Literal["iou", "supporters", "both"] = "both",
+    obb_workers: int | None = None,
+) -> tuple[np.ndarray | None, np.ndarray | None]:
     """
     Compute edge weights for sparse pairs: IoU and/or supporter counts.
 
@@ -183,34 +184,39 @@ def get_edge_weights(
     # Compute 3D IoU (either for AABB or for OBB)
     # TODO: if statement left inside, because maybe I implement edge weights not based on 3D IoU in future
     # AABB
-    if bboxes_type == 'aabb':
+    if bboxes_type == "aabb":
         aabb = bboxes
-        if mode in ('iou', 'both', 'supporters'):
+        if mode in ("iou", "both", "supporters"):
             bbox_overlap = compute_aabb_iou_vectorized(aabb, pairs)
     # OBB
-    elif bboxes_type == 'obb':
-        if mode in ('iou', 'both', 'supporters'):
-            bbox_overlap = compute_obb_iou_parallel(centers=bboxes[:, :3], extents=bboxes[:, 3:6],
-                                                    quats=bboxes[:, 6:10], pairs=pairs,
-                                                    max_workers=obb_workers)
+    elif bboxes_type == "obb":
+        if mode in ("iou", "both", "supporters"):
+            bbox_overlap = compute_obb_iou_parallel(
+                centers=bboxes[:, :3],
+                extents=bboxes[:, 3:6],
+                quats=bboxes[:, 6:10],
+                pairs=pairs,
+                max_workers=obb_workers,
+            )
     else:
         raise ValueError("bboxes must have 6 or 10 columns")
 
-    if mode in ('supporters', 'both'):
+    if mode in ("supporters", "both"):
         supporter_counts = compute_supporter_counts(pairs, bbox_overlap, iou_threshold)
 
-    if mode == 'iou':
+    if mode == "iou":
         return bbox_overlap, None
-    elif mode == 'supporters':
+    elif mode == "supporters":
         return None, supporter_counts
-    elif mode == 'both':
+    elif mode == "both":
         return bbox_overlap, supporter_counts
     else:
         raise ValueError(f"mode must be 'iou', 'supporters' or 'both', got {mode} instead")
 
 
-def count_significant_overlaps(pairs: np.ndarray, bbox_overlap: np.ndarray, iou_threshold: float,
-                               N: int) -> np.ndarray:
+def count_significant_overlaps(
+    pairs: np.ndarray, bbox_overlap: np.ndarray, iou_threshold: float, N: int
+) -> np.ndarray:
     """
     Count, for each of N detections (its 3D bbox), with how many other detections (3D bboxes) it has a significant
      overlap with (overlaps > iou_threshold).
@@ -242,7 +248,7 @@ def detect_upper_tail_outliers(
     iqr_factor: float = 1.5,
     mad_factor: float = 3.0,
     percentile: float = 95.0,
-         alpha: float = 0.05,
+    alpha: float = 0.05,
 ) -> tuple[np.ndarray, float]:
     """
     Detect upper‐tail outliers in a 1D positive integer array.
@@ -278,11 +284,11 @@ def detect_upper_tail_outliers(
         cutoff = med + mad_factor * mad
     elif method == "percentile":
         cutoff = np.percentile(data, percentile)
-    elif method == 'negative_binomial':
+    elif method == "negative_binomial":
         # Detect outliers based on negative binomial distribution
         mean, var = data.mean(), data.var(ddof=1)
         # Var = mean + mean^2 / r  ->  r = mean^2 / (var - mean)
-        r = mean ** 2 / max(var - mean, 1e-6)
+        r = mean**2 / max(var - mean, 1e-6)
         p = r / (r + mean)
         cutoff = nbinom.ppf(1 - alpha, r, p)
     else:
@@ -294,11 +300,8 @@ def detect_upper_tail_outliers(
 
 
 def filter_outlier_detections3d_edges_and_nodes(
-    d3d_collection: Detections3D,
-    pairs: np.ndarray,
-    edge_weights: np.ndarray,
-    outliers: np.ndarray
-) -> Tuple[Detections3D, np.ndarray, np.ndarray]:
+    d3d_collection: Detections3D, pairs: np.ndarray, edge_weights: np.ndarray, outliers: np.ndarray
+) -> tuple[Detections3D, np.ndarray, np.ndarray]:
     """
     Remove outlier detections and any edges touching them.
 
@@ -348,16 +351,19 @@ def filter_outlier_detections3d_edges_and_nodes(
 # ---------- utilities ----------
 class UnionFind:
     def __init__(self, n):
-        self.par  = np.arange(n, dtype=np.int32)
+        self.par = np.arange(n, dtype=np.int32)
         self.rank = np.zeros(n, dtype=np.int8)
+
     def find(self, x):
         while self.par[x] != x:
             self.par[x] = self.par[self.par[x]]
             x = self.par[x]
         return x
+
     def union(self, a, b):
         ra, rb = self.find(a), self.find(b)
-        if ra == rb: return ra
+        if ra == rb:
+            return ra
         if self.rank[ra] < self.rank[rb]:
             self.par[ra] = rb
             return rb
@@ -368,15 +374,18 @@ class UnionFind:
             self.par[rb] = ra
             self.rank[ra] += 1
             return ra
+
+
 # ---------------------------------------
+
 
 def pcc_strict_nondecreasing(
     num_nodes: int,
-    pairs: np.ndarray,            # (M,2)
-    supporters: np.ndarray,       # (M,)
+    pairs: np.ndarray,  # (M,2)
+    supporters: np.ndarray,  # (M,)
     min_supporters: int = 2,
-    quantiles: List[int] = (99, 95, 90, 80, 70, 60, 50),
-) -> Tuple[np.ndarray, np.ndarray]:
+    quantiles: list[int] = (99, 95, 90, 80, 70, 60, 50),
+) -> tuple[np.ndarray, np.ndarray]:
     """
     PCC with multiplicity-preserving supporter counters.
     The supporter count of any surviving edge never goes down.
@@ -393,15 +402,12 @@ def pcc_strict_nondecreasing(
     order = np.argsort(-supporters)
     pairs_sorted, supp_sorted = pairs[order], supporters[order]
 
-    thresholds = [
-        max(int(np.percentile(supporters, q)), min_supporters)
-        for q in quantiles
-    ]
+    thresholds = [max(int(np.percentile(supporters, q)), min_supporters) for q in quantiles]
     thresholds.append(min_supporters)
 
-    current = 0            # pointer into sorted edge list
-    active_edges = pairs_sorted        # edges still considered
-    active_sup   = supp_sorted.copy()  # their current weights
+    current = 0  # pointer into sorted edge list
+    active_edges = pairs_sorted  # edges still considered
+    active_sup = supp_sorted.copy()  # their current weights
 
     for thr in thresholds:
         # ---- 2. merge all edges with supp >= thr ----------------------
@@ -426,7 +432,7 @@ def pcc_strict_nondecreasing(
         # Keep only inter-cluster edges
         keep = root_of[active_edges[:, 0]] != root_of[active_edges[:, 1]]
         active_edges = active_edges[keep]
-        active_sup   = active_sup[keep]
+        active_sup = active_sup[keep]
 
         # Recompute supporter counts (non-decreasing)
         new_sup = np.empty_like(active_sup)
@@ -449,18 +455,20 @@ def pcc_strict_nondecreasing(
     return labels.astype(np.int32) + 1, active_sup
 
 
-def hcs_labels(num_nodes: int,
-               pairs: np.ndarray,          # shape (M, 2), int
-               edge_weights: np.ndarray,   # shape (M,), float/int
-               min_weight_for_connectivity: float = 1.0,  # treat w<=0 as "no edge"
-               ) -> np.ndarray:
+def hcs_labels(
+    num_nodes: int,
+    pairs: np.ndarray,  # shape (M, 2), int
+    edge_weights: np.ndarray,  # shape (M,), float/int
+    min_weight_for_connectivity: float = 1.0,  # treat w<=0 as "no edge"
+) -> np.ndarray:
     """
     HCS via recursive global min-cut with robust connectivity handling.
     Returns 1-based cluster labels of shape (num_nodes,).
     """
-    import networkx as nx
     from collections import defaultdict
-    from typing import Iterable
+    from collections.abc import Iterable
+
+    import networkx as nx
 
     # Accumulate weights per undirected edge, filter <= 0 if desired --
     acc = defaultdict(float)
@@ -546,13 +554,13 @@ def hcs_labels(num_nodes: int,
 
 def graph_clustering(
     num_nodes: int,
-    pairs: np.ndarray,            # (M,2) int32
-    edge_weights: np.ndarray,     # (M,)  float  or int
+    pairs: np.ndarray,  # (M,2) int32
+    edge_weights: np.ndarray,  # (M,)  float  or int
     method: Literal["leiden", "hcs", "pcc"] = "leiden",
     *,
     # PCC-specific
     min_supporters: int = 1,
-    quantiles: List[int] = (90, 80, 70, 60, 50, 40, 30, 20, 10),
+    quantiles: list[int] = (90, 80, 70, 60, 50, 40, 30, 20, 10),
     # Leiden parameters
     leiden_resolution: float = 1.0,
 ) -> np.ndarray:
@@ -571,7 +579,9 @@ def graph_clustering(
     labels : (num_nodes,) int32 cluster id per detection ( -1 for isolated if HCS/PCC )
     """
     if method == "leiden":
-        import igraph as ig, leidenalg as la
+        import igraph as ig
+        import leidenalg as la
+
         # build igraph
         g = ig.Graph(n=num_nodes, edges=pairs.tolist(), edge_attrs={"weight": edge_weights})
         part = la.find_partition(
@@ -588,7 +598,9 @@ def graph_clustering(
         labels = labels.astype(np.int32)
 
     elif method == "pcc":
-        labels, _ = pcc_strict_nondecreasing(num_nodes, pairs, edge_weights, min_supporters, quantiles)
+        labels, _ = pcc_strict_nondecreasing(
+            num_nodes, pairs, edge_weights, min_supporters, quantiles
+        )
     else:
         raise ValueError(f"Unknown method {method}")
 

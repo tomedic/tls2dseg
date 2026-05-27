@@ -1,10 +1,11 @@
-from typing import List, Tuple
-import supervision as sv
-import numpy as np
 from itertools import compress
-import pycocotools.mask as mask_util
 
-def resolve_class_names(class_names: List[str], valid_keys: List[str]) -> List[str]:
+import numpy as np
+import pycocotools.mask as mask_util
+import supervision as sv
+
+
+def resolve_class_names(class_names: list[str], valid_keys: list[str]) -> list[str]:
     """
     Resolves a list of class names to valid keys.
     If class_name is directly in valid_keys, keep it, else, search for the first valid_key that is a substring of
@@ -29,7 +30,9 @@ def resolve_class_names(class_names: List[str], valid_keys: List[str]) -> List[s
 
 # Create empty detections object for early terminations:
 def return_empty_detections() -> sv.Detections:
-    empty_detections = sv.Detections(xyxy=np.empty((0, 4)), confidence=np.array([]), class_id=np.array([]))
+    empty_detections = sv.Detections(
+        xyxy=np.empty((0, 4)), confidence=np.array([]), class_id=np.array([])
+    )
     empty_detections.data["sparse_masks"] = []
     return empty_detections
 
@@ -40,9 +43,9 @@ def check_if_img_slice_empty(image_slice: np.ndarray, slice_inference_parameters
     max_count = np.count_nonzero(image_slice == max_val)
     all_count = image_slice.size
     #   if more pixels than a threshold have value = max_val -> slice predominantly empty and will not be processed
-    empty_slice_removal_threshold = slice_inference_parameters['empty_slice_removal_threshold']
+    empty_slice_removal_threshold = slice_inference_parameters["empty_slice_removal_threshold"]
 
-    if (max_count/all_count) > empty_slice_removal_threshold:
+    if (max_count / all_count) > empty_slice_removal_threshold:
         return False
     else:
         return True
@@ -60,7 +63,7 @@ def check_if_img_slice_complete(image_slice: np.ndarray, slice_inference_paramet
         return True
 
 
-def parse_gdino_results(gdino_results, text_prompt: str) -> Tuple:
+def parse_gdino_results(gdino_results, text_prompt: str) -> tuple:
     """
     Info:
         Prepare results for supervision library Detections object. Unpack Grounded Dino results
@@ -74,9 +77,11 @@ def parse_gdino_results(gdino_results, text_prompt: str) -> Tuple:
     class_names = gdino_results[0]["labels"]  # get class names
 
     # Get class_ids corresponding defined relative to the original text_prompt and corresponding to class_names
-    keys = text_prompt.split('.')  # → ['house','window','bicycle','door','grass','leaf']
+    keys = text_prompt.split(".")  # → ['house','window','bicycle','door','grass','leaf']
     id_map = {k: i + 1 for i, k in enumerate(keys)}  # → {'house':1, 'window':2, ..., 'leaf':6}
-    class_names = resolve_class_names(class_names, keys)  # if class name corresponds to 2 valid classes - pick 1
+    class_names = resolve_class_names(
+        class_names, keys
+    )  # if class name corresponds to 2 valid classes - pick 1
 
     # Removing eventual detections that are not related to any of the valid class categories
     # and assigning class_ids per detection based on the ID map
@@ -91,11 +96,20 @@ def parse_gdino_results(gdino_results, text_prompt: str) -> Tuple:
     return input_boxes, class_names, class_ids, confidences
 
 
-def remove_too_large_detections(input_boxes, class_names, class_ids, confidences,
-                                inference_models_parameters, slice_width, slice_height) -> Tuple:
+def remove_too_large_detections(
+    input_boxes,
+    class_names,
+    class_ids,
+    confidences,
+    inference_models_parameters,
+    slice_width,
+    slice_height,
+) -> tuple:
 
     # Remove too-large object detections (when approaching SAHI slice-size/area, likely to be erroneous)
-    lor_threshold = inference_models_parameters["large_object_removal_threshold"]  # lor = large object removal
+    lor_threshold = inference_models_parameters[
+        "large_object_removal_threshold"
+    ]  # lor = large object removal
 
     # Early stopping
     if lor_threshold is None:
@@ -103,7 +117,9 @@ def remove_too_large_detections(input_boxes, class_names, class_ids, confidences
 
     # Detecting too large instances
     lor_max_area = lor_threshold * slice_width * slice_height  # percentage of SAHI slice area
-    input_boxes_areas = (input_boxes[:, 2] - input_boxes[:, 0]) * (input_boxes[:, 3] - input_boxes[:, 1])
+    input_boxes_areas = (input_boxes[:, 2] - input_boxes[:, 0]) * (
+        input_boxes[:, 3] - input_boxes[:, 1]
+    )
     keep_mask = input_boxes_areas < lor_max_area
 
     # Update main output variables
@@ -115,8 +131,15 @@ def remove_too_large_detections(input_boxes, class_names, class_ids, confidences
     return input_boxes, class_names, class_ids, confidences
 
 
-def remove_detections_touching_image_edges(input_boxes, class_names, class_ids, confidences,
-                                inference_models_parameters, slice_width, slice_height) -> Tuple:
+def remove_detections_touching_image_edges(
+    input_boxes,
+    class_names,
+    class_ids,
+    confidences,
+    inference_models_parameters,
+    slice_width,
+    slice_height,
+) -> tuple:
 
     # How close (in pixels) can a bounding box edge be to an image (or image slice) edge, and still be accepted
     threshold = inference_models_parameters["partial_detection_edge_touching_threshold"]
@@ -132,7 +155,7 @@ def remove_detections_touching_image_edges(input_boxes, class_names, class_ids, 
     # Detect boxes touching top edge
     criteria_3 = input_boxes[:, 3] > slice_height - threshold
     # Combine into single keep mask
-    keep_mask = ~ (criteria_1 | criteria_2 | criteria_3)
+    keep_mask = ~(criteria_1 | criteria_2 | criteria_3)
 
     # Update main output variables
     class_names = list(compress(class_names, keep_mask))
@@ -143,8 +166,15 @@ def remove_detections_touching_image_edges(input_boxes, class_names, class_ids, 
     return input_boxes, class_names, class_ids, confidences
 
 
-def post_process_gdino_results(gdino_processor, outputs, inputs, text_prompt, inference_models_parameters,
-                               slice_height, slice_width) -> Tuple:
+def post_process_gdino_results(
+    gdino_processor,
+    outputs,
+    inputs,
+    text_prompt,
+    inference_models_parameters,
+    slice_height,
+    slice_width,
+) -> tuple:
     # Postprocess Grounded DINO results
 
     # - filters out bounding boxes and text predictions with low confidence scores,
@@ -152,23 +182,37 @@ def post_process_gdino_results(gdino_processor, outputs, inputs, text_prompt, in
     gdino_results = gdino_processor.post_process_grounded_object_detection(
         outputs,
         inputs.input_ids,
-        box_threshold=inference_models_parameters['box_threshold'],
-        text_threshold=inference_models_parameters['text_threshold'],
-        target_sizes=[(slice_height, slice_width)]
+        box_threshold=inference_models_parameters["box_threshold"],
+        text_threshold=inference_models_parameters["text_threshold"],
+        target_sizes=[(slice_height, slice_width)],
     )
 
     #   - prepare results for supervision library Detections object:
-    input_boxes, class_names, class_ids, confidences = parse_gdino_results(gdino_results, text_prompt)
+    input_boxes, class_names, class_ids, confidences = parse_gdino_results(
+        gdino_results, text_prompt
+    )
 
     #   - remove too-large object detections (when approaching SAHI slice-size/area, likely to be erroneous)
-    input_boxes, class_names, class_ids, confidences =\
-        remove_too_large_detections(input_boxes, class_names, class_ids, confidences, inference_models_parameters,
-                                    slice_width, slice_height)
+    input_boxes, class_names, class_ids, confidences = remove_too_large_detections(
+        input_boxes,
+        class_names,
+        class_ids,
+        confidences,
+        inference_models_parameters,
+        slice_width,
+        slice_height,
+    )
 
     #   - remove detections touching edges
-    input_boxes, class_names, class_ids, confidences =\
-        remove_detections_touching_image_edges(input_boxes, class_names, class_ids, confidences,
-                                               inference_models_parameters, slice_width, slice_height)
+    input_boxes, class_names, class_ids, confidences = remove_detections_touching_image_edges(
+        input_boxes,
+        class_names,
+        class_ids,
+        confidences,
+        inference_models_parameters,
+        slice_width,
+        slice_height,
+    )
 
     #   - everything is empty flag
     if not class_names:
@@ -179,11 +223,13 @@ def post_process_gdino_results(gdino_processor, outputs, inputs, text_prompt, in
     return input_boxes, class_names, class_ids, confidences, empty_results_flag
 
 
-def run_sam2_bbox_prompt_inference_in_batches(sam2_predictor, input_boxes, sam_box_prompt_batch_size, masks) -> List:
+def run_sam2_bbox_prompt_inference_in_batches(
+    sam2_predictor, input_boxes, sam_box_prompt_batch_size, masks
+) -> list:
 
     for batch_i in range(0, len(input_boxes), sam_box_prompt_batch_size):
         # Get batch
-        batch_boxes = input_boxes[batch_i:batch_i + sam_box_prompt_batch_size]
+        batch_boxes = input_boxes[batch_i : batch_i + sam_box_prompt_batch_size]
         # Run SAM2
         masks_i, _, _ = sam2_predictor.predict(
             point_coords=None,
@@ -200,7 +246,7 @@ def run_sam2_bbox_prompt_inference_in_batches(sam2_predictor, input_boxes, sam_b
     return masks
 
 
-def convert_masks_to_sparse_masks(masks: list) -> List:
+def convert_masks_to_sparse_masks(masks: list) -> list:
     sparse_masks = []
     if masks:
         # Transform masks into a single numpy.ndarray from a list of batches
@@ -230,6 +276,3 @@ def rle_to_mask(rle):
     if mask.ndim == 3 and mask.shape[2] == 1:
         mask = mask[:, :, 0]
     return mask
-
-
-

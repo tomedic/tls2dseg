@@ -1,15 +1,15 @@
-import numpy as np
-from typing import Tuple, Optional, Union, List, Literal
-import trimesh
 from concurrent.futures import ProcessPoolExecutor
+
+import numpy as np
+import trimesh
 from scipy.spatial.transform import Rotation as R
 
 
 def compute_obb_iou_naive(
-        centers: np.ndarray,
-        extents: np.ndarray,
-        quats: np.ndarray,
-        pairs: np.ndarray,
+    centers: np.ndarray,
+    extents: np.ndarray,
+    quats: np.ndarray,
+    pairs: np.ndarray,
 ) -> np.ndarray:
     """
     Compute 3D IoU for oriented bounding boxes (OBBs) using trimesh boolean intersection.
@@ -57,7 +57,7 @@ def compute_obb_iou_naive(
 
         # Boolean intersection
         try:
-            inter = trimesh.boolean.intersection([box1, box2], engine='manifold')
+            inter = trimesh.boolean.intersection([box1, box2], engine="manifold")
             inter_vol = inter.volume if inter is not None else 0.0
         except BaseException:
             inter_vol = 0.0
@@ -68,15 +68,13 @@ def compute_obb_iou_naive(
     return ious
 
 
-def _compute_iou_from_packed(
-        args: Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]
-) -> float:
+def _compute_iou_from_packed(args: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]) -> float:
     ext_i, trans_i, ext_j, trans_j = args
     box1 = trimesh.creation.box(extents=ext_i, transform=trans_i)
     box2 = trimesh.creation.box(extents=ext_j, transform=trans_j)
     v1, v2 = box1.volume, box2.volume
     try:
-        inter = trimesh.boolean.intersection([box1, box2], engine='manifold')
+        inter = trimesh.boolean.intersection([box1, box2], engine="manifold")
         iv = inter.volume if inter else 0.0
     except Exception:
         iv = 0.0
@@ -85,11 +83,11 @@ def _compute_iou_from_packed(
 
 
 def compute_obb_iou_parallel(
-        centers: np.ndarray,
-        extents: np.ndarray,
-        quats: np.ndarray,
-        pairs: np.ndarray,
-        max_workers: Optional[int] = None
+    centers: np.ndarray,
+    extents: np.ndarray,
+    quats: np.ndarray,
+    pairs: np.ndarray,
+    max_workers: int | None = None,
 ) -> np.ndarray:
     """
     Compute 3D IoU for OBBs by pre-packing only the per-pair extents/transforms.
@@ -117,8 +115,8 @@ def compute_obb_iou_parallel(
     transforms[:, :3, 3] = centers
 
     # 2) Pack per-pair arguments
-    pack_args: List[Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, str]] = []
-    for (i, j) in pairs:
+    pack_args: list[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, str]] = []
+    for i, j in pairs:
         pack_args.append((extents[i], transforms[i], extents[j], transforms[j]))
 
     # 3) Parallel map
@@ -128,10 +126,7 @@ def compute_obb_iou_parallel(
     return np.array(ious, dtype=np.float32)
 
 
-def compute_aabb_iou_vectorized(
-        aabb: np.ndarray,
-        pairs: np.ndarray
-) -> np.ndarray:
+def compute_aabb_iou_vectorized(aabb: np.ndarray, pairs: np.ndarray) -> np.ndarray:
     """
     Vectorized IoU for axis-aligned bounding boxes.
 
@@ -163,4 +158,3 @@ def compute_aabb_iou_vectorized(
     union_vol = vol_i + vol_j - inter_vol
     # 3D IoU
     return np.where(union_vol > 0, inter_vol / union_vol, 0.0).astype(np.float32)
-

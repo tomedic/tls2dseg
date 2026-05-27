@@ -1,14 +1,17 @@
-from typing import Tuple, List, Union
 import numpy as np
 import supervision as sv
-from supervision.detection.tools.inference_slicer import InferenceSlicer, crop_image, move_detections
 from supervision import Detections
+from supervision.detection.tools.inference_slicer import (
+    InferenceSlicer,
+    crop_image,
+    move_detections,
+)
 
 
 def move_sparse_masks(
     detections: Detections,
     offset: np.ndarray[np.int32],
-    resolution_wh: Tuple[int, int],
+    resolution_wh: tuple[int, int],
 ) -> Detections:
     """
     Shift sparse masks of an image slice to correct positions within full high-resolution image.
@@ -58,6 +61,7 @@ class SparseMasksInferenceSlicer(InferenceSlicer):
         offsets -
         sparse masks -
     """
+
     def _run_callback(self, image: np.ndarray, offset: np.ndarray) -> sv.Detections:
         image_slice = crop_image(image=image, xyxy=offset)
         detections = self.callback(image_slice)
@@ -71,4 +75,3 @@ class SparseMasksInferenceSlicer(InferenceSlicer):
         detections = move_sparse_masks(detections, offset=offset_int32, resolution_wh=resolution_wh)
 
         return detections
-

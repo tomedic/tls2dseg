@@ -1,5 +1,7 @@
+from concurrent.futures import ProcessPoolExecutor
+
 import numpy as np
-from concurrent.futures import ProcessPoolExecutor, as_completed
+
 from src.tls2dseg.statistics_generalizable import multivariate_normal_outlier_removal
 
 
@@ -19,8 +21,10 @@ def merge_list_of_2d_detections(dict_list: list[dict]) -> dict:
             merged_dict[key_i] = [item for sublist in vals_i for item in sublist]
         # rais an error if dtype under same key not consistent or not supported
         else:
-            raise TypeError("not all dictionaries within a list of dictionary are consistently"
-                            " lists or np.ndarrays")
+            raise TypeError(
+                "not all dictionaries within a list of dictionary are consistently"
+                " lists or np.ndarrays"
+            )
 
     return merged_dict
 
@@ -83,9 +87,9 @@ def _compute_2d_mask_features(mask_xy: np.ndarray, rng: float) -> np.ndarray:
 
     # ----- range normalisation & log transforms -----
     # range normalisation to account for different object distances
-    major_phys = major * rng          # ∝ true length
-    minor_phys = minor * rng          # ∝ true width
-    area_phys  = pix_cnt * rng**2     # ∝ true area
+    major_phys = major * rng  # ∝ true length
+    minor_phys = minor * rng  # ∝ true width
+    area_phys = pix_cnt * rng**2  # ∝ true area
     # log transform to get closer to normal distribution
     major_phys = np.log1p(major_phys)
     minor_phys = np.log1p(minor_phys)
@@ -96,18 +100,24 @@ def _compute_2d_mask_features(mask_xy: np.ndarray, rng: float) -> np.ndarray:
 
     return features
 
+
 def _compute_2d_mask_features_worker(args):
     mask, rng = args
     return _compute_2d_mask_features(mask, rng)
 
-def d2d_outlier_removal(d2d_collection: dict, task_parameters: dict, per_class_separation: bool = False,
-                        confidence_interval: float = 0.99) -> tuple[dict, np.ndarray]:
+
+def d2d_outlier_removal(
+    d2d_collection: dict,
+    task_parameters: dict,
+    per_class_separation: bool = False,
+    confidence_interval: float = 0.99,
+) -> tuple[dict, np.ndarray]:
 
     # Extract relevant values:
     masks = d2d_collection["masks"]
     ranges = d2d_collection["object_distances"]
     class_ids = d2d_collection["class_ids"]
-    n_jobs = task_parameters['n_workers']
+    n_jobs = task_parameters["n_workers"]
 
     # Compute features for outlier removal using parallel computing:
     #   prep arguments for each worker (mask, range_image)
@@ -130,14 +140,16 @@ def d2d_outlier_removal(d2d_collection: dict, task_parameters: dict, per_class_s
     is_outlier = np.zeros_like(class_ids, dtype=np.bool_)
     nd = features_or.shape[1]  # get number of dimensions
     for cls in unique_cls:
-        class_mask = (class_ids == cls)
+        class_mask = class_ids == cls
         nr_samples = np.sum(class_mask)
         if nr_samples > nd * 10:
             features_i = features_or[class_mask]
             is_outlier_i = multivariate_normal_outlier_removal(features_i, confidence_interval)
             is_outlier[class_mask] = is_outlier_i
         else:
-            print(f"Warning: 2d statistical outlier removal skipped for class {cls} due to too few samples")
+            print(
+                f"Warning: 2d statistical outlier removal skipped for class {cls} due to too few samples"
+            )
 
     # Filter out 2d detections
     d2d_collection = filter_out_samples_in_2d_detections(d2d_collection, is_outlier)

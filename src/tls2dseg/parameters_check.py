@@ -1,16 +1,20 @@
-
-
-def check_all_parameters(task_parameters, pcp_parameters, image_generation_parameters,
-                         inference_models_parameters, slice_inference_parameters, text_prompt) -> None:
+def check_all_parameters(
+    task_parameters,
+    pcp_parameters,
+    image_generation_parameters,
+    inference_models_parameters,
+    slice_inference_parameters,
+    text_prompt,
+) -> None:
     # Check all input parameters if they adhere to expected values and types
 
     # pcp_parameters
     # __________________________________________________________________________________________________________________
     # Range limits
-    if pcp_parameters['range_limits'] is not None:
-        range_limits = pcp_parameters['range_limits']
+    if pcp_parameters["range_limits"] is not None:
+        range_limits = pcp_parameters["range_limits"]
         if len(range_limits) != 2:
-            raise ValueError(f"Range limits provided, but not specifying both min and max range!")
+            raise ValueError("Range limits provided, but not specifying both min and max range!")
         if not all(isinstance(x, (int, float)) for x in range_limits):
             raise TypeError("Both elements of range_limits must be numbers (int or float)!")
 

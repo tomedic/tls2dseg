@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import numpy as np
 from numpy.typing import NDArray
 
@@ -8,8 +9,9 @@ def _is_axis_aligned_rect(poly: NDArray[np.floating], tol: float) -> bool:
     x, y = poly[:, 0], poly[:, 1]
     minx, maxx = x.min(), x.max()
     miny, maxy = y.min(), y.max()
-    return (np.all(np.isclose(x, minx, atol=tol) | np.isclose(x, maxx, atol=tol)) and
-            np.all(np.isclose(y, miny, atol=tol) | np.isclose(y, maxy, atol=tol)))
+    return np.all(np.isclose(x, minx, atol=tol) | np.isclose(x, maxx, atol=tol)) and np.all(
+        np.isclose(y, miny, atol=tol) | np.isclose(y, maxy, atol=tol)
+    )
 
 
 def _is_convex_ordered(poly: NDArray[np.floating]) -> bool:
@@ -26,10 +28,7 @@ def _is_convex_ordered(poly: NDArray[np.floating]) -> bool:
 
 
 def _mask_halfspace_convex_quadrilateral(
-        xy: NDArray[np.floating],
-        quad: NDArray[np.floating],
-        include_boundary: bool,
-        tol: float
+    xy: NDArray[np.floating], quad: NDArray[np.floating], include_boundary: bool, tol: float
 ) -> NDArray[np.bool_]:
     """
     Inside test for convex 4-gon using half-spaces:
@@ -41,7 +40,7 @@ def _mask_halfspace_convex_quadrilateral(
     n = np.stack([e[:, 1], -e[:, 0]], axis=1)  # rotate +90° to get a normal
     c = v.mean(axis=0)  # centroid
     # Orient normals outward so centroid satisfies n·(c - vi) <= 0
-    orient = (np.einsum('ij,ij->i', n, (c - v)) > 0.0)
+    orient = np.einsum("ij,ij->i", n, (c - v)) > 0.0
     n[orient] *= -1.0
 
     # Evaluate all four half-spaces: scores = n·(p - vi)
@@ -50,20 +49,21 @@ def _mask_halfspace_convex_quadrilateral(
     for i in range(4):
         scores = (xy[:, 0] - v[i, 0]) * n[i, 0] + (xy[:, 1] - v[i, 1]) * n[i, 1]
         if include_boundary:
-            inside &= (scores <= tol)
+            inside &= scores <= tol
         else:
-            inside &= (scores < 0.0)
+            inside &= scores < 0.0
         if not inside.any():
             break
     return inside
 
 
 def roi_mask_xy_rectaware(
-        xy: NDArray[np.floating],
-        roi_xy: NDArray[np.floating],
-        include_boundary: bool = False,
-        tol: float = 1e-12,
-        axis_aligned_tol: float = 1e-9) -> NDArray[np.bool_]:
+    xy: NDArray[np.floating],
+    roi_xy: NDArray[np.floating],
+    include_boundary: bool = False,
+    tol: float = 1e-12,
+    axis_aligned_tol: float = 1e-9,
+) -> NDArray[np.bool_]:
     """
     Fast mask for rectangular/quad ROIs:
     - If axis-aligned rectangle: AABB test (fastest).
@@ -83,11 +83,14 @@ def roi_mask_xy_rectaware(
 
     if poly.shape[0] == 4 and _is_axis_aligned_rect(poly, axis_aligned_tol):
         if include_boundary:
-            return ((xy[:, 0] >= minx - tol) & (xy[:, 0] <= maxx + tol) &
-                    (xy[:, 1] >= miny - tol) & (xy[:, 1] <= maxy + tol))
+            return (
+                (xy[:, 0] >= minx - tol)
+                & (xy[:, 0] <= maxx + tol)
+                & (xy[:, 1] >= miny - tol)
+                & (xy[:, 1] <= maxy + tol)
+            )
         else:
-            return ((xy[:, 0] > minx) & (xy[:, 0] < maxx) &
-                    (xy[:, 1] > miny) & (xy[:, 1] < maxy))
+            return (xy[:, 0] > minx) & (xy[:, 0] < maxx) & (xy[:, 1] > miny) & (xy[:, 1] < maxy)
 
     elif poly.shape[0] == 4 and _is_convex_ordered(poly):
         return _mask_halfspace_convex_quadrilateral(xy, poly, include_boundary, tol)
@@ -98,11 +101,11 @@ def roi_mask_xy_rectaware(
 
 
 def roi_mask_xy(
-        xy: NDArray[np.floating],
-        roi_xy: NDArray[np.floating],
-        include_boundary: bool = True,
-        tol: float = 1e-12,
-        max_points_per_chunk: int = 2_000_000,
+    xy: NDArray[np.floating],
+    roi_xy: NDArray[np.floating],
+    include_boundary: bool = True,
+    tol: float = 1e-12,
+    max_points_per_chunk: int = 2_000_000,
 ) -> NDArray[np.bool_]:
     """
     Boolean mask for points whose (x,y) lies inside a 2D polygon (even-odd rule).
@@ -147,10 +150,7 @@ def roi_mask_xy(
     miny = np.min(poly[:, 1])
     maxy = np.max(poly[:, 1])
 
-    in_box = (
-            (xy[:, 0] >= minx) & (xy[:, 0] <= maxx) &
-            (xy[:, 1] >= miny) & (xy[:, 1] <= maxy)
-    )
+    in_box = (xy[:, 0] >= minx) & (xy[:, 0] <= maxx) & (xy[:, 1] >= miny) & (xy[:, 1] <= maxy)
     idx = np.nonzero(in_box)[0]
     if idx.size == 0:
         return mask  # nothing to do
@@ -188,7 +188,7 @@ def roi_mask_xy(
 
         # Compute x-coordinate of intersection for those edges
         # t = (yc - yi) / (yj - yi); x_int = xi + t*(xj - xi)
-        with np.errstate(divide='ignore', invalid='ignore'):
+        with np.errstate(divide="ignore", invalid="ignore"):
             t = (yc_b - yi_b) / (yj_b - yi_b)
             x_int = xi_b + t * ex_b
 
@@ -212,7 +212,7 @@ def roi_mask_xy(
         colinear = np.abs(cross) <= tol_scaled
 
         # Avoid division by 0 on zero-length edges (already masked by valid_b)
-        with np.errstate(divide='ignore', invalid='ignore'):
+        with np.errstate(divide="ignore", invalid="ignore"):
             tproj = (pa_x * ex_b + pa_y * ey_b) / (elen_b * elen_b)
 
         on_seg = valid_b & colinear & (tproj >= -tol) & (tproj <= 1 + tol)
@@ -222,11 +222,12 @@ def roi_mask_xy(
 
     # --- Chunked processing of candidates
     for start in range(0, idx.size, max_points_per_chunk):
-        sl = idx[start:start + max_points_per_chunk]
+        sl = idx[start : start + max_points_per_chunk]
         m = _mask_chunk(xy[sl, 0], xy[sl, 1])
         mask[sl] = m
 
     return mask
+
 
 # Alternative formulation by GPT:
 

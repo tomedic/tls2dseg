@@ -1,18 +1,23 @@
+import pickle
 from pathlib import Path
-from pchandler.geometry import PointCloudData
-from pchandler.geometry.transforms import lazy_global_shift_change
+
 import numpy as np
 from numpy.typing import NDArray
-from tls2dseg.pc_preprocessing import subsample_pcd_to_output_resolution
+from pchandler.geometry import PointCloudData
+from pchandler.geometry.transforms import lazy_global_shift_change
+
 from tls2dseg.detections_3d import Detections3D
+from tls2dseg.pc_preprocessing import subsample_pcd_to_output_resolution
 from tls2dseg.pcd_collection import SegPCDCollection
-import pickle
 
 
-def make_output_folders(output_dir_pathlib: Path, image_generation_parameters: dict,
-                        inference_models_parameters: dict) -> None:
+def make_output_folders(
+    output_dir_pathlib: Path, image_generation_parameters: dict, inference_models_parameters: dict
+) -> None:
     # Set intermediate results directory (parent)
-    output_dir_intermediate = output_dir_pathlib / "intermediate"  # Create output_dir for intermediate results
+    output_dir_intermediate = (
+        output_dir_pathlib / "intermediate"
+    )  # Create output_dir for intermediate results
 
     # Set image generation result directory (children)
     image_generation_output_dir = output_dir_intermediate / "images"
@@ -30,11 +35,11 @@ def make_output_folders(output_dir_pathlib: Path, image_generation_parameters: d
     stage1_output_dir = output_dir_intermediate / Path("stage_1_results")
 
     # Store them in inference_models_parameters for later processing
-    inference_models_parameters['output_dir_masks_json'] = output_dir_masks_json
-    inference_models_parameters['output_dir_od'] = object_detection_output_dir
-    inference_models_parameters['output_dir_sam2'] = sam2_output_dir
-    inference_models_parameters['output_dir_segmented_pcds'] = output_dir_segmented_pcds
-    inference_models_parameters['stage1_output_dir'] = stage1_output_dir
+    inference_models_parameters["output_dir_masks_json"] = output_dir_masks_json
+    inference_models_parameters["output_dir_od"] = object_detection_output_dir
+    inference_models_parameters["output_dir_sam2"] = sam2_output_dir
+    inference_models_parameters["output_dir_segmented_pcds"] = output_dir_segmented_pcds
+    inference_models_parameters["stage1_output_dir"] = stage1_output_dir
 
     # Make directories (if not existing)
     object_detection_output_dir.mkdir(parents=True, exist_ok=True)
@@ -46,8 +51,9 @@ def make_output_folders(output_dir_pathlib: Path, image_generation_parameters: d
     return None
 
 
-def assure_common_global_shift(pcd_i: PointCloudData, common_global_shift: np.ndarray,
-                               point_cloud_id) -> PointCloudData:
+def assure_common_global_shift(
+    pcd_i: PointCloudData, common_global_shift: np.ndarray, point_cloud_id
+) -> PointCloudData:
     # Assure common global shift for further operations!
     if pcd_i.global_coordinate_shift is None:
         pcd_i_global_shift = np.zeros((3,), dtype=np.float_)
@@ -67,8 +73,9 @@ def assure_common_global_shift(pcd_i: PointCloudData, common_global_shift: np.nd
     return pcd_i, common_global_shift
 
 
-def get_segmented_and_merged_point_cloud(pcd_collection: SegPCDCollection, d3d: Detections3D,
-                                         clusters_ids: NDArray, pcp_parameters: dict) -> PointCloudData:
+def get_segmented_and_merged_point_cloud(
+    pcd_collection: SegPCDCollection, d3d: Detections3D, clusters_ids: NDArray, pcp_parameters: dict
+) -> PointCloudData:
     # Unpack necessary values
     pcd_ids = d3d.pcd_ids
     instances = d3d.instances
@@ -100,12 +107,16 @@ def get_segmented_and_merged_point_cloud(pcd_collection: SegPCDCollection, d3d: 
 
         # Mapping old instance labels between Detections3D and PointCloudData:
         inst_value_to_index = {val: idx for idx, val in enumerate(old_instances_ij)}
-        inst_map_d3d_to_pcd = np.fromiter((inst_value_to_index[val] for val in seg_pcd_ij_inst_old), dtype=int)
+        inst_map_d3d_to_pcd = np.fromiter(
+            (inst_value_to_index[val] for val in seg_pcd_ij_inst_old), dtype=int
+        )
 
         # Create and assign new instance labels for PointCloudData:
         seg_pcd_i_inst_new = new_instances_ij[inst_map_d3d_to_pcd]
         seg_pcd_i_inst_new = seg_pcd_i_inst_new.astype(np.uint32)
-        pcd_collection.seg_pcds[seg_pcd_ij_id].scalar_fields["instances"] = np.squeeze(seg_pcd_i_inst_new)
+        pcd_collection.seg_pcds[seg_pcd_ij_id].scalar_fields["instances"] = np.squeeze(
+            seg_pcd_i_inst_new
+        )
 
     pcd_all = PointCloudData.merge_pcd(pcd_collection.seg_pcds)
 
@@ -137,8 +148,9 @@ def id_from_path(p: Path) -> int:
     return int(p.stem.split("_")[-1])
 
 
-def load_previously_saved_inference_results_if_any(pcd_i_id, pcd_collection, pcd_map, d3d_collection,
-                                                   d3d_map) -> (SegPCDCollection, list, bool):
+def load_previously_saved_inference_results_if_any(
+    pcd_i_id, pcd_collection, pcd_map, d3d_collection, d3d_map
+) -> (SegPCDCollection, list, bool):
     # Initial load flag:
     load_flag = False
 
@@ -158,7 +170,7 @@ def load_previously_saved_inference_results_if_any(pcd_i_id, pcd_collection, pcd
             try:
                 # Load PointCloudData
                 with open(pcd_map[id_ij], "rb") as f:
-                    pcd_collection.seg_pcds[id_ij-1] = pickle.load(f)
+                    pcd_collection.seg_pcds[id_ij - 1] = pickle.load(f)
                 # Load Detections3D
                 with open(d3d_map[id_ij], "rb") as f:
                     d3d_loaded = pickle.load(f)
@@ -166,7 +178,9 @@ def load_previously_saved_inference_results_if_any(pcd_i_id, pcd_collection, pcd
                 # Point cloud loaded
                 load_flag = True
             except:
-                print(f"Failed loading previously computed results of {pcd_i_id}th pcd,"
-                      f" running inference again.")
+                print(
+                    f"Failed loading previously computed results of {pcd_i_id}th pcd,"
+                    f" running inference again."
+                )
 
     return pcd_collection, d3d_collection, load_flag

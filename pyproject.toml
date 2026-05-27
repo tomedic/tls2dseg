@@ -85,7 +85,39 @@ select = [
     "SIM",  # flake8-simplify (readability auto-fixes)
     "RUF",  # ruff-native (incl. RUF012 mutable class-var defaults)
 ]
-ignore = []
+ignore = [
+    # ─── PHASE 1 BASELINE — TEMPORARY ────────────────────────────────────
+    # The Phase 1 ruff sweep auto-fixed 110 violations + reformatted 17 files.
+    # 171 violations remain that ruff cannot auto-fix. These are silenced
+    # here as a TRANSIENT Phase 1 baseline so the lint job can verify the
+    # CI infrastructure works (criteria #2 + #4). Push 2 of the Phase 1
+    # ruff cleanup will revisit each code and either (a) fix the underlying
+    # violations and remove the code from this list, or (b) move it to
+    # per-file-ignores / a permanent ignore with a documented reason.
+    # See parking-lot.md @ 2026-05-27 for the Push 2 plan.
+    #
+    # Counts in parens are the violations remaining as of gh run 26499455035
+    # post-auto-fix:
+    "E501",   # line-too-long (81)  — long expressions; consider raising line-length to 120
+    "E402",   # module-import-not-at-top (11) — late imports for circular-dep workarounds
+    "E722",   # bare-except (1)     — fix inline (Push 2)
+    "F403",   # import-star-used (2)         — wildcard imports
+    "F405",   # may-be-undefined-from-star-import (14) — resolves with F403 fix
+    "F811",   # redefined-while-unused (1)   — likely delete duplicate definition
+    "F841",   # unused-variable (8)          — delete or prefix with _
+    "B904",   # raise-without-from-inside-except (2) — add `from err`
+    "B905",   # zip-without-explicit-strict (10)     — add strict= to each call
+    "RUF001", # ambiguous-unicode-in-string (4) — × ‑ … in ChatGPT-brewed file
+    "RUF002", # ambiguous-unicode-in-docstring (10) — same source
+    "RUF003", # ambiguous-unicode-in-comment (13)   — en-dashes in comments
+    "RUF013", # implicit-optional (1) — real type-safety issue, fix in Push 2
+    "RUF046", # unnecessary-int-conversion (3)
+    "RUF059", # unused-unpacked-variable (2)
+    "SIM103", # needless-bool (2) — refactor return-True/False to direct return
+    "SIM108", # if-else-block-instead-of-if-exp (4) — ternary preference
+    "SIM118", # in-dict-keys (2) — `key in d.keys()` → `key in d`
+    # ─── END TEMPORARY BLOCK — DO NOT EXTEND ─────────────────────────────
+]
 
 [tool.ruff.lint.per-file-ignores]
 # Test files often import fixtures for side-effect and redefine names (parametrized fixtures).

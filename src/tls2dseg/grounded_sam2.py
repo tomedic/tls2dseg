@@ -2,10 +2,10 @@
 import gc
 import json
 import os
+import random
 from functools import partial
 from pathlib import Path
-from typing import List
-from typing import Tuple
+from threading import Lock
 
 import cv2
 import numpy as np
@@ -15,40 +15,51 @@ from PIL import Image
 from sam2.build_sam import build_sam2
 from sam2.sam2_image_predictor import SAM2ImagePredictor
 from supervision.draw.color import ColorPalette
-from transformers import AutoProcessor, AutoModelForZeroShotObjectDetection
-from scipy.sparse import csr_matrix
-import random
+from transformers import AutoModelForZeroShotObjectDetection, AutoProcessor
 
 from src.tls2dseg.grounded_sam2_utils import *
-from src.tls2dseg.supervision_utils import CUSTOM_COLOR_MAP
 from src.tls2dseg.pc2img_utils import img_1to3_channels_encoding
 from src.tls2dseg.sparse_masks_inference_slicer import SparseMasksInferenceSlicer
-from threading import Lock
+from src.tls2dseg.supervision_utils import CUSTOM_COLOR_MAP
+
 sam_lock = Lock()
 
-def initialize_gdino(inference_models_parameters: dict) -> Tuple[AutoModelForZeroShotObjectDetection, AutoProcessor]:
+
+def initialize_gdino(
+    inference_models_parameters: dict,
+) -> tuple[AutoModelForZeroShotObjectDetection, AutoProcessor]:
     # build grounding dino (IDEA huggingface workflow) - set up the model and data processing pipeline
-    model_id = inference_models_parameters['bbox_model_id']
-    device = inference_models_parameters['device']
-    gdino_processor = AutoProcessor.from_pretrained(model_id)  # Set correct data preprocessing pipeline
-    gdino_model = AutoModelForZeroShotObjectDetection.from_pretrained(model_id).to(device)  # Load model in CPU/GPU
+    model_id = inference_models_parameters["bbox_model_id"]
+    device = inference_models_parameters["device"]
+    gdino_processor = AutoProcessor.from_pretrained(
+        model_id
+    )  # Set correct data preprocessing pipeline
+    gdino_model = AutoModelForZeroShotObjectDetection.from_pretrained(model_id).to(
+        device
+    )  # Load model in CPU/GPU
     return gdino_model, gdino_processor
 
 
 def initialize_sam2(inference_models_parameters: dict) -> SAM2ImagePredictor:
     # build SAM2 image predictor (Meta GitHub workflow)
-    sam2_checkpoint = inference_models_parameters['sam2-checkpoint']
-    model_cfg = inference_models_parameters['sam2-model-config']
-    device = inference_models_parameters['device']
+    sam2_checkpoint = inference_models_parameters["sam2-checkpoint"]
+    model_cfg = inference_models_parameters["sam2-model-config"]
+    device = inference_models_parameters["device"]
     sam2_model = build_sam2(model_cfg, sam2_checkpoint, device=device)
     sam2_predictor = SAM2ImagePredictor(sam2_model)
     return sam2_predictor
 
 
-def callback(image_slice: np.ndarray, text_prompt: str, gdino_processor: AutoProcessor,
-             gdino_model: AutoModelForZeroShotObjectDetection, sam2_predictor: SAM2ImagePredictor,
-             inference_models_parameters: dict, slice_inference_parameters: dict) -> sv.Detections:
-    '''
+def callback(
+    image_slice: np.ndarray,
+    text_prompt: str,
+    gdino_processor: AutoProcessor,
+    gdino_model: AutoModelForZeroShotObjectDetection,
+    sam2_predictor: SAM2ImagePredictor,
+    inference_models_parameters: dict,
+    slice_inference_parameters: dict,
+) -> sv.Detections:
+    """
     Do inference on a slice - supporting function for run_grounded_sam2_with_sahi()
 
     Parameters
@@ -65,7 +76,7 @@ def callback(image_slice: np.ndarray, text_prompt: str, gdino_processor: AutoPro
     -------
     Detections (supervision library object with detected bounding boxes and sparse masks
      - scipy csr_matrix stored as detections.data["sparse_masks"])
-    '''
+    """
 
     # Get Parameters
     # ------------------------------------------------------------------------------------------------------------------
@@ -87,21 +98,31 @@ def callback(image_slice: np.ndarray, text_prompt: str, gdino_processor: AutoPro
     # __________________________________________________________________________________________________________________
     # 1) if NaNs -> replace, 2) if not 0-1 -> normalize to 0-1, 3) replicate channels (H,W,) to (H,W,3)
     # Optional: change dtype to 'uint8' or 'float32'; broadcast channels instead of repeating them (memory save)
-    image_slice = img_1to3_channels_encoding(image_slice, normalize='0-1', output_dtype='float32',
-                                             replace_nan_with='max', broadcast=True)
+    image_slice = img_1to3_channels_encoding(
+        image_slice, normalize="0-1", output_dtype="float32", replace_nan_with="max", broadcast=True
+    )
 
     # Run Grounded DINO
     # __________________________________________________________________________________________________________________
     #   - Preprocess data: normalize and rescale images, tokenize text, transform into tensor
     device = inference_models_parameters["device"]
-    inputs = gdino_processor(images=image_slice, text=text_prompt, return_tensors="pt", do_rescale=False).to(device)
+    inputs = gdino_processor(
+        images=image_slice, text=text_prompt, return_tensors="pt", do_rescale=False
+    ).to(device)
     #   - Run inference
     with torch.no_grad():
         outputs = gdino_model(**inputs)
 
     # Postprocess Grounded DINO results
-    input_boxes, _, class_ids, confidences, empty_flag = post_process_gdino_results(gdino_processor, outputs, inputs,
-                                                    text_prompt, inference_models_parameters, slice_height, slice_width)
+    input_boxes, _, class_ids, confidences, empty_flag = post_process_gdino_results(
+        gdino_processor,
+        outputs,
+        inputs,
+        text_prompt,
+        inference_models_parameters,
+        slice_height,
+        slice_width,
+    )
 
     # Cleanup GPU/CPU memory
     del inputs, outputs
@@ -124,7 +145,9 @@ def callback(image_slice: np.ndarray, text_prompt: str, gdino_processor: AutoPro
         # Set image
         sam2_predictor.set_image(image_slice)
         # Run batched inference
-        masks = run_sam2_bbox_prompt_inference_in_batches(sam2_predictor, input_boxes, sam_box_prompt_batch_size, masks)
+        masks = run_sam2_bbox_prompt_inference_in_batches(
+            sam2_predictor, input_boxes, sam_box_prompt_batch_size, masks
+        )
 
     masks = convert_masks_to_sparse_masks(masks)
 
@@ -135,9 +158,11 @@ def callback(image_slice: np.ndarray, text_prompt: str, gdino_processor: AutoPro
     # 5. Create an instance of supervision.detections object
     # __________________________________________________________________________________________________________________
     if not len(masks) == input_boxes.shape[0] == confidences.shape[0] == class_ids.shape[0]:
-        raise ValueError("Something went wrong while running Grounded SAM2 with SAHI: "
-                         "Not all sv.detection attributes have the same length!",
-                         "(attributes: input_boxes, confidences, class_ids, sparse_masks)")
+        raise ValueError(
+            "Something went wrong while running Grounded SAM2 with SAHI: "
+            "Not all sv.detection attributes have the same length!",
+            "(attributes: input_boxes, confidences, class_ids, sparse_masks)",
+        )
 
     detections = sv.Detections(xyxy=input_boxes, confidence=confidences, class_id=class_ids)
     detections.data["sparse_masks"] = masks
@@ -145,14 +170,17 @@ def callback(image_slice: np.ndarray, text_prompt: str, gdino_processor: AutoPro
     return detections
 
 
-def run_grounded_sam2(image: Path | np.ndarray, text_prompt: str,
-                      gdino_model: AutoModelForZeroShotObjectDetection,
-                      gdino_processor: AutoProcessor,
-                      sam2_predictor: SAM2ImagePredictor,
-                      inference_models_parameters: dict) -> dict:
+def run_grounded_sam2(
+    image: Path | np.ndarray,
+    text_prompt: str,
+    gdino_model: AutoModelForZeroShotObjectDetection,
+    gdino_processor: AutoProcessor,
+    sam2_predictor: SAM2ImagePredictor,
+    inference_models_parameters: dict,
+) -> dict:
 
     # Set inference hardware
-    device = inference_models_parameters['device']
+    device = inference_models_parameters["device"]
 
     # Load images from the disk (if not using ones already in RAM)
     if isinstance(image, Path):
@@ -166,20 +194,30 @@ def run_grounded_sam2(image: Path | np.ndarray, text_prompt: str,
     # Modify image
     # 1) if NaNs -> replace, 2) if not 0-255 -> normalize to 0-255, 3) replicate channels (H,W,) to (H,W,3)
     # Optional: change dtype to 'uint8' or 'float32'; broadcast channels instead of repeating them (memory save)
-    image = img_1to3_channels_encoding(image, normalize='0-1', output_dtype='float32', replace_nan_with='max',
-                                       broadcast=True)
+    image = img_1to3_channels_encoding(
+        image, normalize="0-1", output_dtype="float32", replace_nan_with="max", broadcast=True
+    )
 
     image_height, image_width = image.shape[:2]
     # Run Grounded DINO
     #   - Preprocess data: normalize and rescale images, tokenize text, transform into tensor
-    inputs = gdino_processor(images=image, text=text_prompt, return_tensors="pt", do_rescale=False).to(device)
+    inputs = gdino_processor(
+        images=image, text=text_prompt, return_tensors="pt", do_rescale=False
+    ).to(device)
     #   - Run inference
     with torch.no_grad():
         outputs = gdino_model(**inputs)
 
     # Postprocess Grounded DINO results
-    input_boxes, class_names, class_ids, confidences, _ = post_process_gdino_results(gdino_processor, outputs, inputs,
-                                                    text_prompt, inference_models_parameters, image_height, image_width)
+    input_boxes, class_names, class_ids, confidences, _ = post_process_gdino_results(
+        gdino_processor,
+        outputs,
+        inputs,
+        text_prompt,
+        inference_models_parameters,
+        image_height,
+        image_width,
+    )
 
     # Cleanup GPU/CPU memory
     del inputs, outputs
@@ -195,7 +233,9 @@ def run_grounded_sam2(image: Path | np.ndarray, text_prompt: str,
     sam_box_prompt_batch_size = inference_models_parameters["sam_box_prompt_batch_size"]
     masks = []
     # Run batched inference
-    masks = run_sam2_bbox_prompt_inference_in_batches(sam2_predictor, input_boxes, sam_box_prompt_batch_size, masks)
+    masks = run_sam2_bbox_prompt_inference_in_batches(
+        sam2_predictor, input_boxes, sam_box_prompt_batch_size, masks
+    )
     masks = convert_masks_to_sparse_masks(masks)
 
     # Clear GPU/CPU memory
@@ -208,9 +248,7 @@ def run_grounded_sam2(image: Path | np.ndarray, text_prompt: str,
     confidences = confidences.astype(float).tolist()
 
     labels = [
-        f"{class_name} {confidence:.2f}"
-        for class_name, confidence
-        in zip(class_names, confidences)
+        f"{class_name} {confidence:.2f}" for class_name, confidence in zip(class_names, confidences)
     ]
 
     # Store results in a dictionary
@@ -220,18 +258,27 @@ def run_grounded_sam2(image: Path | np.ndarray, text_prompt: str,
     #   class_names - list of strings with class names per box (N_boxes,_)
     #   class_ids - np.ndarray of class_ids per box (N_boxes,_)
     #   mask_labels - list of strings with labels, name + confidence (N_boxes,_)
-    results = {"masks": masks, "input_boxes": input_boxes, "confidences": confidences, "class_names": class_names,
-               "class_ids": class_ids, "mask_labels": labels}
+    results = {
+        "masks": masks,
+        "input_boxes": input_boxes,
+        "confidences": confidences,
+        "class_names": class_names,
+        "class_ids": class_ids,
+        "mask_labels": labels,
+    }
 
     return results
 
 
-def run_grounded_sam2_with_sahi(image: Path | np.ndarray, text_prompt: str,
-                                gdino_model: AutoModelForZeroShotObjectDetection,
-                                gdino_processor: AutoProcessor,
-                                sam2_predictor: SAM2ImagePredictor,
-                                inference_models_parameters: dict,
-                                slice_inference_parameters: dict) -> dict:
+def run_grounded_sam2_with_sahi(
+    image: Path | np.ndarray,
+    text_prompt: str,
+    gdino_model: AutoModelForZeroShotObjectDetection,
+    gdino_processor: AutoProcessor,
+    sam2_predictor: SAM2ImagePredictor,
+    inference_models_parameters: dict,
+    slice_inference_parameters: dict,
+) -> dict:
 
     # Load images from the disk (if not using ones already in RAM)
     if isinstance(image, Path):
@@ -248,17 +295,22 @@ def run_grounded_sam2_with_sahi(image: Path | np.ndarray, text_prompt: str,
     iou_threshold = slice_inference_parameters["iou_threshold"]
     filter_strategy = slice_inference_parameters["overlap_filter_strategy"]
     thread_workers = slice_inference_parameters["thread_workers"]
-    if filter_strategy.lower() == 'nms':
+    if filter_strategy.lower() == "nms":
         filter_strategy = sv.OverlapFilter.NON_MAX_SUPPRESSION
     else:
         raise ValueError("Unsupported filter strategy provided - currently only NMS!")
 
     # Partially initialize the function - populate all inputs in advance besides "image", which is populated
     #   iteratively within sv.InferenceSlicer with image slices
-    callback_fn = partial(callback, text_prompt=text_prompt, gdino_processor=gdino_processor,
-                          gdino_model=gdino_model, sam2_predictor=sam2_predictor,
-                          inference_models_parameters=inference_models_parameters,
-                          slice_inference_parameters=slice_inference_parameters)
+    callback_fn = partial(
+        callback,
+        text_prompt=text_prompt,
+        gdino_processor=gdino_processor,
+        gdino_model=gdino_model,
+        sam2_predictor=sam2_predictor,
+        inference_models_parameters=inference_models_parameters,
+        slice_inference_parameters=slice_inference_parameters,
+    )
 
     # Create a slicer object
     slicer = SparseMasksInferenceSlicer(
@@ -268,7 +320,7 @@ def run_grounded_sam2_with_sahi(image: Path | np.ndarray, text_prompt: str,
         overlap_ratio_wh=None,
         iou_threshold=iou_threshold,
         overlap_filter=filter_strategy,
-        thread_workers=thread_workers
+        thread_workers=thread_workers,
     )
 
     # Run slicer (do detection on different slices)
@@ -277,8 +329,10 @@ def run_grounded_sam2_with_sahi(image: Path | np.ndarray, text_prompt: str,
     print("Inference completed")
 
     # Get class_ids relative to the original text_prompt and corresponding to class_names
-    keys = text_prompt.split('.')  # → ['house','window','bicycle','door','grass','leaf']
-    class_id_map = {k: i + 1 for i, k in enumerate(keys)}  # → {'house':1, 'window':2, ..., 'leaf':6}
+    keys = text_prompt.split(".")  # → ['house','window','bicycle','door','grass','leaf']
+    class_id_map = {
+        k: i + 1 for i, k in enumerate(keys)
+    }  # → {'house':1, 'window':2, ..., 'leaf':6}
     inverted_map = {v: k for k, v in class_id_map.items()}
 
     # Set main output variables
@@ -290,9 +344,7 @@ def run_grounded_sam2_with_sahi(image: Path | np.ndarray, text_prompt: str,
 
     # Create mask labels (class name + confidence scores)
     labels = [
-        f"{class_name} {confidence:.2f}"
-        for class_name, confidence
-        in zip(class_names, confidences)
+        f"{class_name} {confidence:.2f}" for class_name, confidence in zip(class_names, confidences)
     ]
 
     # Store results in a dictionary
@@ -303,14 +355,21 @@ def run_grounded_sam2_with_sahi(image: Path | np.ndarray, text_prompt: str,
     #   class_ids - np.ndarray of class_ids per box (N_boxes,_)
     #   mask_labels - list of strings with labels, name + confidence (N_boxes,_)
 
-    results = {"masks": masks, "input_boxes": input_boxes, "confidences": confidences, "class_names": class_names,
-               "class_ids": class_ids, "mask_labels": labels}
+    results = {
+        "masks": masks,
+        "input_boxes": input_boxes,
+        "confidences": confidences,
+        "class_names": class_names,
+        "class_ids": class_ids,
+        "mask_labels": labels,
+    }
 
     return results
 
 
-def save_gsam2_results(image: tuple[str, np.ndarray, Path], results: dict,
-                       inference_models_parameters) -> None:
+def save_gsam2_results(
+    image: tuple[str, np.ndarray, Path], results: dict, inference_models_parameters
+) -> None:
     # 1. Create JPEG files
     # --------------------
 
@@ -327,8 +386,9 @@ def save_gsam2_results(image: tuple[str, np.ndarray, Path], results: dict,
     image_path = image[2]
 
     # Transform image to 3 channel image:
-    image_data = img_1to3_channels_encoding(image_data, normalize='0-255', output_dtype='uint8',
-                                       replace_nan_with='max', broadcast=True)
+    image_data = img_1to3_channels_encoding(
+        image_data, normalize="0-255", output_dtype="uint8", replace_nan_with="max", broadcast=True
+    )
 
     # Select only a few masks in the case of many:
     subsampled_masks_flag = False
@@ -353,7 +413,8 @@ def save_gsam2_results(image: tuple[str, np.ndarray, Path], results: dict,
     detections = sv.Detections(
         xyxy=input_boxes,  # (n, 4)
         mask=masks_numpy,  # (n, h, w)
-        class_id=class_ids)
+        class_id=class_ids,
+    )
 
     # Save .jpg images of detected objects (bounding box, semantic label, score)
     #   - note: if you want to use default color map, you can set color=ColorPalette.DEFAULT
@@ -363,33 +424,41 @@ def save_gsam2_results(image: tuple[str, np.ndarray, Path], results: dict,
     annotated_frame = box_annotator.annotate(scene=image_data.copy(), detections=detections)
 
     label_annotator = sv.LabelAnnotator(color=ColorPalette.from_hex(CUSTOM_COLOR_MAP))
-    annotated_frame = label_annotator.annotate(scene=annotated_frame, detections=detections, labels=labels)
+    annotated_frame = label_annotator.annotate(
+        scene=annotated_frame, detections=detections, labels=labels
+    )
 
     #   - set output directory and file names for object detection
-    output_dir_od = inference_models_parameters['output_dir_od']
+    output_dir_od = inference_models_parameters["output_dir_od"]
     if subsampled_masks_flag:
         output_jpg_od = f"{image_path.stem}_od_RANDOM_SUBSAMPLE_16.jpg"
     else:
         output_jpg_od = f"{image_path.stem}_od.jpg"
-    cv2.imwrite(os.path.join(output_dir_od, output_jpg_od), annotated_frame.astype(np.dtype('uint8')))
+    cv2.imwrite(
+        os.path.join(output_dir_od, output_jpg_od), annotated_frame.astype(np.dtype("uint8"))
+    )
 
     # Save .jpg images of SAM masks (mask, semantic label, score)
     #   - "supervision" library commands
 
     mask_annotator = sv.MaskAnnotator(color=ColorPalette.from_hex(CUSTOM_COLOR_MAP))
-    annotated_frame = mask_annotator.annotate(scene=annotated_frame.astype(np.dtype('uint8')), detections=detections)
+    annotated_frame = mask_annotator.annotate(
+        scene=annotated_frame.astype(np.dtype("uint8")), detections=detections
+    )
     #   - set output directory and file names for object detection
-    output_dir_sam2 = inference_models_parameters['output_dir_sam2']
+    output_dir_sam2 = inference_models_parameters["output_dir_sam2"]
     if subsampled_masks_flag:
         output_jpg_sam2 = f"{image_path.stem}_sam2_RANDOM_SUBSAMPLE_16.jpg"
     else:
         output_jpg_sam2 = f"{image_path.stem}_sam2.jpg"
-    cv2.imwrite(os.path.join(output_dir_sam2, output_jpg_sam2), annotated_frame.astype(np.dtype('uint8')))
+    cv2.imwrite(
+        os.path.join(output_dir_sam2, output_jpg_sam2), annotated_frame.astype(np.dtype("uint8"))
+    )
 
     # 2. Create JSON file
     # -------------------
 
-    if inference_models_parameters['dump_json_results']:
+    if inference_models_parameters["dump_json_results"]:
         # convert mask into rle format
         mask_rles = [mask_to_rle(mask) for mask in masks]
         # convert bounding boxes and scores (confidences) to lists
@@ -407,14 +476,16 @@ def save_gsam2_results(image: tuple[str, np.ndarray, Path], results: dict,
                     "segmentation": mask_rle,
                     "score": score,
                 }
-                for class_name, box, mask_rle, score in zip(class_names, input_boxes, mask_rles, scores)
+                for class_name, box, mask_rle, score in zip(
+                    class_names, input_boxes, mask_rles, scores
+                )
             ],
             "box_format": "xyxy",
             "img_width": image_data.shape[1],
             "img_height": image_data.shape[0],
         }
 
-        output_dir_masks_json = inference_models_parameters['output_dir_masks_json']
+        output_dir_masks_json = inference_models_parameters["output_dir_masks_json"]
         output_json = f"{image_path.stem}_gsam2_results.json"
 
         with open(os.path.join(output_dir_masks_json, output_json), "w") as f:

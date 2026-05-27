@@ -1,16 +1,16 @@
-from typing import List, Optional, Union, Dict
+from dataclasses import dataclass, field
 from pathlib import Path
+
 import numpy as np
-from dataclasses import dataclass, field, replace
 from numpy.typing import NDArray
 
 
 @dataclass
 class SegPCDCollection:
     # Mandatory input: list of point clouds (paths) and image features
-    raw_pcd_paths: List[Path]  # n_pcds
-    features: List
-    class_id_map: Dict
+    raw_pcd_paths: list[Path]  # n_pcds
+    features: list
+    class_id_map: dict
     # Self-populated at initialization:
     n_raw_pcds: int = field(init=False)
     n_seg_pcds: int = field(init=False)
@@ -19,11 +19,15 @@ class SegPCDCollection:
     feature_id: NDArray[np.uint16] = field(default_factory=lambda: np.array([], dtype=np.uint16))
     seg_pcd_id: NDArray[np.uint16] = field(default_factory=lambda: np.array([], dtype=np.uint16))
     class_ids: NDArray[np.uint16] = field(default_factory=lambda: np.array([], dtype=np.uint16))
-    class_names: List[str] = field(default_factory=list)
-    global_shift: NDArray[np.float64] = field(default_factory=lambda: np.zeros([3], dtype=np.float64))
+    class_names: list[str] = field(default_factory=list)
+    global_shift: NDArray[np.float64] = field(
+        default_factory=lambda: np.zeros([3], dtype=np.float64)
+    )
     # Self-populated later:
-    pcd_n_instances: NDArray[np.uint64] = field(default_factory=lambda: np.array([], dtype=np.uint64))
-    seg_pcds: List = field(default_factory=list)
+    pcd_n_instances: NDArray[np.uint64] = field(
+        default_factory=lambda: np.array([], dtype=np.uint64)
+    )
+    seg_pcds: list = field(default_factory=list)
     # TODO: Eventually add other point-cloud processing related parameters (e.g. theta, alpha)
 
     def __post_init__(self):
@@ -33,9 +37,13 @@ class SegPCDCollection:
         self.n_seg_pcds = self.n_raw_pcds * self.n_features
 
         if self.raw_pcd_id.size == 0:
-            self.raw_pcd_id = np.repeat(np.arange(self.n_raw_pcds, dtype=np.uint16), self.n_features)
+            self.raw_pcd_id = np.repeat(
+                np.arange(self.n_raw_pcds, dtype=np.uint16), self.n_features
+            )
         if self.feature_id.size == 0:
-            self.feature_id = np.repeat(np.arange(self.n_features, dtype=np.uint16), self.n_raw_pcds)
+            self.feature_id = np.repeat(
+                np.arange(self.n_features, dtype=np.uint16), self.n_raw_pcds
+            )
         if self.seg_pcd_id.size == 0:
             self.seg_pcd_id = np.arange(self.n_seg_pcds, dtype=np.uint16)
 
@@ -63,7 +71,7 @@ class SegPCDCollection:
             # Get instances to remove:
             inst_to_remove = inst_or[pcd_or == seg_pcd_id]
             # Get points in point cloud to keep:
-            points_to_keep = ~np.isin(seg_pcd_i.scalar_fields['instances'].data, inst_to_remove)
+            points_to_keep = ~np.isin(seg_pcd_i.scalar_fields["instances"].data, inst_to_remove)
             # Reduce point cloud and update pcd_collection:
             seg_pcd_i.reduce(points_to_keep)
             self.seg_pcds[seg_pcd_idx] = seg_pcd_i

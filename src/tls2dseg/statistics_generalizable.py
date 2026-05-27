@@ -1,7 +1,6 @@
 import numpy as np
-from joblib import Parallel, delayed
-from sklearn.covariance import MinCovDet
 from scipy.stats import chi2
+from sklearn.covariance import MinCovDet
 
 
 def robust_fit_multivariate_normal(data) -> tuple[np.ndarray, np.ndarray]:

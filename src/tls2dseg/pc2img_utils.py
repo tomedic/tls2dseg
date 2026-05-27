@@ -1,22 +1,27 @@
-from typing import Tuple
-import numpy as np
-from pchandler.geometry.core import PointCloudData
-from functools import partial
-from pc2img.image_generation import SphericalImageGeneratorFromPCD, OrthographicImageGeneratorFromPCD
-from pc2img.util import convert_to_image, OpticalFlowVisualization
-from pc2img.core import PCDImageLink
-from pathlib import Path
-import imageio.v3 as iio
-from numpy.typing import NDArray
-from sklearn.neighbors import NearestNeighbors
 import re
+from concurrent.futures import ProcessPoolExecutor
+from functools import partial
+from pathlib import Path
+from typing import Literal
+
+import imageio.v3 as iio
+import numpy as np
 import pyvips
-from typing import Union, Literal
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from numpy.typing import NDArray
+from pc2img.core import PCDImageLink
+from pc2img.image_generation import SphericalImageGeneratorFromPCD
+from pc2img.util import convert_to_image
+from pchandler.geometry.core import PointCloudData
+from sklearn.neighbors import NearestNeighbors
 
 
-def pc2img_run(pcd: PointCloudData, pcd_path: Path, image_generation_parameters: dict,
-               image_width: int = 2000, image_height: int = 0) -> [(str, NDArray[np.uint8], Path)]:
+def pc2img_run(
+    pcd: PointCloudData,
+    pcd_path: Path,
+    image_generation_parameters: dict,
+    image_width: int = 2000,
+    image_height: int = 0,
+) -> [(str, NDArray[np.uint8], Path)]:
     # Unpack necessary variables
     rasterization_method = image_generation_parameters["rasterization_method"]
     features = image_generation_parameters["features"]
@@ -25,25 +30,37 @@ def pc2img_run(pcd: PointCloudData, pcd_path: Path, image_generation_parameters:
     # image_width = 2000
     if image_height == 0:
         image_height = int(image_width // pcd.fov.ratio())
-    pcd_image_link = PCDImageLink(pcd, [partial(SphericalImageGeneratorFromPCD,
-                                                image_resolution=(image_height, image_width),
-                                                rasterization_method=rasterization_method, minimum_nb_points=0)])
+    pcd_image_link = PCDImageLink(
+        pcd,
+        [
+            partial(
+                SphericalImageGeneratorFromPCD,
+                image_resolution=(image_height, image_width),
+                rasterization_method=rasterization_method,
+                minimum_nb_points=0,
+            )
+        ],
+    )
 
     # Create image for each selected point cloud feature (default - intensity)
     # Saving results in a list of tuples with: feature_name (str), image (NDArray[np.float64]), path_to_saved_image (Path)
     images_i = []
     for f in features:
         # Create image (2D np.ndarray)
-        spherical_image_data = pcd_image_link.get_image_data(pcd_image_link.available_stacks[0], f,
-                                                             normalize=True,
-                                                             normilization_percentiles=(5, 95))
+        spherical_image_data = pcd_image_link.get_image_data(
+            pcd_image_link.available_stacks[0], f, normalize=True, normilization_percentiles=(5, 95)
+        )
         # Replace NaN values with Max
-        spherical_image_data = np.nan_to_num(spherical_image_data, nan=np.nanmax(spherical_image_data), copy=False)
+        spherical_image_data = np.nan_to_num(
+            spherical_image_data, nan=np.nanmax(spherical_image_data), copy=False
+        )
 
         # Save image in results
         if "output_dir_images" in image_generation_parameters:
             # Convert to RGB image
-            spherical_image = convert_to_image(spherical_image_data, "max", normalize=True, colormap=None)  # gray
+            spherical_image = convert_to_image(
+                spherical_image_data, "max", normalize=True, colormap=None
+            )  # gray
             save_image_dir = image_generation_parameters["output_dir_images"]
             save_image_file = save_image_dir / f"{pcd_path.stem}_Spherical_{f}.png"
             iio.imwrite(save_image_file, spherical_image)
@@ -57,12 +74,14 @@ def pc2img_run(pcd: PointCloudData, pcd_path: Path, image_generation_parameters:
 def rotate_pcd_around_z(pcd: PointCloudData, theta_deg: float = 0.0) -> None:
     theta = np.deg2rad(theta_deg)  # Convert degrees to radians
 
-    rotation_matrix = np.array([
-        [np.cos(theta), -np.sin(theta), 0, 0],
-        [np.sin(theta), np.cos(theta), 0, 0],
-        [0, 0, 1, 0],
-        [0, 0, 0, 1]
-    ])
+    rotation_matrix = np.array(
+        [
+            [np.cos(theta), -np.sin(theta), 0, 0],
+            [np.sin(theta), np.cos(theta), 0, 0],
+            [0, 0, 1, 0],
+            [0, 0, 0, 1],
+        ]
+    )
     pcd.transform(rotation_matrix)
     return None
 
@@ -83,12 +102,14 @@ def check_was_scanner_upsidedown(pcd, threshold_deg=10) -> bool:
 def rotate_pcd_around_x(pcd: PointCloudData, alpha_deg: float = 180.0) -> None:
     alpha = np.deg2rad(alpha_deg)  # Convert degrees to radians
 
-    rotation_matrix = np.array([
-        [1, 0, 0, 0],
-        [0, np.cos(alpha), -np.sin(alpha), 0],
-        [0, np.sin(alpha), np.cos(alpha), 0],
-        [0, 0, 0, 1]
-    ])
+    rotation_matrix = np.array(
+        [
+            [1, 0, 0, 0],
+            [0, np.cos(alpha), -np.sin(alpha), 0],
+            [0, np.sin(alpha), np.cos(alpha), 0],
+            [0, 0, 0, 1],
+        ]
+    )
 
     pcd.transform(rotation_matrix)
     return None
@@ -139,15 +160,20 @@ def estimate_scanning_resolution(pcd, image_generation_parameters) -> tuple[floa
     # 2) 2D histogram: bins per axis (e - elevation, a - azimuth) = floor(1/patch_frac)
     bins_e = int(1.0 / patch_frac)
     bins_a = bins_e
-    H, elev_edges, azim_edges = np.histogram2d(elev_s, azim_s, bins=[bins_e, bins_a],
-                                               range=[[fov.elevation_min, fov.elevation_max],
-                                                      [fov.horizontal_min, fov.horizontal_max]])
+    H, elev_edges, azim_edges = np.histogram2d(
+        elev_s,
+        azim_s,
+        bins=[bins_e, bins_a],
+        range=[[fov.elevation_min, fov.elevation_max], [fov.horizontal_min, fov.horizontal_max]],
+    )
 
     # 3) find the bin with the median point density (the most representative one)
     # idx_flat = np.argmax(H)
     H_nan = H.copy()
     H_nan[H_nan == 0] = np.nan
-    idx_flat = np.argmin((np.abs(H - np.nanmedian(H_nan))))  # Find the bin with the median number of points!
+    idx_flat = np.argmin(
+        np.abs(H - np.nanmedian(H_nan))
+    )  # Find the bin with the median number of points!
     i_e, i_a = np.unravel_index(idx_flat, H.shape)
     elev_min_p = elev_edges[i_e]
     elev_max_p = elev_edges[i_e + 1]
@@ -155,12 +181,7 @@ def estimate_scanning_resolution(pcd, image_generation_parameters) -> tuple[floa
     azim_max_p = azim_edges[i_a + 1]
 
     # 4) extract full original points falling within that patch
-    mask = (
-            (elev >= elev_min_p)
-            & (elev <= elev_max_p)
-            & (azim >= azim_min_p)
-            & (azim <= azim_max_p)
-    )
+    mask = (elev >= elev_min_p) & (elev <= elev_max_p) & (azim >= azim_min_p) & (azim <= azim_max_p)
     elev_p = elev[mask]  # Elevation (extracted points)
     azim_p = azim[mask]  # Azimuth (extracted points)
 
@@ -172,8 +193,9 @@ def estimate_scanning_resolution(pcd, image_generation_parameters) -> tuple[floa
     return d_azim, d_elev
 
 
-def resolve_scanning_resolution_parameter(pcd: PointCloudData,
-                                          image_generation_parameters: dict) -> tuple[float, float]:
+def resolve_scanning_resolution_parameter(
+    pcd: PointCloudData, image_generation_parameters: dict
+) -> tuple[float, float]:
     """
     Envelope that returns (d_azim, d_elev) in radians according to image_generation_parameters["scan_resolution"]
     Acceptable values:
@@ -199,9 +221,7 @@ def resolve_scanning_resolution_parameter(pcd: PointCloudData,
     # 2) "mm@<m>" pattern
     if isinstance(scanning_resolution, str) and "mm@" in scanning_resolution.lower():
         m = re.match(
-            r"^\s*([\d\.]+)\s*mm\s*@\s*([\d\.]+)\s*m\s*$",
-            scanning_resolution,
-            re.IGNORECASE
+            r"^\s*([\d\.]+)\s*mm\s*@\s*([\d\.]+)\s*m\s*$", scanning_resolution, re.IGNORECASE
         )
         if not m:
             raise ValueError(f"Invalid mm@ format: {scanning_resolution}")
@@ -222,8 +242,9 @@ def resolve_scanning_resolution_parameter(pcd: PointCloudData,
         raise ValueError(f"Unsupported scanning_resolution: {scanning_resolution}")
 
 
-def compute_image_dimensions(pcd: PointCloudData, image_generation_parameters: dict,
-                             d_azim_rad: float, d_elev_rad: float) -> tuple[int, int]:
+def compute_image_dimensions(
+    pcd: PointCloudData, image_generation_parameters: dict, d_azim_rad: float, d_elev_rad: float
+) -> tuple[int, int]:
     """
     Compute image width and height (in pixels)
     Input:
@@ -259,7 +280,7 @@ def compute_image_dimensions(pcd: PointCloudData, image_generation_parameters: d
                 width_px = full_width
             else:
                 # Parse string to get a fraction of scan resolution
-                m = re.match(r'^([\d\.]+)[\s-]*scan_resolution$', s)
+                m = re.match(r"^([\d\.]+)[\s-]*scan_resolution$", s)
                 if m:
                     # Desired fraction of the full scan resolution
                     frac = float(m.group(1))
@@ -269,7 +290,8 @@ def compute_image_dimensions(pcd: PointCloudData, image_generation_parameters: d
                     raise ValueError(f"Invalid image_width format: {image_width!r}")
     else:
         raise TypeError(
-            f"image_width must be int or str (of type scan_resolution or frac-scan_resolution, got {type(image_width)}")
+            f"image_width must be int or str (of type scan_resolution or frac-scan_resolution, got {type(image_width)}"
+        )
 
     # set image_height to preserve angular aspect ratio
     height_px = int(np.ceil(width_px * (elev_span / azim_span)))
@@ -307,7 +329,9 @@ def rotate_pcd_to_azimuth_gap(pcd, image_generation_parameters) -> float:
     azim = azim[idx]  # radians → degrees in (-180,180]
 
     # 2) 1-D histogram  (-π..π with 1° bins)
-    bin_width_rad = np.deg2rad(bin_width_deg)  # bin width by default 1 degree (converted in radians)
+    bin_width_rad = np.deg2rad(
+        bin_width_deg
+    )  # bin width by default 1 degree (converted in radians)
     edges = np.arange(-np.pi, np.pi, bin_width_rad)  # Should be 360 edges
     if edges[-1] != np.pi:
         edges = np.concatenate([edges, [np.pi]])  # make sure edges includes +π
@@ -384,7 +408,7 @@ def resolve_rotate_pcd_parameter(pcd, image_generation_parameters) -> float:
         Applied rotation in degrees. 0.0 if no rotation.
     """
     # Unpack necessary variables
-    rotate_pcd = image_generation_parameters['rotate_pcd']
+    rotate_pcd = image_generation_parameters["rotate_pcd"]
 
     # 1) If no rotation wanted
     if rotate_pcd is False:
@@ -417,7 +441,9 @@ def resolve_rotate_pcd_parameter(pcd, image_generation_parameters) -> float:
     return theta_deg
 
 
-def get_instance_and_semantic_mask(results: dict, text_prompt) -> tuple[np.ndarray, np.ndarray, dict]:
+def get_instance_and_semantic_mask(
+    results: dict, text_prompt
+) -> tuple[np.ndarray, np.ndarray, dict]:
     """
     Creates 1 representative instance and 1 semantic segmentation mask from N individual object masks.
 
@@ -439,10 +465,12 @@ def get_instance_and_semantic_mask(results: dict, text_prompt) -> tuple[np.ndarr
     N = len(results["masks"])  # Number of detections
 
     # Get dictionary mapping "semantic classes" to unique IDs
-    keys = text_prompt.split('.')  # → ['house','window','bicycle','door','grass','leaf']
+    keys = text_prompt.split(".")  # → ['house','window','bicycle','door','grass','leaf']
     id_map = {k: i + 1 for i, k in enumerate(keys)}  # → {'house':1, 'window':2, ..., 'leaf':6}
     class_ids = [id_map[q] for q in results["class_names"]]  # a list of corresponding class IDs
-    results["class_ids"] = class_ids  # Store real class IDs corresponding to detected classes, not range(#C)
+    results["class_ids"] = (
+        class_ids  # Store real class IDs corresponding to detected classes, not range(#C)
+    )
 
     # Sorting masks from biggest to smallest, so if overlapping, the big ones do not superimpose the small ones
     mask_sizes = np.zeros(N, dtype=int)
@@ -457,7 +485,9 @@ def get_instance_and_semantic_mask(results: dict, text_prompt) -> tuple[np.ndarr
 
     for i in range(N):
         # Get the instance mask
-        mask_i = results["masks"][sorted_indices[i]].toarray().astype(bool)  # Shape: (H, W), dtype: bool
+        mask_i = (
+            results["masks"][sorted_indices[i]].toarray().astype(bool)
+        )  # Shape: (H, W), dtype: bool
         # Assign a unique label to each instance in the instance mask
         # Labels start from 1 (to have 0 for background)
         instance_label = i + 1
@@ -470,8 +500,9 @@ def get_instance_and_semantic_mask(results: dict, text_prompt) -> tuple[np.ndarr
     return instance_mask, semantic_mask, id_map
 
 
-def get_instance_and_semantic_mask_with_confidence(results: dict, text_prompt, image_hw: tuple)\
-        -> tuple[np.ndarray, np.ndarray, np.ndarray, dict]:
+def get_instance_and_semantic_mask_with_confidence(
+    results: dict, text_prompt, image_hw: tuple
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, dict]:
     """
     Creates 1 representative instance and 1 semantic segmentation mask from N individual object masks.
 
@@ -495,10 +526,12 @@ def get_instance_and_semantic_mask_with_confidence(results: dict, text_prompt, i
     N = len(results["masks"])  # Number of detections
 
     # Get dictionary mapping "semantic classes" to unique IDs
-    keys = text_prompt.split('.')  # → ['house','window','bicycle','door','grass','leaf']
+    keys = text_prompt.split(".")  # → ['house','window','bicycle','door','grass','leaf']
     id_map = {k: i + 1 for i, k in enumerate(keys)}  # → {'house':1, 'window':2, ..., 'leaf':6}
     class_ids = [id_map[q] for q in results["class_names"]]  # a list of corresponding class IDs
-    results["class_ids"] = class_ids  # Store real class IDs corresponding to detected classes, not range(#C)
+    results["class_ids"] = (
+        class_ids  # Store real class IDs corresponding to detected classes, not range(#C)
+    )
 
     # Get confidences
     confidences = results["confidences"]
@@ -572,8 +605,10 @@ def project_masks2pcd_as_scalarfields(pcd: PointCloudData, instance_mask, semant
 
     # Handle edge cases: points outside FOV
     valid_indices = (
-            (normalized_azimuth >= 0) & (normalized_azimuth <= 1) &
-            (normalized_elevation >= 0) & (normalized_elevation <= 1)
+        (normalized_azimuth >= 0)
+        & (normalized_azimuth <= 1)
+        & (normalized_elevation >= 0)
+        & (normalized_elevation <= 1)
     )
 
     # Initialize labels array with a default value (e.g., -1 for invalid points)
@@ -591,13 +626,15 @@ def project_masks2pcd_as_scalarfields(pcd: PointCloudData, instance_mask, semant
         all_labels_instances[valid_indices] = labels_instances
 
     # Step 5: Store instance and class labels into a scalar field
-    pcd.scalar_fields.__setitem__('instances', all_labels_instances)
-    pcd.scalar_fields.__setitem__('classes', all_labels_semantics)
+    pcd.scalar_fields.__setitem__("instances", all_labels_instances)
+    pcd.scalar_fields.__setitem__("classes", all_labels_semantics)
 
     return None
 
 
-def project_a_mask_2_pcd_as_scalarfield(pcd: PointCloudData, mask: np.ndarray, mask_name: str) -> None:
+def project_a_mask_2_pcd_as_scalarfield(
+    pcd: PointCloudData, mask: np.ndarray, mask_name: str
+) -> None:
     """
     Assigns arbitrary values from an image to each point in the point cloud based on spherical coordinates.
 
@@ -634,8 +671,10 @@ def project_a_mask_2_pcd_as_scalarfield(pcd: PointCloudData, mask: np.ndarray, m
 
     # Handle edge cases: points outside FOV
     valid_indices = (
-            (normalized_azimuth >= 0) & (normalized_azimuth <= 1) &
-            (normalized_elevation >= 0) & (normalized_elevation <= 1)
+        (normalized_azimuth >= 0)
+        & (normalized_azimuth <= 1)
+        & (normalized_elevation >= 0)
+        & (normalized_elevation <= 1)
     )
 
     # Initialize labels array with a default value (e.g., -1 for invalid points)
@@ -649,14 +688,15 @@ def project_a_mask_2_pcd_as_scalarfield(pcd: PointCloudData, mask: np.ndarray, m
         values_i = mask[valid_v_int, valid_u_int]
         all_values[valid_indices] = values_i
 
-
     # Step 5: Store mask values as scalar field
     pcd.scalar_fields.__setitem__(mask_name, all_values)
 
     return None
 
 
-def resolve_necessary_image_resolution(pcd: PointCloudData, pcp_parameters: dict, d_azim_rad: float) -> float:
+def resolve_necessary_image_resolution(
+    pcd: PointCloudData, pcp_parameters: dict, d_azim_rad: float
+) -> float:
     """
     Function computes reduction_coefficient for down scaling the spherical image resolution based on the original scan
     resolution, maximum range, and desired output point cloud resolution (in meters)
@@ -664,7 +704,7 @@ def resolve_necessary_image_resolution(pcd: PointCloudData, pcp_parameters: dict
     # get max range in the point cloud
     range_max = np.max(pcd.spherical_coordinates[:, 0])
     # get desired resolution (euclidean / metric space) for the output point cloud
-    output_resolution = pcp_parameters['output_resolution']
+    output_resolution = pcp_parameters["output_resolution"]
     # compute corresponding required angular resolution
     required_ang_res = np.arcsin(output_resolution / range_max)
     # get scanning resolution in rad
@@ -674,8 +714,12 @@ def resolve_necessary_image_resolution(pcd: PointCloudData, pcp_parameters: dict
     return reduction_coefficient
 
 
-def reduce_image_resolution(set_of_images: list, reduction_coefficient: float, image_generation_parameters: dict,
-                            pcd_path: Path) -> list:
+def reduce_image_resolution(
+    set_of_images: list,
+    reduction_coefficient: float,
+    image_generation_parameters: dict,
+    pcd_path: Path,
+) -> list:
     # Get image i of currently processed point cloud j
     for i, image_tuple_i in enumerate(set_of_images):
         # Get image feature name
@@ -687,9 +731,9 @@ def reduce_image_resolution(set_of_images: list, reduction_coefficient: float, i
         # Create pyvips object
         # image_data_i = pyvips.Image.new_from_array(image_data_i)  # -> Naive (creates a copy)
         h, w = image_data_i.shape[0], image_data_i.shape[1]
-        image_data_i = pyvips.Image.new_from_memory(image_data_i.data, w, h, 1, format='float')
+        image_data_i = pyvips.Image.new_from_memory(image_data_i.data, w, h, 1, format="float")
         # Resize image
-        image_data_i = image_data_i.resize(reduction_coefficient, kernel='lanczos3')
+        image_data_i = image_data_i.resize(reduction_coefficient, kernel="lanczos3")
         # Get new image height and width
         height, width = image_data_i.height, image_data_i.width
         # Convert pyvis object back to numpy
@@ -700,7 +744,9 @@ def reduce_image_resolution(set_of_images: list, reduction_coefficient: float, i
         # Save image in intermediate results
         if "output_dir_images" in image_generation_parameters:
             # Convert to RGB image
-            image_data_rgb_i = convert_to_image(image_data_i, "max", normalize=True, colormap=None)  # gray
+            image_data_rgb_i = convert_to_image(
+                image_data_i, "max", normalize=True, colormap=None
+            )  # gray
             # Set saving parameters and save image
             save_image_dir = image_generation_parameters["output_dir_images"]
             save_image_file_i = save_image_dir / f"{pcd_path.stem}_Spherical_{feature}_reduced.png"
@@ -713,10 +759,13 @@ def reduce_image_resolution(set_of_images: list, reduction_coefficient: float, i
     return set_of_images
 
 
-def img_1to3_channels_encoding(img: np.ndarray, output_dtype: Union[str, np.dtype, None] = "float32",
-                               replace_nan_with: Union[Literal["max", "min", "random", "zero"], float] = "max",
-                               normalize: Union[Literal["0-1", "0-255"], None] = "0-1",
-                               broadcast: bool = True) -> np.ndarray:
+def img_1to3_channels_encoding(
+    img: np.ndarray,
+    output_dtype: str | np.dtype | None = "float32",
+    replace_nan_with: Literal["max", "min", "random", "zero"] | float = "max",
+    normalize: Literal["0-1", "0-255"] | None = "0-1",
+    broadcast: bool = True,
+) -> np.ndarray:
     """
     Convert a H×W×, channel grayscale array with arbitrary value range and dtype into a H×W×3 channel grayscale array
     of selected dtype with 0-255 value range. Goal: Preparing image data for deep learning frameworks
@@ -751,8 +800,10 @@ def img_1to3_channels_encoding(img: np.ndarray, output_dtype: Union[str, np.dtyp
 
     # Checks for other cases:
     if img.ndim != 2:
-        raise ValueError("Input must be a 2-D array, check if your image is not already"
-                         " 3 channel image with 0-255 value range!")
+        raise ValueError(
+            "Input must be a 2-D array, check if your image is not already"
+            " 3 channel image with 0-255 value range!"
+        )
 
     if output_dtype not in ("uint8", "float32", None):
         raise ValueError("dtype must be 'uint8', 'float32', or None")
@@ -830,6 +881,7 @@ def get_per_mask_depth(detections_2d: dict, images_of_pcd_i: list) -> dict:
 
     return detections_2d
 
+
 # Helper function:
 def _compute_mask_median(args):
     mask, range_image = args
@@ -837,7 +889,9 @@ def _compute_mask_median(args):
     return np.nanmedian(range_image[mask[:, 0], mask[:, 1]])
 
 
-def get_per_mask_depth_parallel(detections_2d: dict, images_of_pcd_i: list, n_jobs: int = None) -> dict:
+def get_per_mask_depth_parallel(
+    detections_2d: dict, images_of_pcd_i: list, n_jobs: int = None
+) -> dict:
     # Add a new field to detections_2d "object_distance" for each mask
     # Get masks:
     masks = detections_2d["masks"]
@@ -857,4 +911,3 @@ def get_per_mask_depth_parallel(detections_2d: dict, images_of_pcd_i: list, n_jo
 
     detections_2d["object_distances"] = object_distances
     return detections_2d
-

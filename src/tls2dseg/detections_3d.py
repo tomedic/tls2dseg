@@ -1,26 +1,23 @@
 import warnings
 
-warnings.filterwarnings(
-    "ignore",
-    category=FutureWarning,
-    message=".*force_all_finite.*"
-)
+warnings.filterwarnings("ignore", category=FutureWarning, message=".*force_all_finite.*")
 
 import logging
 
 # Silence all tokenizers messages below ERROR
 logging.getLogger("tokenizers").setLevel(logging.ERROR)
 
-import numpy as np
-from numpy.typing import NDArray
-from scipy.spatial.transform import Rotation as R
-from pchandler.geometry import PointCloudData
-from typing import Tuple, Optional, Union, List, Literal
-from tls2dseg.pc_preprocessing import main_cluster_extraction, apply_robust_sor_filter
 import math
 from dataclasses import dataclass
-from src.tls2dseg.statistics_generalizable import multivariate_normal_outlier_removal
+from typing import Literal
 
+import numpy as np
+from numpy.typing import NDArray
+from pchandler.geometry import PointCloudData
+from scipy.spatial.transform import Rotation as R
+
+from src.tls2dseg.statistics_generalizable import multivariate_normal_outlier_removal
+from tls2dseg.pc_preprocessing import apply_robust_sor_filter, main_cluster_extraction
 
 # from tls2dseg.visualization import *
 
@@ -34,13 +31,14 @@ class Detections3D:
     point_counts: np.ndarray  # (N,)
     centroids: np.ndarray  # (N,3)
     bboxes: np.ndarray  # (N,6) or (N,10)
-    bboxes_type: Literal['aabb', 'obb', 'both']
-    centroid_type: Literal['mean', 'median', 'bbox_c']
+    bboxes_type: Literal["aabb", "obb", "both"]
+    centroid_type: Literal["mean", "median", "bbox_c"]
     preprocessing_applied: bool
 
 
-def clean_pcd_instances_and_get_detections3d(pcd: PointCloudData, pcd_id: float, d3d_parameters: dict,
-                                             pcp_parameters: dict) -> (Detections3D, PointCloudData):
+def clean_pcd_instances_and_get_detections3d(
+    pcd: PointCloudData, pcd_id: float, d3d_parameters: dict, pcp_parameters: dict
+) -> (Detections3D, PointCloudData):
     """
     Extract a collection of detections 3d instances as a numpy array of relevant features / metadata accompanied
      by a list of feature names explaining columns of the numpy array
@@ -68,10 +66,10 @@ def clean_pcd_instances_and_get_detections3d(pcd: PointCloudData, pcd_id: float,
     preprocess = d3d_parameters["preprocess"]
 
     # Create views to relevant point cloud data
-    instances_pcd = pcd.scalar_fields['instances']
-    classes_pcd = pcd.scalar_fields['classes']
+    instances_pcd = pcd.scalar_fields["instances"]
+    classes_pcd = pcd.scalar_fields["classes"]
     if pcp_parameters["keep_confidences"]:
-        confidences_pcd = pcd.scalar_fields['confidence']
+        confidences_pcd = pcd.scalar_fields["confidence"]
     pts_pcd = pcd.xyz  # (P,3)
 
     # Get unique identifiers of detected 3d objects (d3d = detection 3d) and the number of them
@@ -95,10 +93,12 @@ def clean_pcd_instances_and_get_detections3d(pcd: PointCloudData, pcd_id: float,
         # Oriented bounding box: 3x centroid, 3x axis extent, 4x quaternions
         bbox_d3d = np.zeros((N_d3d, 10), dtype=np.float64)
     else:
-        raise ValueError(f"bounding_box_type must be 'aabb' or 'obb', got {bounding_box_type} instead.")
+        raise ValueError(
+            f"bounding_box_type must be 'aabb' or 'obb', got {bounding_box_type} instead."
+        )
 
     for i, uid in enumerate(unique_d3d):
-        mask = (instances_pcd == uid)
+        mask = instances_pcd == uid
         pcd_i = pcd.sample(mask)
         pts_i, npts_i = pcd_i.xyz.astype(dtype=float), pcd_i.xyz.shape[0]
         # class & confidence (assumed uniform per-instance)
@@ -121,16 +121,20 @@ def clean_pcd_instances_and_get_detections3d(pcd: PointCloudData, pcd_id: float,
             # TODO: alternatively to try: connected components, density peak clustering, ...
             if npts_i > min_npts:
                 expected_point_spacing = pcp_parameters["output_resolution"] * np.sqrt(3) * 1.1
-                clusterer_type = 'hdbscan'  # 'dbscan', 'hdbscan'
+                clusterer_type = "hdbscan"  # 'dbscan', 'hdbscan'
                 min_cluster_size = int(math.ceil(0.25 * npts_i))
-                if clusterer_type == 'hdbscan':
+                if clusterer_type == "hdbscan":
                     min_samples = int(math.ceil(0.005 * npts_i))
-                elif clusterer_type == 'dbscan':
+                elif clusterer_type == "dbscan":
                     min_samples = 5
 
-                clusterer_definition = {'type': 'hdbscan', 'epsilon': expected_point_spacing, 'min_samples': min_samples,
-                                        'min_cluster_size': min_cluster_size,
-                                        'epsilon_hdbscan': 0.0}
+                clusterer_definition = {
+                    "type": "hdbscan",
+                    "epsilon": expected_point_spacing,
+                    "min_samples": min_samples,
+                    "min_cluster_size": min_cluster_size,
+                    "epsilon_hdbscan": 0.0,
+                }
 
                 mask = main_cluster_extraction(pcd_i.xyz, clusterer_definition)
                 pcd_i.reduce(mask)
@@ -146,14 +150,16 @@ def clean_pcd_instances_and_get_detections3d(pcd: PointCloudData, pcd_id: float,
         pts_count_d3d[i] = npts_i
 
         # centroid
-        if centroid_type == 'mean':
+        if centroid_type == "mean":
             centroids_d3d[i] = c = pts_i.mean(axis=0)
-        elif centroid_type == 'median':
+        elif centroid_type == "median":
             centroids_d3d[i] = c = np.median(pts_i, axis=0)
-        elif centroid_type == 'bbox_c':
+        elif centroid_type == "bbox_c":
             pass
         else:
-            raise ValueError(f"centroid_type must be 'mean', 'median' or 'bbox_c', got {centroid_type} instead")
+            raise ValueError(
+                f"centroid_type must be 'mean', 'median' or 'bbox_c', got {centroid_type} instead"
+            )
 
         if npts_i > min_npts:
             # axis-aligned bounding box
@@ -162,7 +168,7 @@ def clean_pcd_instances_and_get_detections3d(pcd: PointCloudData, pcd_id: float,
                 mn = pts_i.min(axis=0)
                 mx = pts_i.max(axis=0)
                 bbox_d3d[i] = np.hstack((mn, mx))
-                if centroid_type == 'bbox_c':
+                if centroid_type == "bbox_c":
                     centroids_d3d = (mx + mn) / 2
             elif bounding_box_type == "obb":
                 # oriented bounding box OBB via PCA
@@ -184,7 +190,7 @@ def clean_pcd_instances_and_get_detections3d(pcd: PointCloudData, pcd_id: float,
                 obb_extent = mx_p - mn_p  # get extent in PCA frame
                 ctr_p = (mn_p + mx_p) / 2  # get center in PCA frame
                 obb_center = c + axes @ ctr_p  # get center in pcd frame
-                if centroid_type == 'bbox_c':
+                if centroid_type == "bbox_c":
                     centroids_d3d[i] = obb_center
 
                 # Get quaternion from 3×3 matrix (axes stored column-wise)
@@ -210,10 +216,18 @@ def clean_pcd_instances_and_get_detections3d(pcd: PointCloudData, pcd_id: float,
     bbox_d3d = bbox_d3d[keep_mask]
 
     # Create Detections3D object
-    detections_3d = Detections3D(pcd_ids=pcd_id_d3d, instances=unique_d3d, classes=classes_d3d,
-                                 confidences=confidence_d3d, point_counts=pts_count_d3d, centroids=centroids_d3d,
-                                 bboxes=bbox_d3d, bboxes_type=bounding_box_type, centroid_type=centroid_type,
-                                 preprocessing_applied=preprocess)
+    detections_3d = Detections3D(
+        pcd_ids=pcd_id_d3d,
+        instances=unique_d3d,
+        classes=classes_d3d,
+        confidences=confidence_d3d,
+        point_counts=pts_count_d3d,
+        centroids=centroids_d3d,
+        bboxes=bbox_d3d,
+        bboxes_type=bounding_box_type,
+        centroid_type=centroid_type,
+        preprocessing_applied=preprocess,
+    )
 
     # Update the point cloud with clean instances (only valid ones)
     pcd = PointCloudData.merge_pcd(pcds_clean)
@@ -223,7 +237,7 @@ def clean_pcd_instances_and_get_detections3d(pcd: PointCloudData, pcd_id: float,
     return detections_3d, pcd
 
 
-def merge_detections3d(detections_list: List[Detections3D]) -> Detections3D:
+def merge_detections3d(detections_list: list[Detections3D]) -> Detections3D:
     if len(detections_list) == 0:
         raise ValueError("detections_list must contain at least one Detections3D object")
 
@@ -243,17 +257,22 @@ def merge_detections3d(detections_list: List[Detections3D]) -> Detections3D:
     bboxes = np.vstack([det.bboxes for det in detections_list])
 
     # Create Detections3D object
-    detections_3d = Detections3D(pcd_ids=pcd_ids, instances=instances, classes=classes,
-                                 confidences=confidences, point_counts=point_counts, centroids=centroids,
-                                 bboxes=bboxes, bboxes_type=bbox_type, centroid_type=centroid_type,
-                                 preprocessing_applied=preprocessing_applied)
+    detections_3d = Detections3D(
+        pcd_ids=pcd_ids,
+        instances=instances,
+        classes=classes,
+        confidences=confidences,
+        point_counts=point_counts,
+        centroids=centroids,
+        bboxes=bboxes,
+        bboxes_type=bbox_type,
+        centroid_type=centroid_type,
+        preprocessing_applied=preprocessing_applied,
+    )
     return detections_3d
 
 
-def filter_detections3d(
-        detections: Detections3D,
-        mask: np.ndarray
-) -> Detections3D:
+def filter_detections3d(detections: Detections3D, mask: np.ndarray) -> Detections3D:
     """
     Return a new Detections3D instance containing only the entries
     where `mask` is True.
@@ -286,12 +305,13 @@ def filter_detections3d(
         bboxes=detections.bboxes[mask, :],
         bboxes_type=detections.bboxes_type,
         centroid_type=detections.centroid_type,
-        preprocessing_applied=detections.preprocessing_applied
+        preprocessing_applied=detections.preprocessing_applied,
     )
 
 
-def d3d_outlier_removal(d3d: Detections3D, per_class_separation: bool = False,
-                        confidence_interval: float = 0.99) -> tuple[Detections3D, NDArray, NDArray]:
+def d3d_outlier_removal(
+    d3d: Detections3D, per_class_separation: bool = False, confidence_interval: float = 0.99
+) -> tuple[Detections3D, NDArray, NDArray]:
 
     # Number of detections in d3d:
     n_d3d = d3d.instances.size
@@ -307,7 +327,7 @@ def d3d_outlier_removal(d3d: Detections3D, per_class_separation: bool = False,
         features[:, 1:4] = np.log1p(d3d.bboxes[:, 3:6])
         # Compute Euler angles and encode in sin(2theta) cos(2theta)
         rot = R.from_quat(d3d.bboxes[:, 6:])
-        eulers = rot.as_euler('xyz', degrees=False)
+        eulers = rot.as_euler("xyz", degrees=False)
         s1, c1 = np.sin(2 * eulers[:, 0]), np.cos(2 * eulers[:, 0])
         s2, c2 = np.sin(2 * eulers[:, 1]), np.cos(2 * eulers[:, 1])
         s3, c3 = np.sin(2 * eulers[:, 2]), np.cos(2 * eulers[:, 2])
@@ -329,14 +349,16 @@ def d3d_outlier_removal(d3d: Detections3D, per_class_separation: bool = False,
     is_outlier = np.zeros_like(class_ids, dtype=np.bool_)
     nd = features.shape[1]  # get number of dimensions
     for cls in unique_cls:
-        class_mask = (class_ids == cls)
+        class_mask = class_ids == cls
         nr_samples = np.sum(class_mask)
         if nr_samples > nd * 10:
             features_i = features[class_mask, :]
             is_outlier_i = multivariate_normal_outlier_removal(features_i, confidence_interval)
             is_outlier[class_mask] = is_outlier_i
         else:
-            print(f"Skipped statistical outlier removal for class {cls}: only {nr_samples} samples (<{nd*10}).")
+            print(
+                f"Skipped statistical outlier removal for class {cls}: only {nr_samples} samples (<{nd * 10})."
+            )
 
     # Get which instance in which point cloud is an outlier:
     pcd_or = d3d.pcd_ids[is_outlier]
@@ -351,11 +373,9 @@ def d3d_outlier_removal(d3d: Detections3D, per_class_separation: bool = False,
 
 
 def squeeze_detections3d(d3d: Detections3D) -> None:
-    d3d.pcd_ids     = np.squeeze(d3d.pcd_ids)
-    d3d.instances   = np.squeeze(d3d.instances)
-    d3d.classes     = np.squeeze(d3d.classes)
+    d3d.pcd_ids = np.squeeze(d3d.pcd_ids)
+    d3d.instances = np.squeeze(d3d.instances)
+    d3d.classes = np.squeeze(d3d.classes)
     d3d.confidences = np.squeeze(d3d.confidences)
     d3d.point_counts = np.squeeze(d3d.point_counts)
     return None
-
-
