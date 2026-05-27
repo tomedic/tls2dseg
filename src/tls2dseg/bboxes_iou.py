@@ -115,7 +115,7 @@ def compute_obb_iou_parallel(
     transforms[:, :3, 3] = centers
 
     # 2) Pack per-pair arguments
-    pack_args: list[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, str]] = []
+    pack_args: list[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]] = []
     for i, j in pairs:
         pack_args.append((extents[i], transforms[i], extents[j], transforms[j]))
 

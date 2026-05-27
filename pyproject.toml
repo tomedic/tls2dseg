@@ -157,32 +157,14 @@ disallow_untyped_defs = true
 disallow_incomplete_defs = true
 warn_return_any = true
 
-# ─── PHASE 1 BASELINE — TEMPORARY ─────────────────────────────────────────
-# Plan 01-04's validation only covered cli.py + diagnostics.py; the wider
-# package has 29 mypy errors across 9 legacy modules (gh run 26502287075).
-# These are silenced here so CI can verify the typecheck job actually runs
-# end-to-end (Phase 1 success criterion #4). Push 2 of the Phase 1 cleanup
-# will lift one module at a time, fixing the underlying errors.
-#
-# IMPORTANT: 9 of the 29 errors are `name-defined` in grounded_sam2.py
-# (check_if_img_slice_empty, return_empty_detections, post_process_gdino_results,
-# run_sam2_bbox_prompt_inference_in_batches, convert_masks_to_sparse_masks,
-# mask_to_rle, check_if_img_slice_complete). These may be REAL missing
-# references masked by wildcard imports — Push 2 must investigate, not
-# just silence. See parking-lot.md @ 2026-05-27.
+# bboxes_iou_gpt_brew.py contains intentional parallel-implementation
+# duplicates (e.g. quat_to_mat_batch defined at line 21 AND line 189, for
+# slow-vs-vectorized comparison). The file is parked for Phase 2 HYGN-06
+# deletion; ignore-errors here is cheaper than a per-line type: ignore
+# annotation that we'd just delete next phase.
 [[tool.mypy.overrides]]
-module = [
-    "tls2dseg.bboxes_iou",            # 1 error (arg-type)
-    "tls2dseg.bboxes_iou_gpt_brew",   # 1 error (no-redef — duplicate `quat_to_mat_batch`)
-    "tls2dseg.detections_3d",         # 1 error (syntax: `(T1, T2)` annotation)
-    "tls2dseg.graph_clustering",      # 6 errors (var-annotated, assignment, index)
-    "tls2dseg.grounded_sam2_utils",   # 1 error (arg-type)
-    "tls2dseg.pc2img_utils",          # 3 errors (valid-type, assignment)
-    "tls2dseg.pc_preprocessing",      # 2 errors (valid-type, arg-type)
-    "tls2dseg.utils_main",            # 1 error (syntax: `(T1, T2)` annotation)
-]
+module = ["tls2dseg.bboxes_iou_gpt_brew"]
 ignore_errors = true
-# ─── END TEMPORARY BLOCK — DO NOT EXTEND ──────────────────────────────────
 
 # ----------------------------------------------------------------------------
 # Pytest — test runner config (D-15 in pyproject.toml only; no pytest.ini / setup.cfg)

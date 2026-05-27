@@ -144,7 +144,7 @@ def id_from_path(p: Path) -> int:
 
 def load_previously_saved_inference_results_if_any(
     pcd_i_id, pcd_collection, pcd_map, d3d_collection, d3d_map
-) -> (SegPCDCollection, list, bool):
+) -> tuple[SegPCDCollection, list, bool]:
     # Initial load flag:
     load_flag = False
 

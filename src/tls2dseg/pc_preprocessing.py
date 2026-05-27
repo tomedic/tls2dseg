@@ -99,7 +99,7 @@ def unsupervised_pcd_instance_segmentation(
     return pcd
 
 
-def statistical_outlier_removal(data: np.ndarray, k: int = 10, std_ratio: [int, float] = 2.0) -> np.ndarray:
+def statistical_outlier_removal(data: np.ndarray, k: int = 10, std_ratio: float = 2.0) -> np.ndarray:
     """
     Perform statistical outlier removal on a point cloud.
     Parameters:
@@ -310,10 +310,11 @@ def apply_robust_sor_filter(pcd: PointCloudData, k_neighbors: float | int, std_r
     if k_neighbors < 1:
         k_neighbors = math.ceil(pts.shape[0] * k_neighbors)
 
-    sor_parameters = {"k": k_neighbors, "std_ratio": std_ratio}
-
-    if pts.shape[0] > sor_parameters["k"]:
-        mask = statistical_outlier_removal(pts, k=sor_parameters["k"], std_ratio=sor_parameters["std_ratio"])
+    # statistical_outlier_removal requires k: int; k_neighbors above is float|int but
+    # math.ceil() / a user passing an int gets us to int here.
+    k = int(k_neighbors)
+    if pts.shape[0] > k:
+        mask = statistical_outlier_removal(pts, k=k, std_ratio=float(std_ratio))
         pcd.reduce(mask)
 
     return None

@@ -38,7 +38,7 @@ class Detections3D:
 
 def clean_pcd_instances_and_get_detections3d(
     pcd: PointCloudData, pcd_id: float, d3d_parameters: dict, pcp_parameters: dict
-) -> (Detections3D, PointCloudData):
+) -> tuple[Detections3D, PointCloudData]:
     """
     Extract a collection of detections 3d instances as a numpy array of relevant features / metadata accompanied
      by a list of feature names explaining columns of the numpy array

@@ -21,7 +21,7 @@ def pc2img_run(
     image_generation_parameters: dict,
     image_width: int = 2000,
     image_height: int = 0,
-) -> [(str, NDArray[np.uint8], Path)]:
+) -> list[tuple[str, NDArray[np.uint8], Path]]:
     # Unpack necessary variables
     rasterization_method = image_generation_parameters["rasterization_method"]
     features = image_generation_parameters["features"]

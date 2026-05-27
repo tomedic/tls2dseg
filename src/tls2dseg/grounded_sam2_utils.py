@@ -5,7 +5,7 @@ import pycocotools.mask as mask_util
 import supervision as sv
 
 
-def resolve_class_names(class_names: list[str], valid_keys: list[str]) -> list[str]:
+def resolve_class_names(class_names: list[str], valid_keys: list[str]) -> list[str | None]:
     """
     Resolves a list of class names to valid keys.
     If class_name is directly in valid_keys, keep it, else, search for the first valid_key that is a substring of
@@ -16,9 +16,10 @@ def resolve_class_names(class_names: list[str], valid_keys: list[str]) -> list[s
         valid_keys: List of valid class labels.
 
     Returns:
-        List of resolved class names.
+        List of resolved class names. May contain None for names with no valid_keys match;
+        callers (see parse_gdino_results) filter those out downstream.
     """
-    resolved = []
+    resolved: list[str | None] = []
     for name in class_names:
         if name in valid_keys:
             resolved.append(name)

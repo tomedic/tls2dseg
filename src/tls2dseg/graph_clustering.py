@@ -1,5 +1,5 @@
-from collections import Counter
-from typing import Literal
+from collections import Counter, defaultdict
+from typing import Any, Literal
 
 import numpy as np
 from scipy.sparse import coo_matrix, csr_matrix
@@ -70,12 +70,15 @@ def get_initial_sparse_connectivity(
         neighbour_lists = [row[1:] for row in idxs]  # drop self
 
     # ----------  assemble edges ----------
+    # The early guard above (line 58) ensures class_ids is not None when semantic_gate is True;
+    # this assert pins that for mypy so class_ids[i] is safe to index.
+    assert not semantic_gate or class_ids is not None
     rows, cols = [], []
     for i, nbrs in enumerate(neighbour_lists):
         for j in nbrs:
             if j <= i:
                 continue  # keep i<j only once
-            if semantic_gate and class_ids[i] != class_ids[j]:
+            if semantic_gate and class_ids[i] != class_ids[j]:  # type: ignore[index]
                 continue
             rows.append(i)
             cols.append(j)
@@ -135,7 +138,7 @@ def sparse_connectivity_pairs2csr_matrix(
 
 def compute_supporter_counts(pairs: np.ndarray, bbox_overlap: np.ndarray, iou_threshold: float = 0.3) -> np.ndarray:
     M = pairs.shape[0]
-    neigh = {i: set() for i in np.unique(pairs)}
+    neigh: dict[Any, set[Any]] = {i: set() for i in np.unique(pairs)}
     for (i, j), iou in zip(pairs, bbox_overlap, strict=False):
         if iou >= iou_threshold:
             neigh[i].add(j)
@@ -376,7 +379,7 @@ def pcc_strict_nondecreasing(
     pairs: np.ndarray,  # (M,2)
     supporters: np.ndarray,  # (M,)
     min_supporters: int = 2,
-    quantiles: list[int] = (99, 95, 90, 80, 70, 60, 50),
+    quantiles: tuple[int, ...] = (99, 95, 90, 80, 70, 60, 50),
 ) -> tuple[np.ndarray, np.ndarray]:
     """
     PCC with multiplicity-preserving supporter counters.
@@ -385,7 +388,7 @@ def pcc_strict_nondecreasing(
     uf = UnionFind(num_nodes)
 
     # --- 1. Initial Counter for each node -------------------------------
-    Support = [Counter() for _ in range(num_nodes)]
+    Support: list[Counter] = [Counter() for _ in range(num_nodes)]
     for (i, j), sup in zip(pairs, supporters, strict=False):
         Support[i][j] += sup
         Support[j][i] += sup
@@ -457,13 +460,12 @@ def hcs_labels(
     HCS via recursive global min-cut with robust connectivity handling.
     Returns 1-based cluster labels of shape (num_nodes,).
     """
-    from collections import defaultdict
     from collections.abc import Iterable
 
     import networkx as nx
 
     # Accumulate weights per undirected edge, filter <= 0 if desired --
-    acc = defaultdict(float)
+    acc: dict[tuple[int, int], float] = defaultdict(float)
     for (i, j), w in zip(pairs, edge_weights, strict=False):
         if i == j:
             continue  # skip self-loops for min-cut
@@ -552,7 +554,7 @@ def graph_clustering(
     *,
     # PCC-specific
     min_supporters: int = 1,
-    quantiles: list[int] = (90, 80, 70, 60, 50, 40, 30, 20, 10),
+    quantiles: tuple[int, ...] = (90, 80, 70, 60, 50, 40, 30, 20, 10),
     # Leiden parameters
     leiden_resolution: float = 1.0,
 ) -> np.ndarray:
