@@ -1,54 +1,100 @@
 [build-system]
-requires = ["setuptools", "setuptools_scm"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
 
 [project]
 name = "tls2dseg"
-dynamic = ["version", "readme"]
-authors = [
-    {name = "Nicholas Meyer", email = "nixton.meyer@gmail.com"},
-    {name = "Another person without mail address"},
-    {email = "another.different.person.that.only.has.email@example.com"},
-]
-maintainers = [
-    {name = "Nicholas Meyer", email = "nixton.meyer@gmail.com"},
-]
-description = "Description of ModuleA"
+dynamic = ["version"]
 requires-python = ">=3.11"
-keywords = ["ONE", "TWO"]
-license = {text = "Proprietary"} # To be changed once released
-classifiers = [ # https://packaging.python.org/en/latest/guides/writing-pyproject-toml/#classifiers
+readme = "README.md"
+
+# USER-CHECK: tagline below — edit if you want a different framing
+description = "Turn terrestrial laser scan point clouds into per-instance, per-class 3D segmentation via Grounded-DINO + SAM2 inference on 2D spherical projections."
+
+# USER-FILL: confirm institutional email (gmail vs ETH); add any lab co-authors
+authors = [{name = "Tomislav Medic", email = "tomedic.tm@gmail.com"}]
+
+# USER-CHECK: keyword + classifier lists — add/remove as you see fit
+keywords = ["point-cloud", "tls", "lidar", "segmentation", "grounded-sam2", "remote-sensing", "geomatics"]
+classifiers = [
     "Development Status :: 3 - Alpha",
-    "Intended Audience :: Developers",
-    "Programming Language :: Python :: 3",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: GIS",
+    "Topic :: Scientific/Engineering :: Image Recognition",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
-
-    "Private :: Do Not Upload" # REMOVE BEFORE FLIGHT -- PyPI will always reject packages with classifiers beginning with Private ::
+    "Operating System :: POSIX :: Linux",
 ]
+# License classifier added in Phase 8 alongside license choice (DOC-05 ships placeholder LICENSE file now).
 
-dependencies = [ # https://packaging.python.org/en/latest/specifications/dependency-specifiers/#dependency-specifiers
-                # https://packaging.python.org/en/latest/specifications/version-specifiers/#id5
+# Runtime deps (HYGN-07 — extended from 1 → 19 entries per D-09).
+# Pin style `~=X.Y` (D-08): allows patch + minor floor bumps, blocks major-version surprise.
+# USER-CHECK lines below: floors are best-effort placeholders — confirm against your live `pip freeze`.
+dependencies = [
+    # ---- ML / vision foundation models ----
+    # USER-CHECK floor: SAM2 docs require torch >= 2.5.1 on some paths; confirm working version
+    "torch ~= 2.4",
+    # USER-CHECK floor
+    "transformers ~= 4.45",
+    # USER-CHECK floor — Roboflow detection/annotation toolkit
+    "supervision ~= 0.25",
+    # sam2 is not on PyPI; pinned to a specific commit SHA so a hostile force-push
+    # on the upstream repo cannot silently change installed dep content.
+    # USER-FILL: current sam2 commit SHA you're running on (run `pip show sam2` or `pip freeze | grep sam2`)
+    "sam2 @ git+https://github.com/facebookresearch/sam2.git@<SHA>",
+
+    # ---- Image processing ----
+    # USER-CHECK floor
+    "opencv-python ~= 4.10",
+    # USER-CHECK floor (matches pc2img's pin)
+    "Pillow ~= 10.0",
+    # USER-CHECK floor (matches pc2img's pin)
+    "imageio ~= 2.31",
+    # USER-CHECK floor; depends on system libvips (document in README — Phase 8 DOC-01)
+    "pyvips ~= 2.2",
+    # USER-CHECK floor
+    "matplotlib ~= 3.8",
+    # USER-CHECK floor — RLE mask encoding
+    "pycocotools ~= 2.0",
+
+    # ---- Scientific / clustering ----
+    # USER-CHECK floor (matches pc2img's pin)
+    "scipy ~= 1.11",
+    # USER-CHECK floor
+    "scikit-learn ~= 1.3",
+    # USER-CHECK floor
+    "hdbscan ~= 0.8",
+    # USER-CHECK floor (matches PCHandler's pin)
+    "joblib ~= 1.3",
+    # USER-CHECK floor — PyPI name is `igraph` since v0.11; `python-igraph` is the legacy alias and
+    # resolves to the same package. Kept as `python-igraph` to match CONTEXT.md D-09 wording.
+    "python-igraph ~= 0.11",
+    # USER-CHECK floor
+    "leidenalg ~= 0.10",
+    # USER-CHECK floor
+    "trimesh ~= 4.0",
+    # USER-CHECK floor — verified imported at graph_clustering.py:463 (`import networkx as nx`).
+    "networkx ~= 3.2",
+    # USER-CHECK floor — single Phase-1 carry-over.
     "numpy ~= 1.24",
+
+    # ---- Workspace-internal deps (D-11) ----
+    # Dev workflow note (RESEARCH Pitfall 4):
+    # Workspace developers should have `pchandler` + `pc2img` already editable-installed locally
+    # (`pip install -e ../PCHandler ../pc2img`) before running `pip install -e .` here. Pip's
+    # resolver may try to re-clone the git URLs even when an editable install exists; if so, use
+    # `pip install -e . --no-deps` and verify `python -c "import pchandler, pc2img"` separately.
+    # USER-FILL: branch or tag refs once pchandler/pc2img have a stable v1 branch/tag
+    "pchandler @ git+ssh://git@github.com/gseg-ethz/PCHandler.git@<branch-or-tag>",
+    "pc2img    @ git+ssh://git@github.com/gseg-ethz/pc2img.git@<branch-or-tag>",
 ]
 
-[tool.setuptools.dynamic]
-readme = {file = ["README.md"]}
-
-[tool.setuptools_scm]
-write_to = "src/tls2dseg/_version.py"
-local_scheme = "no-local-version"
-version_scheme = "post-release"
-
+# USER-CHECK: confirm github org/repo path matches DIST-01 ("gseg-ethz/tls2dseg")
 [project.urls]
-Homepage = "https://example.com"
-Documentation = "https://readthedocs.org"
-Repository = "https://github.com/gseg-ethz/PythonTemplate.git"
-Issues = "https://github.com/gseg-ethz/PythonTemplate/issues"
-Changelog = "https://github.com/gseg-ethz/PythonTemplate/blob/main/CHANGELOG.md"
+Repository = "https://github.com/gseg-ethz/tls2dseg"
+Issues     = "https://github.com/gseg-ethz/tls2dseg/issues"
 
 [project.optional-dependencies]
-doc = ["sphinx"]
 dev = [
     "ruff == 0.15.14",  # Lint + format (replaces black + flake8); strict pin per RESEARCH.md Pitfall 1 — ruff ships rule-changes monthly
     "mypy == 1.20.2",   # Static type checker; pinned to latest 1.20.x per GOV-04 (2.x out of scope)
@@ -58,6 +104,29 @@ dev = [
 
 [project.scripts]
 tls2dseg = "tls2dseg.cli:main"  # Phase 1 HYGN-09 mechanic (D-09); Phase 2/3 retargets to ":app" once Typer lands (D-10)
+
+# ----------------------------------------------------------------------------
+# Hatchling + hatch-vcs build backend (HYGN-08 + D-08) — Phase 2 migration from setuptools.
+# Landmines mitigated:
+#   #1 — `packages = ["src/tls2dseg"]` is MANDATORY for src/ layout (hatchling does NOT auto-detect).
+#   #3 — `local_scheme` / `version_scheme` live under `[tool.hatch.version.raw-options]`,
+#        NOT directly under `[tool.hatch.version]` (silent no-op otherwise).
+# ----------------------------------------------------------------------------
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.version.raw-options]
+local_scheme = "no-local-version"
+version_scheme = "post-release"
+
+[tool.hatch.build.hooks.vcs]
+version-file = "src/tls2dseg/_version.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/tls2dseg"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/tls2dseg", "tests", "README.md", "LICENSE", "pyproject.toml"]
 
 # ----------------------------------------------------------------------------
 # Ruff — lint + format (single tool replacing black + flake8 + isort) per D-01
@@ -70,10 +139,9 @@ tls2dseg = "tls2dseg.cli:main"  # Phase 1 HYGN-09 mechanic (D-09); Phase 2/3 ret
 line-length = 120
 target-version = "py311"        # matches [project] requires-python = ">=3.11"
 exclude = [
-    # main.py removed in Phase 2 02-01-PLAN Task 1 (relocated to src/tls2dseg/pipeline/run.py).
     "resources/",               # already in .pre-commit-config.yaml workspace-wide exclude
     "scripts/",                 # standalone util, not part of package
-    "src/tls2dseg/_version.py", # auto-generated by setuptools_scm
+    "src/tls2dseg/_version.py", # auto-generated by hatch-vcs
 ]
 
 [tool.ruff.lint]
@@ -98,10 +166,7 @@ ignore = []
     "F811",  # redefinition (overridden fixtures)
 ]
 # __init__.py uses re-export pattern + late imports; F401/E402 silence those.
-# Note: existing __init__.py has the `all = ...` typo — Phase 2 HYGN-04 fixes that.
 "src/tls2dseg/__init__.py" = ["F401", "E402"]
-# bboxes_iou_gpt_brew.py per-file-ignore removed in Phase 2 02-01-PLAN
-# Task 3 (HYGN-06): file deleted (see parking-lot.md @ tls2dseg eceaece).
 # detections_3d.py — calls warnings.filterwarnings() and logging.setLevel()
 # BEFORE the imports that emit the suppressed messages (numpy/sklearn
 # FutureWarning, tokenizers log spam). The filter MUST execute before the
@@ -136,7 +201,7 @@ namespace_packages = true
 explicit_package_bases = true
 
 # Lenient global defaults — most existing modules are partially typed.
-# Per-file strictness ratchet (below) holds new Phase 1 modules to a higher bar.
+# Per-file strictness ratchet (below) holds new Phase 1 / Phase 2 modules to a higher bar.
 ignore_missing_imports = true
 warn_unused_ignores = true
 warn_redundant_casts = true
@@ -144,16 +209,16 @@ disallow_untyped_defs = false
 disallow_untyped_calls = false
 check_untyped_defs = false
 
-# Phase 2 02-01-PLAN Task 1 removed main.py (relocated to src/tls2dseg/pipeline/run.py).
-# No top-level mypy exclude needed now that main.py is gone — CI invokes `mypy src/tls2dseg`
-# which already scopes to the package. pipeline.run inherits the lenient global default per D-04.
+# No top-level mypy exclude — CI invokes `mypy src/tls2dseg` which already scopes to the package.
+# pipeline.run inherits the lenient global default per D-04 (relocated legacy code stays lenient).
 exclude = []
 
-# D-06 per-module strictness ratchet. Phase 3 extends this list (config, runtime);
-# Phase 4 extends further (engines). The pattern is the ratchet mechanism — new files
-# land strict; older files get tightened module-by-module as they are refactored.
+# D-06 per-module strictness ratchet. Phase 2 extends the list for `tls2dseg.types` + `tls2dseg.pipeline`
+# (per D-23 + RESEARCH §Q3). Note: `tls2dseg.pipeline` (no wildcard) matches only `pipeline/__init__.py`;
+# `tls2dseg.pipeline.run` is intentionally EXCLUDED so relocated legacy code stays lenient (D-04).
+# Phase 3 extends this list (config, runtime); Phase 4 extends further (engines).
 [[tool.mypy.overrides]]
-module = ["tls2dseg.cli", "tls2dseg.diagnostics"]
+module = ["tls2dseg.cli", "tls2dseg.diagnostics", "tls2dseg.types", "tls2dseg.pipeline"]
 disallow_untyped_defs = true
 disallow_incomplete_defs = true
 warn_return_any = true
