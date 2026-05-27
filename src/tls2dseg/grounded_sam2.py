@@ -256,7 +256,8 @@ def run_grounded_sam2(
     confidences = confidences.astype(float).tolist()
 
     labels = [
-        f"{class_name} {confidence:.2f}" for class_name, confidence in zip(class_names, confidences)
+        f"{class_name} {confidence:.2f}"
+        for class_name, confidence in zip(class_names, confidences, strict=False)
     ]
 
     # Store results in a dictionary
@@ -352,7 +353,8 @@ def run_grounded_sam2_with_sahi(
 
     # Create mask labels (class name + confidence scores)
     labels = [
-        f"{class_name} {confidence:.2f}" for class_name, confidence in zip(class_names, confidences)
+        f"{class_name} {confidence:.2f}"
+        for class_name, confidence in zip(class_names, confidences, strict=False)
     ]
 
     # Store results in a dictionary
@@ -485,7 +487,7 @@ def save_gsam2_results(
                     "score": score,
                 }
                 for class_name, box, mask_rle, score in zip(
-                    class_names, input_boxes, mask_rles, scores
+                    class_names, input_boxes, mask_rles, scores, strict=False
                 )
             ],
             "box_format": "xyxy",

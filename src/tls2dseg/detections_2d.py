@@ -41,7 +41,9 @@ def filter_out_samples_in_2d_detections(detections_2d: dict, remove_mask: np.nda
         if isinstance(vals, np.ndarray):
             detections_2d_filtered[key] = vals[keep_mask]
         elif isinstance(vals, list):
-            detections_2d_filtered[key] = [v for v, keep in zip(vals, keep_mask) if keep]
+            detections_2d_filtered[key] = [
+                v for v, keep in zip(vals, keep_mask, strict=False) if keep
+            ]
         else:
             raise TypeError(f"Filtering not supported for type {type(vals)} in key: '{key}'")
 
@@ -121,7 +123,7 @@ def d2d_outlier_removal(
 
     # Compute features for outlier removal using parallel computing:
     #   prep arguments for each worker (mask, range_image)
-    work_items = list(zip(masks, ranges))
+    work_items = list(zip(masks, ranges, strict=False))
     #   initialize empty results
     features_or = np.empty((len(masks), 5), dtype=np.float32)
     #   run computing PCA-based features in parallel

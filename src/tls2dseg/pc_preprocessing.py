@@ -22,7 +22,7 @@ def get_all_bbox_corners_from_min_max_corners(
 ) -> np.ndarray:
     # Gets all eight (8) corners of an axis-aligned bounding box (aabb) from 2 corners (min_xyz max_xyz)
     all_bbox_corners = np.stack(
-        np.meshgrid(*zip(minimum_corner, maximum_corner), indexing="ij"), axis=-1
+        np.meshgrid(*zip(minimum_corner, maximum_corner, strict=False), indexing="ij"), axis=-1
     ).reshape(-1, 3)
     return all_bbox_corners
 

@@ -138,7 +138,7 @@ def compute_supporter_counts(
 ) -> np.ndarray:
     M = pairs.shape[0]
     neigh = {i: set() for i in np.unique(pairs)}
-    for (i, j), iou in zip(pairs, bbox_overlap):
+    for (i, j), iou in zip(pairs, bbox_overlap, strict=False):
         if iou >= iou_threshold:
             neigh[i].add(j)
             neigh[j].add(i)
@@ -230,7 +230,7 @@ def count_significant_overlaps(
         counts[k] = # of detections j where IoU(k,j) > threshold
     """
     counts = np.zeros(N, dtype=int)
-    for (i, j), iou in zip(pairs, bbox_overlap):
+    for (i, j), iou in zip(pairs, bbox_overlap, strict=False):
         if iou > iou_threshold:
             counts[i] += 1
             counts[j] += 1
@@ -390,7 +390,7 @@ def pcc_strict_nondecreasing(
 
     # --- 1. Initial Counter for each node -------------------------------
     Support = [Counter() for _ in range(num_nodes)]
-    for (i, j), sup in zip(pairs, supporters):
+    for (i, j), sup in zip(pairs, supporters, strict=False):
         Support[i][j] += sup
         Support[j][i] += sup
 
@@ -468,7 +468,7 @@ def hcs_labels(
 
     # Accumulate weights per undirected edge, filter <= 0 if desired --
     acc = defaultdict(float)
-    for (i, j), w in zip(pairs, edge_weights):
+    for (i, j), w in zip(pairs, edge_weights, strict=False):
         if i == j:
             continue  # skip self-loops for min-cut
         w = float(w)

@@ -100,7 +100,6 @@ ignore = [
     # post-auto-fix:
     "E501",   # line-too-long (81)  — long expressions; consider raising line-length to 120
     "E402",   # module-import-not-at-top (11) — late imports for circular-dep workarounds
-    "B905",   # zip-without-explicit-strict (10)     — add strict= to each call
     "RUF001", # ambiguous-unicode-in-string (4) — × ‑ … in ChatGPT-brewed file
     "RUF002", # ambiguous-unicode-in-docstring (10) — same source
     "RUF003", # ambiguous-unicode-in-comment (13)   — en-dashes in comments
