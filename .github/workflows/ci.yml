@@ -52,3 +52,53 @@ jobs:
       # pyproject.toml mypy block.
       - name: mypy -p tls2dseg (from src/)
         run: cd src && mypy -p tls2dseg
+
+  # Phase 2 Wave 2 (Lane E) — VALIDATION.md row-by-row Tier A grep/smoke gates.
+  # Each step is a single REQ-ID assertion; first failing step exits the job
+  # red. Single-quoted regexes avoid shell $-expansion (RESEARCH Pitfall 11).
+  # Dep-repo BUGS-03/04/05 NOT here per RESEARCH §Q4 (dep-repo scope guard).
+  phase2-assertions:
+    name: Phase 2 hygiene + bug-fix assertions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: HYGN-01 — no sys.path.insert in package source/tests
+        run: |
+          ! grep -rn 'sys\.path\.insert' tls2dseg/src/ tls2dseg/tests/
+      - name: HYGN-02 — no from src.tls2dseg.X imports
+        run: |
+          ! grep -rn 'from src\.tls2dseg\b' tls2dseg/src/ tls2dseg/tests/
+      - name: HYGN-04 — main.py / core.py / version.py deleted; pipeline/run.py exists
+        run: |
+          ! test -f tls2dseg/main.py && \
+          ! test -f tls2dseg/src/tls2dseg/core.py && \
+          ! test -f tls2dseg/src/tls2dseg/version.py && \
+          test -f tls2dseg/src/tls2dseg/pipeline/run.py
+      - name: HYGN-05 — __all__ exported from tls2dseg/__init__.py (typo fixed)
+        run: |
+          grep -q '^__all__' tls2dseg/src/tls2dseg/__init__.py
+      - name: HYGN-06 — dead files deleted + parking-lot entries present
+        run: |
+          ! test -f tls2dseg/src/tls2dseg/bboxes_iou_gpt_brew.py && \
+          ! test -f tls2dseg/src/tls2dseg/sam_everything.py && \
+          grep -q 'HYGN-06' parking-lot.md
+      - name: HYGN-08 — hatchling backend + USER-FILL markers stripped
+        run: |
+          grep -q 'hatchling' tls2dseg/pyproject.toml && \
+          ! grep -qE 'USER-FILL|USER-CHECK' tls2dseg/pyproject.toml
+      - name: HYGN-09 — [project.scripts] tls2dseg = tls2dseg.cli:main preserved
+        run: |
+          grep -q 'tls2dseg = "tls2dseg.cli:main"' tls2dseg/pyproject.toml
+      - name: BUGS-02 — np.nan tuple-unpack fixed in pipeline/run.py
+        run: |
+          ! grep -nE '^[^#]*d_azim_rad[^=]*,[^=]*d_elev_rad[^=]*=[^=]*np\.nan' tls2dseg/src/tls2dseg/pipeline/run.py
+      - name: BUGS-06 — RE-IMPLEMENT storing path TODOs replaced
+        run: |
+          ! grep -n 'TODO: RE-IMPLEMENT storing path' tls2dseg/src/tls2dseg/pipeline/run.py && \
+          grep -q 'Output dir + per-run isolation is configurable in Phase 3' tls2dseg/src/tls2dseg/pipeline/run.py
+      - name: DOC-05 — LICENSE placeholder file exists
+        run: |
+          test -f tls2dseg/LICENSE
+      - name: visualization.py — matplotlib.use TkAgg removed (HYGN-06 + D-14/D-29)
+        run: |
+          ! grep -n 'matplotlib\.use' tls2dseg/src/tls2dseg/visualization.py
