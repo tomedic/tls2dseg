@@ -56,52 +56,63 @@ jobs:
   # Phase 2 Wave 2 (Lane E) — VALIDATION.md row-by-row Tier A grep/smoke gates.
   # Each step is a single REQ-ID assertion; first failing step exits the job
   # red. Single-quoted regexes avoid shell $-expansion (RESEARCH Pitfall 11).
-  # Dep-repo BUGS-03/04/05 NOT here per RESEARCH §Q4 (dep-repo scope guard).
+  # Paths are REPO-RELATIVE: after actions/checkout@v5 of the tls2dseg repo,
+  # the runner cwd IS the tls2dseg repo root (src/, tests/, pyproject.toml at
+  # top level — no tls2dseg/ prefix). Dep-repo BUGS-03/04/05 NOT here per
+  # RESEARCH §Q4 (dep-repo scope guard).
   phase2-assertions:
     name: Phase 2 hygiene + bug-fix assertions
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+      - name: Layout sanity — fail fast if checkout shape drifts
+        run: |
+          ls -la
+          test -d src/tls2dseg
+          test -d tests
+          test -f pyproject.toml
       - name: HYGN-01 — no sys.path.insert in package source/tests
         run: |
-          ! grep -rn 'sys\.path\.insert' tls2dseg/src/ tls2dseg/tests/
+          ! grep -rn 'sys\.path\.insert' src/ tests/
       - name: HYGN-02 — no from src.tls2dseg.X imports
         run: |
-          ! grep -rn 'from src\.tls2dseg\b' tls2dseg/src/ tls2dseg/tests/
+          ! grep -rn 'from src\.tls2dseg\b' src/ tests/
       - name: HYGN-04 — main.py / core.py / version.py deleted; pipeline/run.py exists
         run: |
-          ! test -f tls2dseg/main.py && \
-          ! test -f tls2dseg/src/tls2dseg/core.py && \
-          ! test -f tls2dseg/src/tls2dseg/version.py && \
-          test -f tls2dseg/src/tls2dseg/pipeline/run.py
+          ! test -f main.py && \
+          ! test -f src/tls2dseg/core.py && \
+          ! test -f src/tls2dseg/version.py && \
+          test -f src/tls2dseg/pipeline/run.py
       - name: HYGN-05 — __all__ exported from tls2dseg/__init__.py (typo fixed)
         run: |
-          grep -q '^__all__' tls2dseg/src/tls2dseg/__init__.py
-      - name: HYGN-06 — dead files deleted + parking-lot entries present
+          grep -q '^__all__' src/tls2dseg/__init__.py
+      - name: HYGN-06 — dead files deleted (bboxes_iou_gpt_brew, sam_everything)
+        # parking-lot.md is workspace-meta (separate repo) — verification of
+        # HYGN-06 documentation lives in the workspace-meta repo's lifecycle,
+        # not in tls2dseg CI.
         run: |
-          ! test -f tls2dseg/src/tls2dseg/bboxes_iou_gpt_brew.py && \
-          ! test -f tls2dseg/src/tls2dseg/sam_everything.py && \
-          grep -q 'HYGN-06' parking-lot.md
+          ! test -f src/tls2dseg/bboxes_iou_gpt_brew.py && \
+          ! test -f src/tls2dseg/sam_everything.py
       - name: HYGN-08 — hatchling backend + USER-FILL markers stripped
         run: |
-          grep -q 'hatchling' tls2dseg/pyproject.toml && \
-          ! grep -qE 'USER-FILL|USER-CHECK' tls2dseg/pyproject.toml
+          grep -q 'hatchling' pyproject.toml && \
+          ! grep -qE 'USER-FILL|USER-CHECK' pyproject.toml
       - name: HYGN-09 — [project.scripts] tls2dseg = tls2dseg.cli:main preserved
         run: |
-          grep -q 'tls2dseg = "tls2dseg.cli:main"' tls2dseg/pyproject.toml
+          grep -q 'tls2dseg = "tls2dseg.cli:main"' pyproject.toml
       - name: BUGS-02 — np.nan tuple-unpack fixed in pipeline/run.py
         run: |
-          ! grep -nE '^[^#]*d_azim_rad[^=]*,[^=]*d_elev_rad[^=]*=[^=]*np\.nan' tls2dseg/src/tls2dseg/pipeline/run.py
+          ! grep -nE '^[^#]*d_azim_rad[^=]*,[^=]*d_elev_rad[^=]*=[^=]*np\.nan' src/tls2dseg/pipeline/run.py
       - name: BUGS-06 — RE-IMPLEMENT storing path TODOs replaced
         run: |
-          ! grep -n 'TODO: RE-IMPLEMENT storing path' tls2dseg/src/tls2dseg/pipeline/run.py && \
-          grep -q 'Output dir + per-run isolation is configurable in Phase 3' tls2dseg/src/tls2dseg/pipeline/run.py
+          ! grep -n 'TODO: RE-IMPLEMENT storing path' src/tls2dseg/pipeline/run.py && \
+          grep -q 'Output dir + per-run isolation is configurable in Phase 3' src/tls2dseg/pipeline/run.py
       - name: DOC-05 — LICENSE placeholder file exists
         run: |
-          test -f tls2dseg/LICENSE
+          test -f LICENSE
       - name: visualization.py — matplotlib.use TkAgg removed (HYGN-06 + D-14/D-29)
         run: |
-          ! grep -n 'matplotlib\.use' tls2dseg/src/tls2dseg/visualization.py
+          ! grep -n 'matplotlib\.use' src/tls2dseg/visualization.py
 
   # Phase 2 Wave 2 — hatchling build smoke (HYGN-08). Verifies the migrated
   # build backend produces both sdist + wheel. fetch-depth: 0 needed so
@@ -120,10 +131,8 @@ jobs:
       - name: Install build tooling
         run: pip install build
       - name: python -m build (sdist + wheel)
-        working-directory: tls2dseg
         run: python -m build --sdist --wheel
       - name: Verify dist artifacts present
-        working-directory: tls2dseg
         run: |
           ls dist/
           test -n "$(ls dist/tls2dseg-*.whl 2>/dev/null)"
@@ -147,24 +156,17 @@ jobs:
           python-version: "3.11"
           cache: pip
       - name: pip install -e . --no-deps (HYGN-07 workaround for git+ssh path deps)
-        working-directory: tls2dseg
         run: |
           pip install -e . --no-deps
       - name: Install dev extras (ruff/mypy/pytest)
-        working-directory: tls2dseg
         run: pip install ".[dev]" --no-deps
       - name: HYGN-07 — tls2dseg imports + has __version__
-        working-directory: tls2dseg
         run: python -c "import tls2dseg; print(tls2dseg.__version__); assert tls2dseg.__version__"
       - name: HYGN-09 — tls2dseg --help works (entry-point smoke)
-        working-directory: tls2dseg
         run: tls2dseg --help
       - name: HYGN-10 — from tls2dseg import types
-        working-directory: tls2dseg
         run: python -c "from tls2dseg import types; assert types.__all__ == []"
       - name: pipeline subpackage importable
-        working-directory: tls2dseg
         run: python -c "from tls2dseg import pipeline; assert pipeline.__all__ == []"
       - name: BUGS-01 — Tier A pytest passes
-        working-directory: tls2dseg
         run: python -m pytest -m tier_a -v
