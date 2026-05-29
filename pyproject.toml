@@ -8,14 +8,11 @@ dynamic = ["version"]
 requires-python = ">=3.11"
 readme = "README.md"
 
-# USER-CHECK: tagline below — edit if you want a different framing
-description = "Turn terrestrial laser scan point clouds into per-instance, per-class 3D segmentation via Grounded-DINO + SAM2 inference on 2D spherical projections."
+description = "Open-vocabulary 3D instance and semantic segmentation of terrestrial laser scan point clouds via panoramic projections and 2D foundation models."
 
-# USER-FILL: confirm institutional email (gmail vs ETH); add any lab co-authors
-authors = [{name = "Tomislav Medic", email = "tomedic.tm@gmail.com"}]
+authors = [{name = "Tomislav Medic", email = "tmedic@ethz.ch"}, {name = "Claude Code", email = ""}]
 
-# USER-CHECK: keyword + classifier lists — add/remove as you see fit
-keywords = ["point-cloud", "tls", "lidar", "segmentation", "grounded-sam2", "remote-sensing", "geomatics"]
+keywords = ["point-cloud", "tls", "lidar", "segmentation","instance","semantic","open-vocabulary","sam2", "remote-sensing", "laser scanning","geospatial","deep-learning"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
@@ -25,93 +22,57 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Operating System :: POSIX :: Linux",
 ]
-# License classifier added in Phase 8 alongside license choice (DOC-05 ships placeholder LICENSE file now).
 
-# Runtime deps (HYGN-07 — extended from 1 → 19 entries per D-09).
-# Pin style `~=X.Y` (D-08): allows patch + minor floor bumps, blocks major-version surprise.
-# USER-CHECK lines below: floors are best-effort placeholders — confirm against your live `pip freeze`.
 dependencies = [
     # ---- ML / vision foundation models ----
-    # USER-CHECK floor: SAM2 docs require torch >= 2.5.1 on some paths; confirm working version
-    "torch ~= 2.4",
-    # USER-CHECK floor
-    "transformers ~= 4.45",
-    # USER-CHECK floor — Roboflow detection/annotation toolkit
+    "torch ~= 2.7",
+    "transformers ~= 5.1",
     "supervision ~= 0.25",
-    # sam2 is not on PyPI; pinned to a specific commit SHA so a hostile force-push
-    # on the upstream repo cannot silently change installed dep content.
-    # USER-FILL: current sam2 commit SHA you're running on (run `pip show sam2` or `pip freeze | grep sam2`)
-    "sam2 @ git+https://github.com/facebookresearch/sam2.git@<SHA>",
+    "sam2 @ git+https://github.com/facebookresearch/sam2.git@2b90b9f",
 
     # ---- Image processing ----
-    # USER-CHECK floor
-    "opencv-python ~= 4.10",
-    # USER-CHECK floor (matches pc2img's pin)
-    "Pillow ~= 10.0",
-    # USER-CHECK floor (matches pc2img's pin)
-    "imageio ~= 2.31",
-    # USER-CHECK floor; depends on system libvips (document in README — Phase 8 DOC-01)
-    "pyvips ~= 2.2",
-    # USER-CHECK floor
-    "matplotlib ~= 3.8",
-    # USER-CHECK floor — RLE mask encoding
+    "opencv-python ~= 4.11",
+    "Pillow ~= 10.4",
+    "imageio ~= 2.37",
+    "pyvips ~= 3.0",
+    "matplotlib ~= 3.10",
     "pycocotools ~= 2.0",
 
     # ---- Scientific / clustering ----
-    # USER-CHECK floor (matches pc2img's pin)
-    "scipy ~= 1.11",
-    # USER-CHECK floor
-    "scikit-learn ~= 1.3",
-    # USER-CHECK floor
+    "scipy ~= 1.15",
+    "scikit-learn ~= 1.6",
     "hdbscan ~= 0.8",
-    # USER-CHECK floor (matches PCHandler's pin)
-    "joblib ~= 1.3",
-    # USER-CHECK floor — PyPI name is `igraph` since v0.11; `python-igraph` is the legacy alias and
-    # resolves to the same package. Kept as `python-igraph` to match CONTEXT.md D-09 wording.
-    "python-igraph ~= 0.11",
-    # USER-CHECK floor
+    "joblib ~= 1.4",
+    "igraph ~= 0.11",
     "leidenalg ~= 0.10",
-    # USER-CHECK floor
-    "trimesh ~= 4.0",
-    # USER-CHECK floor — verified imported at graph_clustering.py:463 (`import networkx as nx`).
-    "networkx ~= 3.2",
-    # USER-CHECK floor — single Phase-1 carry-over.
-    "numpy ~= 1.24",
+    "trimesh ~= 4.6",
+    "networkx ~= 3.4",
+    "numpy ~= 1.26",
 
-    # ---- Workspace-internal deps (D-11) ----
-    # Dev workflow note (RESEARCH Pitfall 4):
-    # Workspace developers should have `pchandler` + `pc2img` already editable-installed locally
-    # (`pip install -e ../PCHandler ../pc2img`) before running `pip install -e .` here. Pip's
-    # resolver may try to re-clone the git URLs even when an editable install exists; if so, use
-    # `pip install -e . --no-deps` and verify `python -c "import pchandler, pc2img"` separately.
-    # USER-FILL: branch or tag refs once pchandler/pc2img have a stable v1 branch/tag
-    "pchandler @ git+ssh://git@github.com/gseg-ethz/PCHandler.git@<branch-or-tag>",
-    "pc2img    @ git+ssh://git@github.com/gseg-ethz/pc2img.git@<branch-or-tag>",
+    # ---- Workspace-internal deps ----
+    # If pip's resolver tries to re-clone these git URLs even when an editable install
+    # exists locally, use `pip install -e . --no-deps` and verify `python -c "import pchandler, pc2img"`.
+    "pchandler @ git+ssh://git@github.com/gseg-ethz/PCHandler.git@develop/tomislav",
+    "pc2img    @ git+ssh://git@github.com/gseg-ethz/pc2img.git@develop/tomislav",
 ]
 
-# USER-CHECK: confirm github org/repo path matches DIST-01 ("gseg-ethz/tls2dseg")
 [project.urls]
-Repository = "https://github.com/gseg-ethz/tls2dseg"
-Issues     = "https://github.com/gseg-ethz/tls2dseg/issues"
+Repository = "https://github.com/tomedic/tls2dseg"
+Issues     = "https://github.com/tomedic/tls2dseg/issues"
 
 [project.optional-dependencies]
 dev = [
-    "ruff == 0.15.14",  # Lint + format (replaces black + flake8); strict pin per RESEARCH.md Pitfall 1 — ruff ships rule-changes monthly
-    "mypy == 1.20.2",   # Static type checker; pinned to latest 1.20.x per GOV-04 (2.x out of scope)
-    "pytest == 8.3.5",  # Test runner; 8.x line (9.x's native TOML migration deferred)
-    # pre-commit intentionally NOT listed here — it's a per-machine meta-tool (`pip install pre-commit && pre-commit install`)
+    "ruff == 0.15.14",
+    "mypy == 1.20.2",
+    "pytest == 8.3.5",
 ]
 
 [project.scripts]
-tls2dseg = "tls2dseg.cli:main"  # Phase 1 HYGN-09 mechanic (D-09); Phase 2/3 retargets to ":app" once Typer lands (D-10)
+tls2dseg = "tls2dseg.cli:main"
 
-# ----------------------------------------------------------------------------
-# Hatchling + hatch-vcs build backend (HYGN-08 + D-08) — Phase 2 migration from setuptools.
-# Landmines mitigated:
-#   #1 — `packages = ["src/tls2dseg"]` is MANDATORY for src/ layout (hatchling does NOT auto-detect).
-#   #3 — `local_scheme` / `version_scheme` live under `[tool.hatch.version.raw-options]`,
-#        NOT directly under `[tool.hatch.version]` (silent no-op otherwise).
-# ----------------------------------------------------------------------------
+[tool.hatch.metadata]
+allow-direct-references = true  # required to declare sam2/pchandler/pc2img as git+https / git+ssh URL deps
+
 [tool.hatch.version]
 source = "vcs"
 
@@ -129,24 +90,18 @@ packages = ["src/tls2dseg"]
 include = ["src/tls2dseg", "tests", "README.md", "LICENSE", "pyproject.toml"]
 
 # ----------------------------------------------------------------------------
-# Ruff — lint + format (single tool replacing black + flake8 + isort) per D-01
+# Ruff — lint + format
 # ----------------------------------------------------------------------------
 [tool.ruff]
-# D-05 originally pinned line-length = 100. Raised to 120 in Phase 1 Push 2
-# to accommodate research-code long expressions (numpy math, long type
-# annotations, scientific docstrings). 78 of 81 E501 violations were cleared
-# by this change; 3 remaining outliers were refactored or per-file-ignored.
 line-length = 120
-target-version = "py311"        # matches [project] requires-python = ">=3.11"
+target-version = "py311"
 exclude = [
-    "resources/",               # already in .pre-commit-config.yaml workspace-wide exclude
+    "resources/",
     "scripts/",                 # standalone util, not part of package
     "src/tls2dseg/_version.py", # auto-generated by hatch-vcs
 ]
 
 [tool.ruff.lint]
-# D-03: enabled rule families. D-04 explicitly defers D (docstrings), ANN (annotations),
-# PL (pylint), and N (naming) — revisit per-module in later phases (Phase 8 docs work; Phase 3+ for naming/typing).
 select = [
     "E",    # pycodestyle errors
     "W",    # pycodestyle warnings
@@ -165,25 +120,19 @@ ignore = []
     "F401",  # unused import (fixtures often imported for side-effect)
     "F811",  # redefinition (overridden fixtures)
 ]
-# __init__.py uses re-export pattern + late imports; F401/E402 silence those.
+# __init__.py uses re-export pattern + late imports.
 "src/tls2dseg/__init__.py" = ["F401", "E402"]
-# detections_3d.py — calls warnings.filterwarnings() and logging.setLevel()
-# BEFORE the imports that emit the suppressed messages (numpy/sklearn
-# FutureWarning, tokenizers log spam). The filter MUST execute before the
-# importing library scans for warnings; restructuring this is not possible.
-# Intentional pattern.
+# detections_3d.py calls warnings.filterwarnings() / logging.setLevel() before the
+# imports that emit the suppressed messages; the filter must execute first.
 "src/tls2dseg/detections_3d.py" = ["E402"]
-# pipeline/run.py — relocated legacy entry-point (02-01-PLAN D-01..D-04).
-# Stays at lenient lint per D-04 (Phase 3 CFG-04 ratchets it when it
-# rewrites chunks). E402 is intentional (same warning-filter-before-import
-# pattern as detections_3d.py); SIM210/E501/RUF059 are pre-existing legacy
-# patterns carried over from main.py — not fixed in Phase 2 because the file
-# is scheduled for substantial rewrite in Phase 3.
+# pipeline/run.py — relocated legacy entry-point; lenient until it gets rewritten.
+# E402 mirrors the warning-filter-before-import pattern; SIM210/E501/RUF059 are
+# pre-existing legacy patterns.
 "src/tls2dseg/pipeline/run.py" = ["E402", "SIM210", "E501", "RUF059"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["tls2dseg"]
-# pchandler and pc2img are workspace-internal but pip-installed deps — treat as third-party (NOT first-party).
+# pchandler and pc2img are workspace-internal but pip-installed deps — treat as third-party.
 
 [tool.ruff.format]
 quote-style = "double"
@@ -192,16 +141,16 @@ line-ending = "auto"
 docstring-code-format = false   # don't reformat code inside docstrings (NumPy-style examples have intentional spacing)
 
 # ----------------------------------------------------------------------------
-# Mypy — static type checker (D-06 graded strictness; CI-only, never in pre-commit)
+# Mypy — static type checker
 # ----------------------------------------------------------------------------
 [tool.mypy]
-python_version = "3.11"         # D-07; matches [project] requires-python = ">=3.11"
-mypy_path = "src"               # mandatory for src-layout (RESEARCH.md Pattern 4)
+python_version = "3.11"
+mypy_path = "src"               # mandatory for src-layout
 namespace_packages = true
 explicit_package_bases = true
 
 # Lenient global defaults — most existing modules are partially typed.
-# Per-file strictness ratchet (below) holds new Phase 1 / Phase 2 modules to a higher bar.
+# Per-file strictness ratchet (below) holds selected modules to a higher bar.
 ignore_missing_imports = true
 warn_unused_ignores = true
 warn_redundant_casts = true
@@ -210,34 +159,28 @@ disallow_untyped_calls = false
 check_untyped_defs = false
 
 # No top-level mypy exclude — CI invokes `mypy src/tls2dseg` which already scopes to the package.
-# pipeline.run inherits the lenient global default per D-04 (relocated legacy code stays lenient).
 exclude = []
 
-# D-06 per-module strictness ratchet. Phase 2 extends the list for `tls2dseg.types` + `tls2dseg.pipeline`
-# (per D-23 + RESEARCH §Q3). Note: `tls2dseg.pipeline` (no wildcard) matches only `pipeline/__init__.py`;
-# `tls2dseg.pipeline.run` is intentionally EXCLUDED so relocated legacy code stays lenient (D-04).
-# Phase 3 extends this list (config, runtime); Phase 4 extends further (engines).
+# Per-module strictness ratchet. `tls2dseg.pipeline` (no wildcard) matches only
+# `pipeline/__init__.py`; `tls2dseg.pipeline.run` is intentionally NOT in the
+# strict-override list so relocated legacy code stays lenient.
 [[tool.mypy.overrides]]
 module = ["tls2dseg.cli", "tls2dseg.diagnostics", "tls2dseg.types", "tls2dseg.pipeline"]
 disallow_untyped_defs = true
 disallow_incomplete_defs = true
 warn_return_any = true
 
-# bboxes_iou_gpt_brew.py mypy ignore_errors override removed in Phase 2
-# 02-01-PLAN Task 3 (HYGN-06): file deleted (see parking-lot.md @ tls2dseg eceaece).
-
 # ----------------------------------------------------------------------------
-# Pytest — test runner config (D-15 in pyproject.toml only; no pytest.ini / setup.cfg)
+# Pytest — test runner config
 # ----------------------------------------------------------------------------
 [tool.pytest.ini_options]
 minversion = "8.0"
 testpaths = ["tests"]
-pythonpath = ["src"]            # canonical src-layout pattern (RESEARCH.md Pattern 5); enables `from tls2dseg import ...` without editable install
+pythonpath = ["src"]            # enables `from tls2dseg import ...` without editable install
 markers = [
-    "tier_a: lightweight, always-on, < 5 min, no GPU (Phase 4+)",
-    "tier_b_light: moderate fixtures, mocked/CPU inference (Phase 7)",
-    "tier_b_heavy: real GPU / heavy deps / large fixtures (Phase 7 self-hosted)",
-    "gpu: requires CUDA (Phase 4+)",
-    "cpu_only: explicitly CPU-only (Phase 3)",
+    "tier_a: lightweight, always-on, < 5 min, no GPU",
+    "tier_b_light: moderate fixtures, mocked/CPU inference",
+    "tier_b_heavy: real GPU / heavy deps / large fixtures",
+    "gpu: requires CUDA",
+    "cpu_only: explicitly CPU-only",
 ]
-# No `addopts` in Phase 1 — `--strict-markers` deferred to Phase 4 once real tests use markers (D-18).
