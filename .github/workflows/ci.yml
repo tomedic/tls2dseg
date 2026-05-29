@@ -102,3 +102,69 @@ jobs:
       - name: visualization.py — matplotlib.use TkAgg removed (HYGN-06 + D-14/D-29)
         run: |
           ! grep -n 'matplotlib\.use' tls2dseg/src/tls2dseg/visualization.py
+
+  # Phase 2 Wave 2 — hatchling build smoke (HYGN-08). Verifies the migrated
+  # build backend produces both sdist + wheel. fetch-depth: 0 needed so
+  # hatch-vcs can read git tags for version resolution.
+  build-smoke:
+    name: Hatchling build smoke (HYGN-08)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install build tooling
+        run: pip install build
+      - name: python -m build (sdist + wheel)
+        working-directory: tls2dseg
+        run: python -m build --sdist --wheel
+      - name: Verify dist artifacts present
+        working-directory: tls2dseg
+        run: |
+          ls dist/
+          test -n "$(ls dist/tls2dseg-*.whl 2>/dev/null)"
+          test -n "$(ls dist/tls2dseg-*.tar.gz 2>/dev/null)"
+
+  # Phase 2 Wave 2 — editable install + entry-point + Tier A smoke.
+  # Uses `pip install -e . --no-deps` per RESEARCH §"Editable-install +
+  # git+ssh path-dep interaction" workaround; `pip check` deliberately NOT
+  # used as a gate (false-positive with --no-deps, RESEARCH §Pitfall 10).
+  # Full-resolution smoke is DIST-02 (Phase 8). `python -m pytest` (not
+  # bare `pytest`) per RESEARCH §Pitfall 12.
+  install-smoke:
+    name: Editable install + entry-point + tier_a (HYGN-07/09/10 + BUGS-01)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: pip install -e . --no-deps (HYGN-07 workaround for git+ssh path deps)
+        working-directory: tls2dseg
+        run: |
+          pip install -e . --no-deps
+      - name: Install dev extras (ruff/mypy/pytest)
+        working-directory: tls2dseg
+        run: pip install ".[dev]" --no-deps
+      - name: HYGN-07 — tls2dseg imports + has __version__
+        working-directory: tls2dseg
+        run: python -c "import tls2dseg; print(tls2dseg.__version__); assert tls2dseg.__version__"
+      - name: HYGN-09 — tls2dseg --help works (entry-point smoke)
+        working-directory: tls2dseg
+        run: tls2dseg --help
+      - name: HYGN-10 — from tls2dseg import types
+        working-directory: tls2dseg
+        run: python -c "from tls2dseg import types; assert types.__all__ == []"
+      - name: pipeline subpackage importable
+        working-directory: tls2dseg
+        run: python -c "from tls2dseg import pipeline; assert pipeline.__all__ == []"
+      - name: BUGS-01 — Tier A pytest passes
+        working-directory: tls2dseg
+        run: python -m pytest -m tier_a -v
