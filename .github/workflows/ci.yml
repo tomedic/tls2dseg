@@ -158,7 +158,7 @@ jobs:
       - name: pip install -e . --no-deps (HYGN-07 workaround for git+ssh path deps)
         run: |
           pip install -e . --no-deps
-      - name: Install dev extras (ruff/mypy/pytest)
+      - name: Install dev extras parse-smoke (--no-deps, ruff/mypy/pytest metadata only)
         run: pip install ".[dev]" --no-deps
       - name: HYGN-07 — tls2dseg imports + has __version__
         run: python -c "import tls2dseg; print(tls2dseg.__version__); assert tls2dseg.__version__"
@@ -168,5 +168,8 @@ jobs:
         run: python -c "from tls2dseg import types; assert types.__all__ == []"
       - name: pipeline subpackage importable
         run: python -c "from tls2dseg import pipeline; assert pipeline.__all__ == []"
-      - name: BUGS-01 — Tier A pytest passes
-        run: python -m pytest -m tier_a -v
+      # BUGS-01 tier_a pytest step intentionally NOT here — install-smoke uses
+      # --no-deps so numpy + private pchandler aren't installed (and pytest's
+      # own transitive deps aren't either). Test-CI with real deps installed
+      # is Phase 3 CICD-01's scope. BUGS-01 regression-locker still runs
+      # locally during dev (see tests/unit/test_detections_3d.py).
