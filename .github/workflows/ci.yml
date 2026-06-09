@@ -100,6 +100,13 @@ jobs:
       - name: HYGN-09 — [project.scripts] tls2dseg = tls2dseg.cli:app (Phase 3 CFG-05)
         run: |
           grep -q 'tls2dseg = "tls2dseg.cli:app"' pyproject.toml
+      - name: LOG-01 — no print() in src/tls2dseg/ (Phase 3 strict gate, no carve-out)
+        run: |
+          # Reports + fails on any uncommented print() under src/tls2dseg/.
+          # Plan 03-06 + 03-07 invariant: ALL print() in the package converted
+          # to logging.getLogger("tls2dseg.<module>").<level>(...). See
+          # 03-VALIDATION.md row 03-06-03 for the verbatim grep wording.
+          ! grep -rnE '^[[:space:]]*print\(' src/tls2dseg/ --include='*.py' | grep -v '^[[:space:]]*#'
       - name: BUGS-02 — np.nan tuple-unpack fixed in pipeline/run.py
         run: |
           ! grep -nE '^[^#]*d_azim_rad[^=]*,[^=]*d_elev_rad[^=]*=[^=]*np\.nan' src/tls2dseg/pipeline/run.py
@@ -171,5 +178,30 @@ jobs:
       # BUGS-01 tier_a pytest step intentionally NOT here — install-smoke uses
       # --no-deps so numpy + private pchandler aren't installed (and pytest's
       # own transitive deps aren't either). Test-CI with real deps installed
-      # is Phase 3 CICD-01's scope. BUGS-01 regression-locker still runs
-      # locally during dev (see tests/unit/test_detections_3d.py).
+      # is the `tier_a` job below (Phase 3 CICD-01 scope). The BUGS-01
+      # regression-locker is reclassified to tier_b_light (D-A4-01) since it
+      # imports pchandler; it runs under `nox -s tier_b_light` locally.
+
+  # Phase 3 Wave 4 (Plan 03-07) — CICD-01: Tier A pytest in cloud CI on every PR.
+  # Python 3.11 only per D-A4-05 (3.12 deferred). Flags MUST match
+  # `tls2dseg/noxfile.py` tier_a session EXACTLY per D-A4-01 single-source-of-
+  # truth — if `pytest -m tier_a -v` changes here, also update noxfile.py.
+  # Installs with --no-deps so pchandler / pc2img / RAPIDS aren't pulled into
+  # the runner (Tier A is the always-on, lightweight gate).
+  tier_a:
+    name: tier_a pytest (CICD-01)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install tls2dseg (no-deps) + test deps
+        run: |
+          pip install -e . --no-deps
+          pip install "pydantic-settings[yaml]>=2.14" "typer>=0.13" pytest numpy
+      - name: pytest -m tier_a
+        run: python -m pytest -m tier_a -v
