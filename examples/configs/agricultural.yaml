@@ -1,0 +1,87 @@
+# Multi-view outdoor agricultural scan (wheat-domain classes per D-CD-08).
+#
+# Class list aligned with the inline comment at pipeline/run.py:175 — planner
+# discretion under D-CD-08. Lowercase + trailing period normalization is
+# applied automatically by PromptConfig._normalize_text per D-A1-09.
+#
+# CFG-07 worked example. Set SAM2_CHECKPOINT_PATH before running, e.g.:
+#   export SAM2_CHECKPOINT_PATH=/path/to/sam2.1_hiera_large.pt
+# Field-order within each block: primary → tuning → pipings → other (D-A1-02).
+
+mode: multi-view             # tag: primary
+
+io:
+  input_path: ./examples/data/agricultural/  # tag: primary
+  output_dir: ./examples/results/             # tag: primary
+  resume_from_checkpoint: true                # tag: pipings
+  save_intermediate: true                     # tag: pipings
+  file_format: e57                            # tag: other
+  save_d2d: false                             # tag: other
+  run_id_strategy: timestamp_scanset          # tag: other
+
+prompt:
+  text: "wheat. wheat head. wheat ear. wheat stalk. leaf. stem."   # tag: primary
+
+preprocessing:
+  output_resolution_m: 0.003     # tag: primary — wheat-heads scan resolution (run.py:127); tune per dataset
+  range_limits_m: null           # tag: primary — null = no range filter
+  roi_polygon_m: null            # tag: primary — null = no 2D ROI polygon
+  flip_upsidedown_scans_deg: null  # tag: tuning — null = no flip rotation
+  keep_confidences: false        # tag: other
+  assign_random_color_per_instance: false  # tag: other
+
+projection:
+  features: [intensity, range]   # tag: primary — required, min length 1 (MODE-06)
+  type: spherical                # tag: other — Phase 4 engine-abstraction discriminator
+  image_width: scan_resolution   # tag: other
+  scan_resolution: auto          # tag: other
+  rotate_pcd: auto               # tag: other
+  rasterization_method: nanconv  # tag: other
+
+inference:
+  box_threshold: 0.10                          # tag: tuning
+  text_threshold: 0.10                         # tag: tuning
+  large_object_removal_threshold: 0.30         # tag: tuning
+  partial_detection_edge_touching_threshold: 5 # tag: tuning
+  sam_box_prompt_batch_size: 32                # tag: pipings
+  sam2_checkpoint: ${SAM2_CHECKPOINT_PATH}     # tag: pipings — set env var; never hardcode
+  type: grounded_sam2                          # tag: other — Phase 4 engine-abstraction discriminator
+  object_detection_model_id: IDEA-Research/grounding-dino-base   # tag: other
+  sam2_model_config: configs/sam2.1/sam2.1_hiera_l.yaml          # tag: other
+  slicing:
+    enabled: true                              # tag: tuning
+    slice_width_height: [200, 200]             # tag: tuning
+    overlap_width_height: [150, 150]           # tag: tuning
+    iou_threshold: 0.80                        # tag: tuning
+    overlap_filter_strategy: nms               # tag: other
+    empty_slice_removal_threshold: 0.95        # tag: other
+
+d3d_extraction:
+  bounding_box_type: obb        # tag: tuning
+  min_point_count: 50           # tag: tuning
+  centroid_type: bbox_c         # tag: other
+  preprocess: true              # tag: other
+
+fusion:
+  merge_inst_of_same_class_only: false       # tag: tuning
+  sparse_connectivity_threshold: 1           # tag: tuning
+  supporters_iou_threshold: 0.15             # tag: tuning
+  remove_outliers_by_support: true           # tag: tuning
+  outlier_detection_threshold: 0.01          # tag: tuning
+  graph_clustering_method: hcs               # tag: tuning
+  min_supporters: 1                          # tag: tuning
+  leiden_resolution: 250.0                   # tag: tuning
+  small_cluster_removal_threshold: 1         # tag: tuning
+  type: graph_cluster                        # tag: other — Phase 4 engine-abstraction discriminator
+  sparse_connectivity_method: knn            # tag: other
+  outlier_detection_method: negative_binomial  # tag: other
+
+runtime:
+  device: auto                # tag: pipings
+  n_workers: 12               # tag: pipings
+  accept_cpu_fallback: true   # tag: pipings — CPU-03 loud-fallback contract
+
+logging:
+  level: INFO                 # tag: primary
+  per_package: {}             # tag: other — empty = no per-package silencing (LOG-03 conservative default)
+  log_to_file: true           # tag: other
