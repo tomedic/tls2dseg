@@ -24,14 +24,25 @@ import pytest
 
 @pytest.fixture(autouse=True)
 def _restore_logging_state() -> Generator[None, None, None]:
-    """Restore root handlers + per-logger levels after each test."""
+    """Restore root handlers + per-logger levels + propagate + handlers after each test.
+
+    Critical: prior tests may run ``configure_logging`` which sets
+    ``propagate=False`` on the ``tls2dseg`` logger. Without restoring
+    propagate, caplog (which uses root propagation) silently loses records
+    from ``tls2dseg.pipeline.run`` etc.
+    """
     root = logging.getLogger()
     saved_handlers = list(root.handlers)
     saved_level = root.level
-    saved_logger_states: dict[str, int] = {}
-    for name in ("tls2dseg", "tls2dseg.pipeline", "tls2dseg.pipeline.run", "pc2img"):
+    saved_state: dict[str, tuple[int, bool, list]] = {}
+    names = ("tls2dseg", "tls2dseg.pipeline", "tls2dseg.pipeline.run", "tls2dseg.runtime", "pc2img", "pchandler")
+    for name in names:
         lg = logging.getLogger(name)
-        saved_logger_states[name] = lg.level
+        saved_state[name] = (lg.level, lg.propagate, list(lg.handlers))
+        # Reset for THIS test: propagate=True so caplog captures.
+        lg.propagate = True
+        for h in list(lg.handlers):
+            lg.removeHandler(h)
 
     try:
         yield
@@ -41,8 +52,14 @@ def _restore_logging_state() -> Generator[None, None, None]:
         for h in saved_handlers:
             root.addHandler(h)
         root.setLevel(saved_level)
-        for name, level in saved_logger_states.items():
-            logging.getLogger(name).setLevel(level)
+        for name, (level, propagate, handlers) in saved_state.items():
+            lg = logging.getLogger(name)
+            lg.setLevel(level)
+            lg.propagate = propagate
+            for h in list(lg.handlers):
+                lg.removeHandler(h)
+            for h in handlers:
+                lg.addHandler(h)
 
 
 @pytest.mark.tier_a
