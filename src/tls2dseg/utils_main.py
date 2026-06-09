@@ -1,3 +1,4 @@
+import logging
 import pickle
 from pathlib import Path
 
@@ -9,6 +10,8 @@ from pchandler.geometry.transforms import lazy_global_shift_change
 from tls2dseg.detections_3d import Detections3D
 from tls2dseg.pc_preprocessing import subsample_pcd_to_output_resolution
 from tls2dseg.pcd_collection import SegPCDCollection
+
+logger = logging.getLogger("tls2dseg.utils_main")
 
 
 def make_output_folders(
@@ -172,6 +175,8 @@ def load_previously_saved_inference_results_if_any(
                 # Point cloud loaded
                 load_flag = True
             except Exception:
-                print(f"Failed loading previously computed results of {pcd_i_id}th pcd, running inference again.")
+                logger.warning(
+                    "Failed loading previously computed results of %dth pcd, running inference again.", pcd_i_id
+                )
 
     return pcd_collection, d3d_collection, load_flag

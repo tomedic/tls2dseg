@@ -7,6 +7,8 @@ import logging
 # Silence all tokenizers messages below ERROR
 logging.getLogger("tokenizers").setLevel(logging.ERROR)
 
+logger = logging.getLogger("tls2dseg.detections_3d")
+
 import math
 from dataclasses import dataclass
 from typing import Literal
@@ -349,7 +351,12 @@ def d3d_outlier_removal(
             is_outlier_i = multivariate_normal_outlier_removal(features_i, confidence_interval)
             is_outlier[class_mask] = is_outlier_i
         else:
-            print(f"Skipped statistical outlier removal for class {cls}: only {nr_samples} samples (<{nd * 10}).")
+            logger.info(
+                "Skipped statistical outlier removal for class %s: only %d samples (<%d).",
+                cls,
+                nr_samples,
+                nd * 10,
+            )
 
     # Get which instance in which point cloud is an outlier:
     pcd_or = d3d.pcd_ids[is_outlier]

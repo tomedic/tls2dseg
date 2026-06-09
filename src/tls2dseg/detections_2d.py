@@ -1,8 +1,11 @@
+import logging
 from concurrent.futures import ProcessPoolExecutor
 
 import numpy as np
 
 from tls2dseg.statistics_generalizable import multivariate_normal_outlier_removal
+
+logger = logging.getLogger("tls2dseg.detections_2d")
 
 
 def merge_list_of_2d_detections(dict_list: list[dict]) -> dict:
@@ -144,7 +147,7 @@ def d2d_outlier_removal(
             is_outlier_i = multivariate_normal_outlier_removal(features_i, confidence_interval)
             is_outlier[class_mask] = is_outlier_i
         else:
-            print(f"Warning: 2d statistical outlier removal skipped for class {cls} due to too few samples")
+            logger.warning("2d statistical outlier removal skipped for class %s due to too few samples", cls)
 
     # Filter out 2d detections
     d2d_collection = filter_out_samples_in_2d_detections(d2d_collection, is_outlier)

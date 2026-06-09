@@ -1,4 +1,5 @@
 import json
+import logging
 import math
 from pathlib import Path
 
@@ -13,6 +14,8 @@ from sklearn.cluster import DBSCAN
 from sklearn.neighbors import NearestNeighbors
 
 from tls2dseg.roi_filter import roi_mask_xy_rectaware
+
+logger = logging.getLogger("tls2dseg.pc_preprocessing")
 
 # TODO: Separate functions operating on Nx3 np.ndarrays and on PointCloudData (above and below in the file)
 
@@ -192,7 +195,7 @@ def filter_pcd_roi_range(pcd: PointCloudData, pcp_parameters: dict) -> None:
             keep_mask = roi_mask_xy_rectaware(xy=pcd_xy, roi_xy=roi_limits_socs)
             pcd.reduce(keep_mask)
         else:
-            print("Invalid 'roi_limits' in pcp_parameters.")
+            logger.warning("Invalid 'roi_limits' in pcp_parameters.")
 
     return None
 
@@ -205,7 +208,7 @@ def save_segmented_pcd_ij(
     image_j: tuple,
 ):
     # Save segmented point cloud and related transformation parameters
-    print("Saving Single-station point clouds")
+    logger.info("Saving Single-station point clouds")
     output_dir_socs_pcds = inference_models_parameters["output_dir_segmented_pcds"]
     feature_name = "_" + image_j[0]
     cs_name = "_prcs" if pcd.xyz_is_prcs else "_socs"
@@ -229,7 +232,7 @@ def save_segmented_pcd_ij(
 
 def save_segmented_pcd(data_dir: Path, out_dir: Path, pcd: PointCloudData, class_id_map: dict):
     # Save segmented point cloud and related transformation parameters
-    print("Saving point cloud")
+    logger.info("Saving point cloud")
 
     output_pcd_name = data_dir.name + "_segmented.ply"  # _seg for segmented
     output_pcd_path = out_dir / Path(output_pcd_name)

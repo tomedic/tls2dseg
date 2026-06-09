@@ -1,6 +1,7 @@
 # Imports
 import gc
 import json
+import logging
 import os
 import random
 from functools import partial
@@ -29,6 +30,8 @@ from tls2dseg.grounded_sam2_utils import (
 from tls2dseg.pc2img_utils import img_1to3_channels_encoding
 from tls2dseg.sparse_masks_inference_slicer import SparseMasksInferenceSlicer
 from tls2dseg.supervision_utils import CUSTOM_COLOR_MAP
+
+logger = logging.getLogger("tls2dseg.grounded_sam2")
 
 sam_lock = Lock()
 
@@ -320,9 +323,9 @@ def run_grounded_sam2_with_sahi(
     )
 
     # Run slicer (do detection on different slices)
-    print("Running per slice inference")
+    logger.info("Running per slice inference")
     detections = slicer(image)
-    print("Inference completed")
+    logger.info("Inference completed")
 
     # Get class_ids relative to the original text_prompt and corresponding to class_names
     keys = text_prompt.split(".")  # → ['house','window','bicycle','door','grass','leaf']
