@@ -447,7 +447,7 @@ class InferenceConfig(BaseModel):
         json_schema_extra={"tag": "pipings"},
         description="SAM2 box-prompt batch size; GPU memory/throughput trade-off.",
     )
-    # tag: pipings (required — no default; CFG-03 removes the legacy /scratch/ hardcode)
+    # tag: pipings (required — no default; CFG-03 removes the legacy hardcoded path)
     sam2_checkpoint: Path = Field(
         ...,
         json_schema_extra={"tag": "pipings"},
