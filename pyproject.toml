@@ -54,6 +54,12 @@ dependencies = [
     # exists locally, use `pip install -e . --no-deps` and verify `python -c "import pchandler, pc2img"`.
     "pchandler @ git+ssh://git@github.com/gseg-ethz/PCHandler.git@develop/tomislav",
     "pc2img    @ git+ssh://git@github.com/gseg-ethz/pc2img.git@develop/tomislav",
+
+    # ---- Config + CLI (Phase 3 CFG-01/05/06) ----
+    # typer uses `>=` per RESEARCH.md Pitfall 8 (Typer's `~=` interpretation would block 0.14+).
+    "pydantic ~= 2.8",
+    "pydantic-settings[yaml] ~= 2.14",
+    "typer >= 0.13",
 ]
 
 [project.urls]
@@ -65,6 +71,7 @@ dev = [
     "ruff == 0.15.14",
     "mypy == 1.20.2",
     "pytest == 8.3.5",
+    "nox ~= 2026.4",
 ]
 
 [project.scripts]
@@ -122,6 +129,9 @@ ignore = []
 ]
 # __init__.py uses re-export pattern + late imports.
 "src/tls2dseg/__init__.py" = ["F401", "E402"]
+# Phase 3 sub-package __init__.py modules: pure re-export aggregators.
+"src/tls2dseg/config/__init__.py" = ["F401"]
+"src/tls2dseg/runtime/__init__.py" = ["F401"]
 # detections_3d.py calls warnings.filterwarnings() / logging.setLevel() before the
 # imports that emit the suppressed messages; the filter must execute first.
 "src/tls2dseg/detections_3d.py" = ["E402"]
@@ -166,6 +176,14 @@ exclude = []
 # strict-override list so relocated legacy code stays lenient.
 [[tool.mypy.overrides]]
 module = ["tls2dseg.cli", "tls2dseg.diagnostics", "tls2dseg.types", "tls2dseg.pipeline"]
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+warn_return_any = true
+
+# Phase 3 NEW modules per Phase 1 D-06 per-module strictness ratchet.
+# `tls2dseg.config.*` + `tls2dseg.runtime.*` are greenfield in Phase 3 — ship at strict from day one.
+[[tool.mypy.overrides]]
+module = ["tls2dseg.config.*", "tls2dseg.runtime.*"]
 disallow_untyped_defs = true
 disallow_incomplete_defs = true
 warn_return_any = true
