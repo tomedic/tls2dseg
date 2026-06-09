@@ -92,7 +92,7 @@ def make_run_id(strategy: str, input_path: Path) -> str:
     * UTC is used unconditionally. Local time would re-introduce DST
       ambiguity (RESEARCH §Pattern 12).
     * ``input_path.stem`` handles trailing slashes gracefully (Path
-      normalizes ``/data/wheat_heads/`` to ``wheat_heads``).
+      normalizes a directory path ending with a slash to its basename).
     """
     ts = datetime.now(UTC).strftime("%Y-%m-%dT%H%M%S")
     if strategy == "timestamp":
