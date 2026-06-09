@@ -97,9 +97,9 @@ jobs:
         run: |
           grep -q 'hatchling' pyproject.toml && \
           ! grep -qE 'USER-FILL|USER-CHECK' pyproject.toml
-      - name: HYGN-09 — [project.scripts] tls2dseg = tls2dseg.cli:main preserved
+      - name: HYGN-09 — [project.scripts] tls2dseg = tls2dseg.cli:app (Phase 3 CFG-05)
         run: |
-          grep -q 'tls2dseg = "tls2dseg.cli:main"' pyproject.toml
+          grep -q 'tls2dseg = "tls2dseg.cli:app"' pyproject.toml
       - name: BUGS-02 — np.nan tuple-unpack fixed in pipeline/run.py
         run: |
           ! grep -nE '^[^#]*d_azim_rad[^=]*,[^=]*d_elev_rad[^=]*=[^=]*np\.nan' src/tls2dseg/pipeline/run.py

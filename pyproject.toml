@@ -75,7 +75,7 @@ dev = [
 ]
 
 [project.scripts]
-tls2dseg = "tls2dseg.cli:main"
+tls2dseg = "tls2dseg.cli:app"
 
 [tool.hatch.metadata]
 allow-direct-references = true  # required to declare sam2/pchandler/pc2img as git+https / git+ssh URL deps
@@ -132,6 +132,9 @@ ignore = []
 # Phase 3 sub-package __init__.py modules: pure re-export aggregators.
 "src/tls2dseg/config/__init__.py" = ["F401"]
 "src/tls2dseg/runtime/__init__.py" = ["F401"]
+# cli.py uses Typer; typer.Option/Argument in default position is the
+# library's REQUIRED idiom. B008 (do-not-call-in-defaults) is unavoidable.
+"src/tls2dseg/cli.py" = ["B008"]
 # detections_3d.py calls warnings.filterwarnings() / logging.setLevel() before the
 # imports that emit the suppressed messages; the filter must execute first.
 "src/tls2dseg/detections_3d.py" = ["E402"]
