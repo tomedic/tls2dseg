@@ -12,10 +12,47 @@ Uses ``typer.testing.CliRunner`` for invocation.
 
 from __future__ import annotations
 
+import logging
+from collections.abc import Generator
 from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
+
+_TRACKED_LOGGERS = (
+    "tls2dseg",
+    "tls2dseg.config",
+    "tls2dseg.config.loader",
+    "tls2dseg.runtime",
+    "tls2dseg.runtime.context",
+    "tls2dseg.cli",
+    "tls2dseg.pipeline",
+    "pchandler",
+    "pc2img",
+)
+
+
+@pytest.fixture(autouse=True)
+def _restore_logging_state() -> Generator[None, None, None]:
+    """Restore root + reset per-logger state after each test (see test_cli_surface for rationale)."""
+    root = logging.getLogger()
+    saved_handlers = list(root.handlers)
+    saved_level = root.level
+
+    try:
+        yield
+    finally:
+        for h in list(root.handlers):
+            root.removeHandler(h)
+        for h in saved_handlers:
+            root.addHandler(h)
+        root.setLevel(saved_level)
+        for name in _TRACKED_LOGGERS:
+            lg = logging.getLogger(name)
+            lg.setLevel(logging.NOTSET)
+            lg.propagate = True
+            for h in list(lg.handlers):
+                lg.removeHandler(h)
 
 
 @pytest.mark.tier_a

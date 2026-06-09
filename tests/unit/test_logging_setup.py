@@ -24,35 +24,57 @@ from collections.abc import Generator
 
 import pytest
 
+_TRACKED_LOGGERS = (
+    "tls2dseg",
+    "tls2dseg.config",
+    "tls2dseg.config.loader",
+    "tls2dseg.config.models",
+    "tls2dseg.runtime",
+    "tls2dseg.runtime.context",
+    "tls2dseg.runtime.output_layout",
+    "tls2dseg.runtime.logging_setup",
+    "tls2dseg.cli",
+    "tls2dseg.pipeline",
+    "tls2dseg.pipeline.run",
+    "tls2dseg.test",
+    "pchandler",
+    "pc2img",
+)
+
 
 @pytest.fixture(autouse=True)
 def _restore_logging_state() -> Generator[None, None, None]:
-    """Snapshot + restore root logger handlers + per-logger levels per test.
+    """Snapshot + restore root logger handlers + per-logger level/propagate/handlers per test.
 
     Without this, ``configure_logging`` mutations leak across tests:
-    dictConfig replaces root handlers, basicConfig adds another set, and
-    subsequent tests see stale state.
+    dictConfig replaces root handlers, sets propagate=False on tls2dseg,
+    and subsequent tests using caplog (which relies on root propagation)
+    silently lose records.
     """
     root = logging.getLogger()
     saved_handlers = list(root.handlers)
     saved_level = root.level
-    saved_logger_states: dict[str, int] = {}
-    for name in ("tls2dseg", "tls2dseg.config", "tls2dseg.config.loader", "tls2dseg.runtime", "pchandler", "pc2img"):
+    saved_state: dict[str, tuple[int, bool, list]] = {}
+    for name in _TRACKED_LOGGERS:
         lg = logging.getLogger(name)
-        saved_logger_states[name] = lg.level
+        saved_state[name] = (lg.level, lg.propagate, list(lg.handlers))
 
     try:
         yield
     finally:
-        # Restore root handlers + level
         for h in list(root.handlers):
             root.removeHandler(h)
         for h in saved_handlers:
             root.addHandler(h)
         root.setLevel(saved_level)
-        # Restore per-logger levels
-        for name, level in saved_logger_states.items():
-            logging.getLogger(name).setLevel(level)
+        # Reset to clean defaults rather than restoring captured (possibly-polluted) state.
+        # Tests after us see a NOTSET / propagate=True / no-handlers baseline — caplog works.
+        for name in _TRACKED_LOGGERS:
+            lg = logging.getLogger(name)
+            lg.setLevel(logging.NOTSET)
+            lg.propagate = True
+            for h in list(lg.handlers):
+                lg.removeHandler(h)
 
 
 @pytest.mark.tier_a

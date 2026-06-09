@@ -34,12 +34,19 @@ def _restore_logging_state() -> Generator[None, None, None]:
     root = logging.getLogger()
     saved_handlers = list(root.handlers)
     saved_level = root.level
-    saved_state: dict[str, tuple[int, bool, list]] = {}
-    names = ("tls2dseg", "tls2dseg.pipeline", "tls2dseg.pipeline.run", "tls2dseg.runtime", "pc2img", "pchandler")
+    names = (
+        "tls2dseg",
+        "tls2dseg.pipeline",
+        "tls2dseg.pipeline.run",
+        "tls2dseg.runtime",
+        "tls2dseg.runtime.context",
+        "tls2dseg.config",
+        "pc2img",
+        "pchandler",
+    )
+    # Reset for THIS test: propagate=True + no handlers so caplog captures.
     for name in names:
         lg = logging.getLogger(name)
-        saved_state[name] = (lg.level, lg.propagate, list(lg.handlers))
-        # Reset for THIS test: propagate=True so caplog captures.
         lg.propagate = True
         for h in list(lg.handlers):
             lg.removeHandler(h)
@@ -52,14 +59,13 @@ def _restore_logging_state() -> Generator[None, None, None]:
         for h in saved_handlers:
             root.addHandler(h)
         root.setLevel(saved_level)
-        for name, (level, propagate, handlers) in saved_state.items():
+        # Reset to clean defaults — see test_logging_setup _restore_logging_state rationale.
+        for name in names:
             lg = logging.getLogger(name)
-            lg.setLevel(level)
-            lg.propagate = propagate
+            lg.setLevel(logging.NOTSET)
+            lg.propagate = True
             for h in list(lg.handlers):
                 lg.removeHandler(h)
-            for h in handlers:
-                lg.addHandler(h)
 
 
 @pytest.mark.tier_a

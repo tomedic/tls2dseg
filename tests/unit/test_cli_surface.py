@@ -15,12 +15,54 @@ subprocess overhead (tier_a friendly).
 
 from __future__ import annotations
 
+import logging
 import re
+from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
 import pytest
 from typer.testing import CliRunner
+
+_TRACKED_LOGGERS = (
+    "tls2dseg",
+    "tls2dseg.config",
+    "tls2dseg.runtime",
+    "tls2dseg.runtime.context",
+    "tls2dseg.cli",
+    "tls2dseg.pipeline",
+    "pchandler",
+    "pc2img",
+)
+
+
+@pytest.fixture(autouse=True)
+def _restore_logging_state() -> Generator[None, None, None]:
+    """Restore root + reset per-logger state after each test.
+
+    The Typer CLI run_cmd path calls ``configure_logging`` which sets
+    ``propagate=False`` on ``tls2dseg`` and per_package loggers. Without
+    explicit cleanup, subsequent tests using caplog (which relies on root
+    propagation) silently lose records.
+    """
+    root = logging.getLogger()
+    saved_handlers = list(root.handlers)
+    saved_level = root.level
+
+    try:
+        yield
+    finally:
+        for h in list(root.handlers):
+            root.removeHandler(h)
+        for h in saved_handlers:
+            root.addHandler(h)
+        root.setLevel(saved_level)
+        for name in _TRACKED_LOGGERS:
+            lg = logging.getLogger(name)
+            lg.setLevel(logging.NOTSET)
+            lg.propagate = True
+            for h in list(lg.handlers):
+                lg.removeHandler(h)
 
 
 @pytest.mark.tier_a

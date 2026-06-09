@@ -17,17 +17,26 @@ from collections.abc import Generator
 
 import pytest
 
+_TRACKED_LOGGERS = (
+    "tls2dseg",
+    "tls2dseg.config",
+    "tls2dseg.config.models",
+    "tls2dseg.runtime",
+    "tls2dseg.runtime.context",
+    "tls2dseg.cli",
+    "tls2dseg.pipeline",
+    "tls2dseg.test",
+    "pchandler",
+    "pc2img",
+)
+
 
 @pytest.fixture(autouse=True)
 def _restore_logging_state() -> Generator[None, None, None]:
-    """Restore root handlers + per-logger levels after each test."""
+    """Restore root + per-logger level/propagate/handlers after each test (see test_logging_setup)."""
     root = logging.getLogger()
     saved_handlers = list(root.handlers)
     saved_level = root.level
-    saved_logger_states: dict[str, int] = {}
-    for name in ("tls2dseg", "tls2dseg.config", "tls2dseg.runtime", "tls2dseg.cli", "tls2dseg.pipeline"):
-        lg = logging.getLogger(name)
-        saved_logger_states[name] = lg.level
 
     try:
         yield
@@ -37,8 +46,13 @@ def _restore_logging_state() -> Generator[None, None, None]:
         for h in saved_handlers:
             root.addHandler(h)
         root.setLevel(saved_level)
-        for name, level in saved_logger_states.items():
-            logging.getLogger(name).setLevel(level)
+        # Reset to clean defaults — see test_logging_setup _restore_logging_state rationale.
+        for name in _TRACKED_LOGGERS:
+            lg = logging.getLogger(name)
+            lg.setLevel(logging.NOTSET)
+            lg.propagate = True
+            for h in list(lg.handlers):
+                lg.removeHandler(h)
 
 
 @pytest.mark.tier_a
