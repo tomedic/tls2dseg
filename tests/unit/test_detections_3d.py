@@ -16,20 +16,48 @@ separated clusters and asserts the resulting centroids are (a) shape
 The test FAILS on pre-fix code (IndexError or collapsed centroids) and
 PASSES once the ``[i]`` subscript is added (Task 3 of 02-04-PLAN.md).
 
-Marked ``tier_a`` per Phase 1 D-17 — lightweight, deterministic, no GPU,
-no I/O, no large fixtures.
+Marked ``tier_b_light`` per Phase 3 D-A4-01 — this file imports
+``pchandler.geometry.PointCloudData``, and tier_a cloud CI installs
+``pip install -e . --no-deps`` (never pulls pchandler). Reclassifying to
+``tier_b_light`` keeps cloud CI's ``pytest -m tier_a`` collection clean and
+routes this regression-locker to the local ``nox -s tier_b_light`` session
+(which installs the PCHandler editable sibling). Lightweight, deterministic,
+no GPU, no I/O, no large fixtures otherwise.
 """
+
+# Phase 3 D-A4-01: reclassified tier_a -> tier_b_light (this file imports
+# pchandler.geometry; tier_a cloud CI installs --no-deps and cannot resolve
+# pchandler). The local `nox -s tier_b_light` session installs PCHandler as
+# an editable sibling and picks this test up.
 
 from __future__ import annotations
 
 import numpy as np
 import pytest
-from pchandler.geometry import PointCloudData
+
+# Phase 3 D-A4-01: skip the WHOLE module if pchandler can't be imported (cloud
+# CI tier_a sandbox installs `pip install -e . --no-deps`; pchandler is absent
+# OR fails to import because of numpy 2.0 vs `pchandler.np.float_` carry-over).
+# We use a broad try/except instead of pytest.importorskip because the
+# pchandler failure mode in this environment is AttributeError (numpy 2.0
+# removed np.float_, pchandler still annotates with it), NOT ImportError —
+# importorskip only catches ImportError, so a broader pytest.skip is needed
+# at module level to make `pytest -m tier_a` collect cleanly across the entire
+# tests/unit/ directory. The local `nox -s tier_b_light` session (which
+# `pip install -e ../PCHandler --no-deps`s a working PCHandler) will still
+# run this regression-locker.
+try:
+    from pchandler.geometry import PointCloudData
+except Exception as exc:
+    pytest.skip(
+        f"tier_b_light test — pchandler.geometry not importable: {exc!r}",
+        allow_module_level=True,
+    )
 
 from tls2dseg.detections_3d import clean_pcd_instances_and_get_detections3d
 
 
-@pytest.mark.tier_a
+@pytest.mark.tier_b_light
 def test_aabb_centroid_per_instance_not_overwritten(monkeypatch: pytest.MonkeyPatch) -> None:
     """Two synthetic AABB clusters → two distinct centroids, not one shared (3,) row.
 
