@@ -50,6 +50,10 @@ pytestmark = [
         importlib.util.find_spec("pc2img") is None,
         reason="tier_b_light requires pc2img install",
     ),
+    pytest.mark.skipif(
+        importlib.util.find_spec("torch") is None,
+        reason="tier_b_light CPU smoke requires torch (heavy ML dep — install via project conda env)",
+    ),
 ]
 
 
