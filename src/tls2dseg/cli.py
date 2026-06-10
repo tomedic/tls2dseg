@@ -56,11 +56,20 @@ def _main(
         is_eager=True,
         help="Print version and exit.",
     ),
+    log_level: str = typer.Option(
+        "INFO",
+        "--log-level",
+        help="Global log level (DEBUG, INFO, WARNING, ERROR, CRITICAL). Applies to all subcommands.",
+    ),
 ) -> None:
     """tls2dseg — point cloud segmentation pipeline."""
-    # The eager --version callback handles its own exit; this body is a no-op
-    # placeholder so Typer registers the root callback.
-    return None
+    # Phase-1 logging fires at the ROOT callback so DEBUG/INFO from config loaders,
+    # capability probes etc. is captured regardless of which subcommand follows (LOG-04).
+    # `run` may re-bootstrap with its own --log-level to scope the level differently.
+    from tls2dseg.runtime.logging_setup import bootstrap, bootstrap_logger
+
+    bootstrap()  # TOKENIZERS_PARALLELISM env-var
+    bootstrap_logger(level=log_level)
 
 
 @app.command(name="run")
@@ -109,12 +118,13 @@ def run_cmd(
     ),
 ) -> None:
     """Run the full segmentation pipeline (Phase 3 CFG-05)."""
-    # ── PHASE 1 logging: basicConfig BEFORE load_config so config/loader
-    # DEBUG/INFO records are captured (WARNING-5 fix).
-    from tls2dseg.runtime.logging_setup import bootstrap, bootstrap_logger, configure_logging
+    # ── PHASE 1 logging already fired at the root callback. Re-bootstrap here if
+    # the run subcommand's --log-level differs from the global default (allows
+    # `tls2dseg run --log-level DEBUG` to scope DEBUG to the run path).
+    from tls2dseg.runtime.logging_setup import bootstrap_logger, configure_logging
 
-    bootstrap()  # TOKENIZERS_PARALLELISM env-var
-    bootstrap_logger(level=log_level)
+    if log_level != "INFO":
+        bootstrap_logger(level=log_level)
 
     # Build CLI overrides dict from non-None flags (D-A3-04 precedence: CLI > env > YAML > defaults).
     cli_overrides: dict[str, object] = {}

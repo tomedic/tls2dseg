@@ -77,6 +77,28 @@ def test_version_flag_exits_zero_and_prints_semver() -> None:
 
 
 @pytest.mark.tier_a
+def test_log_level_is_global_flag() -> None:
+    """LOG-04: ``--log-level`` is wired on the root callback, not just on ``run``.
+
+    Regression: UAT 03 Test 6 found ``tls2dseg --log-level DEBUG validate-config <yaml>``
+    was rejected because the flag was only on the ``run`` subcommand. The intent of LOG-04
+    is a global flag so config-loader DEBUG output is captured for every subcommand.
+    """
+    from tls2dseg.cli import app
+
+    # Surface check: --log-level appears on the root --help.
+    result = CliRunner().invoke(app, ["--help"])
+    assert result.exit_code == 0
+    assert "--log-level" in result.stdout, "global --log-level missing from root --help"
+
+    # Behavioral check: --log-level is accepted before a non-run subcommand and exits 0.
+    result = CliRunner().invoke(app, ["--log-level", "DEBUG", "doctor"])
+    assert result.exit_code == 0, (
+        f"`tls2dseg --log-level DEBUG doctor` failed with exit {result.exit_code}: {result.stdout}"
+    )
+
+
+@pytest.mark.tier_a
 def test_help_lists_all_three_subcommands() -> None:
     """``tls2dseg --help`` → exit 0, lists run/validate-config/doctor."""
     from tls2dseg.cli import app
