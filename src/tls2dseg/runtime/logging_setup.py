@@ -40,6 +40,7 @@ import logging
 import logging.config
 import os
 import sys
+from collections.abc import Mapping
 from typing import Any
 
 
@@ -72,7 +73,7 @@ def bootstrap_logger(level: str = "INFO") -> None:
 
 def configure_logging(
     level: str = "INFO",
-    per_package: dict[str, str] | None = None,
+    per_package: Mapping[str, str] | None = None,
     log_file: str | None = None,
 ) -> None:
     """Phase 2 — post-load ``dictConfig`` with structured handlers + per-package overrides.
