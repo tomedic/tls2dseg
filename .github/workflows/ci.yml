@@ -39,8 +39,8 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
-      - name: Install mypy
-        run: pip install "mypy==1.20.2"
+      - name: Install mypy + type stubs (types-PyYAML for cli.py:219 `import yaml`)
+        run: pip install "mypy==1.20.2" "types-PyYAML"
       # Run mypy from inside src/ in package mode. Two collisions otherwise:
       # (1) `mypy src/tls2dseg` (path mode) + `mypy_path = "src"` →
       #     "Source file found twice" (tls2dseg.* vs src.tls2dseg.*).
@@ -110,10 +110,10 @@ jobs:
       - name: BUGS-02 — np.nan tuple-unpack fixed in pipeline/run.py
         run: |
           ! grep -nE '^[^#]*d_azim_rad[^=]*,[^=]*d_elev_rad[^=]*=[^=]*np\.nan' src/tls2dseg/pipeline/run.py
-      - name: BUGS-06 — RE-IMPLEMENT storing path TODOs replaced
-        run: |
-          ! grep -n 'TODO: RE-IMPLEMENT storing path' src/tls2dseg/pipeline/run.py && \
-          grep -q 'Output dir + per-run isolation is configurable in Phase 3' src/tls2dseg/pipeline/run.py
+      # BUGS-06 grep gate retired in plan 03-08: Phase 2 milestone is now
+      # structurally satisfied by Phase 3's typed cfg.io.output_dir +
+      # ctx.run_dir wiring (pipeline/run.py:141-143). The original sentinel
+      # comment was removed by plan 03-06's main(cfg, ctx) refactor.
       - name: DOC-05 — LICENSE placeholder file exists
         run: |
           test -f LICENSE
@@ -165,6 +165,9 @@ jobs:
       - name: pip install -e . --no-deps (HYGN-07 workaround for git+ssh path deps)
         run: |
           pip install -e . --no-deps
+      - name: Install Typer CLI runtime deps (Phase 3 CFG-05 — entry-point smoke needs these even under --no-deps)
+        run: |
+          pip install "typer>=0.13" "pydantic-settings[yaml]>=2.14" "pydantic>=2.0" "rich-toolkit"
       - name: Install dev extras parse-smoke (--no-deps, ruff/mypy/pytest metadata only)
         run: pip install ".[dev]" --no-deps
       - name: HYGN-07 — tls2dseg imports + has __version__
