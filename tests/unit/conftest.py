@@ -7,6 +7,7 @@ or ``pc2img``, no GPU access, no network, no disk I/O beyond ``tmp_path``.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -56,3 +57,29 @@ def minimal_yaml_path(tmp_path: Path, minimal_runconfig_yaml: str) -> Path:
 def tmp_yaml_path(tmp_path: Path) -> Path:
     """Empty Path inside tmp_path that tests can populate per case."""
     return tmp_path / "config.yaml"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# NO_COLOR=1 autouse — disables Typer/Rich ANSI color emission in help/echo
+# output so substring assertions in CLI-surface tests are stable across
+# local + CI terminals. Per UAT 03 defect 3 (run 27271100913 job 80540474910):
+# CI's runner emits ANSI codes via Rich, fragmenting `--log-level` into
+# `\x1b[..]-\x1b[..]-log\x1b[..]-level` so `"--log-level" in stdout` fails.
+# See https://no-color.org/ — Rich + Typer both honor this env var.
+# ─────────────────────────────────────────────────────────────────────────────
+@pytest.fixture(autouse=True)
+def _no_color_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Set NO_COLOR=1 for every unit test to suppress Rich/Typer ANSI codes.
+
+    Also defensively deletes FORCE_COLOR if present: FORCE_COLOR takes
+    precedence over NO_COLOR in Rich's resolution order, so leaving it set
+    (e.g. via the dev's shell or a CI runner with FORCE_COLOR=1) would
+    re-enable ANSI fragmentation despite NO_COLOR being set.
+
+    A test that legitimately needs to inspect colorized output should
+    override this with `monkeypatch.delenv("NO_COLOR", raising=False)` and
+    `monkeypatch.setenv("FORCE_COLOR", "1")` at the top of the test body —
+    none exist in Phase 3.
+    """
+    monkeypatch.setenv("NO_COLOR", "1")
+    monkeypatch.delenv("FORCE_COLOR", raising=False)
