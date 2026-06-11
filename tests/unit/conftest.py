@@ -71,15 +71,19 @@ def tmp_yaml_path(tmp_path: Path) -> Path:
 def _no_color_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """Set NO_COLOR=1 for every unit test to suppress Rich/Typer ANSI codes.
 
-    Also defensively deletes FORCE_COLOR if present: FORCE_COLOR takes
-    precedence over NO_COLOR in Rich's resolution order, so leaving it set
-    (e.g. via the dev's shell or a CI runner with FORCE_COLOR=1) would
-    re-enable ANSI fragmentation despite NO_COLOR being set.
+    Also defensively deletes BOTH force-color env vars Rich honors —
+    FORCE_COLOR and PY_COLORS — because either one takes precedence over
+    NO_COLOR in Rich's resolution order. Leaving them set (e.g. a CI runner
+    that exports PY_COLORS=1) re-enables ANSI fragmentation of `--log-level`
+    into `\\x1b[..]-\\x1b[..]-log..-level` despite NO_COLOR — exactly what made
+    the cloud `tier_a` job red while the test passed locally (run 27286224192).
+    FORCE_COLOR alone was handled before; PY_COLORS was the missed one.
 
     A test that legitimately needs to inspect colorized output should
     override this with `monkeypatch.delenv("NO_COLOR", raising=False)` and
     `monkeypatch.setenv("FORCE_COLOR", "1")` at the top of the test body —
-    none exist in Phase 3.
+    none exist today.
     """
     monkeypatch.setenv("NO_COLOR", "1")
     monkeypatch.delenv("FORCE_COLOR", raising=False)
+    monkeypatch.delenv("PY_COLORS", raising=False)

@@ -483,7 +483,7 @@ class InferenceConfig(BaseModel):
     # We use SubModel() shape (not Field(default_factory=...)) to keep RunConfig
     # hydra-zen-compatible per D-A1-00.
     slicing: SlicingConfig = Field(
-        default=SlicingConfig(),  # type: ignore[call-arg]
+        default=SlicingConfig(),
         json_schema_extra={"tag": "other"},
         description="SAHI-style sliced inference sub-block.",
     )
@@ -729,16 +729,18 @@ class RunConfig(BaseSettings):
     )
 
     # Sub-blocks with defaults — instantiated directly (NOT via default_factory)
-    # per D-A1-00 hydra-zen compat. mypy call-arg ignores are intentional; pydantic
-    # v2 + mypy strict treats every field as a required constructor arg even when
-    # all fields have defaults (pydantic GH #6300).
+    # per D-A1-00 hydra-zen compat. No mypy call-arg ignores: the pydantic.mypy
+    # plugin is not configured (it's the plugin that flags no-arg construction per
+    # pydantic GH #6300), so plain mypy never raises call-arg here. The ignores
+    # were dead under `warn_unused_ignores` and broke CI (which runs mypy without
+    # project deps); removed 2026-06-11.
     runtime: RuntimeConfig = Field(
-        default=RuntimeConfig(),  # type: ignore[call-arg]
+        default=RuntimeConfig(),
         json_schema_extra={"tag": "pipings"},
         description="Compute device + workers + CPU-fallback policy.",
     )
     logging: LoggingConfig = Field(
-        default=LoggingConfig(),  # type: ignore[call-arg]
+        default=LoggingConfig(),
         json_schema_extra={"tag": "other"},
         description="Log levels (default + per-package overrides).",
     )
