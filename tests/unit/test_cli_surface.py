@@ -24,6 +24,20 @@ from typing import Any
 import pytest
 from typer.testing import CliRunner
 
+# Strip ANSI SGR escapes before substring assertions. Typer/Rich help output is
+# colorized when the runner forces color, which fragments flags like
+# `--log-level` into `-\x1b[..]-log\x1b[..]-level` so `"--log-level" in stdout`
+# fails. NO_COLOR is honored locally but some CI runners still emit color (via
+# FORCE_COLOR / PY_COLORS / terminal detection), so we strip rather than rely on
+# env vars. This made the cloud tier_a job red while it passed locally.
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _plain(text: str) -> str:
+    """Return ``text`` with ANSI SGR color/style escape codes removed."""
+    return _ANSI_RE.sub("", text)
+
+
 _TRACKED_LOGGERS = (
     "tls2dseg",
     "tls2dseg.config",
@@ -73,7 +87,7 @@ def test_version_flag_exits_zero_and_prints_semver() -> None:
     result = CliRunner().invoke(app, ["--version"])
 
     assert result.exit_code == 0, result.stdout
-    assert re.match(r"^tls2dseg \d", result.stdout), f"unexpected version string: {result.stdout!r}"
+    assert re.match(r"^tls2dseg \d", _plain(result.stdout)), f"unexpected version string: {result.stdout!r}"
 
 
 @pytest.mark.tier_a
@@ -89,7 +103,7 @@ def test_log_level_is_global_flag() -> None:
     # Surface check: --log-level appears on the root --help.
     result = CliRunner().invoke(app, ["--help"])
     assert result.exit_code == 0
-    assert "--log-level" in result.stdout, "global --log-level missing from root --help"
+    assert "--log-level" in _plain(result.stdout), "global --log-level missing from root --help"
 
     # Behavioral check: --log-level is accepted before a non-run subcommand and exits 0.
     result = CliRunner().invoke(app, ["--log-level", "DEBUG", "doctor"])
@@ -106,9 +120,10 @@ def test_help_lists_all_three_subcommands() -> None:
     result = CliRunner().invoke(app, ["--help"])
 
     assert result.exit_code == 0
-    assert "run" in result.stdout
-    assert "validate-config" in result.stdout
-    assert "doctor" in result.stdout
+    out = _plain(result.stdout)
+    assert "run" in out
+    assert "validate-config" in out
+    assert "doctor" in out
 
 
 @pytest.mark.tier_a
@@ -129,8 +144,9 @@ def test_run_help_lists_all_eight_flags() -> None:
         "--device",
         "--dry-run",
     ]
+    out = _plain(result.stdout)
     for flag in expected_flags:
-        assert flag in result.stdout, f"run --help missing flag {flag!r}"
+        assert flag in out, f"run --help missing flag {flag!r}"
 
 
 @pytest.mark.tier_a
@@ -141,10 +157,11 @@ def test_validate_config_help_lists_three_flags() -> None:
     result = CliRunner().invoke(app, ["validate-config", "--help"])
 
     assert result.exit_code == 0
+    out = _plain(result.stdout)
     # Typer renders the positional arg as "FILE" or similar.
-    assert "FILE" in result.stdout or "file" in result.stdout.lower()
-    assert "--strict" in result.stdout
-    assert "--verbose" in result.stdout
+    assert "FILE" in out or "file" in out.lower()
+    assert "--strict" in out
+    assert "--verbose" in out
 
 
 @pytest.mark.tier_a
@@ -156,7 +173,7 @@ def test_doctor_runs_and_uses_typer_echo_not_print() -> None:
 
     assert result.exit_code == 0
     # The doctor report header from diagnostics.format_report.
-    assert "tls2dseg doctor" in result.stdout
+    assert "tls2dseg doctor" in _plain(result.stdout)
 
 
 @pytest.mark.tier_a
@@ -191,5 +208,6 @@ def test_dry_run_does_not_invoke_pipeline_main(
 
     assert result.exit_code == 0, f"dry-run failed: exit={result.exit_code} stdout={result.stdout!r}"
     # Dry-run summary should mention run_id + mode at minimum.
-    assert "run_id" in result.stdout
-    assert "mode" in result.stdout
+    out = _plain(result.stdout)
+    assert "run_id" in out
+    assert "mode" in out
