@@ -118,6 +118,9 @@ select = [
     "B",    # flake8-bugbear (mutable default args etc.)
     "SIM",  # flake8-simplify (readability auto-fixes)
     "RUF",  # ruff-native (incl. RUF012 mutable class-var defaults)
+    "T20",  # flake8-print — enforces LOG-01 (no print() in package source; use
+            # logging.getLogger("tls2dseg.<module>")). Re-homed 2026-06-11 from
+            # the retired phase2-assertions CI job.
 ]
 ignore = []
 

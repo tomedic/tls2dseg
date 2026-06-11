@@ -1,7 +1,5 @@
 # tls2dseg/.github/workflows/ci.yml
-# Phase 1 CI skeleton: ruff + mypy on every PR + every push.
-# No pytest job — see Phase 3 CICD-01 for pytest in CI.
-#
+
 # NOTE: `push:` is currently unscoped (all branches) so that Phase 1's
 # success criterion #4 can be verified on a feature branch without merging
 # to main. The plan's D-20 decision pinned this to `branches: [main]` —
@@ -41,91 +39,13 @@ jobs:
           cache: pip
       - name: Install mypy + type stubs (types-PyYAML for cli.py:219 `import yaml`)
         run: pip install "mypy==1.20.2" "types-PyYAML"
-      # Run mypy from inside src/ in package mode. Two collisions otherwise:
-      # (1) `mypy src/tls2dseg` (path mode) + `mypy_path = "src"` →
-      #     "Source file found twice" (tls2dseg.* vs src.tls2dseg.*).
-      # (2) `mypy -p tls2dseg` from repo root → same dup, because cwd is also
-      #     treated as a package base under `explicit_package_bases = true`.
-      # Running from inside src/ eliminates the ambiguity: src/ is the only
-      # package base, and `tls2dseg` resolves uniquely. Confirmed broken in
-      # gh run 26499455035; verified locally with mypy 2.1 + the project's
-      # pyproject.toml mypy block.
       - name: mypy -p tls2dseg (from src/)
         run: cd src && mypy -p tls2dseg
 
-  # Phase 2 Wave 2 (Lane E) — VALIDATION.md row-by-row Tier A grep/smoke gates.
-  # Each step is a single REQ-ID assertion; first failing step exits the job
-  # red. Single-quoted regexes avoid shell $-expansion (RESEARCH Pitfall 11).
-  # Paths are REPO-RELATIVE: after actions/checkout@v5 of the tls2dseg repo,
-  # the runner cwd IS the tls2dseg repo root (src/, tests/, pyproject.toml at
-  # top level — no tls2dseg/ prefix). Dep-repo BUGS-03/04/05 NOT here per
-  # RESEARCH §Q4 (dep-repo scope guard).
-  phase2-assertions:
-    name: Phase 2 hygiene + bug-fix assertions
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - name: Layout sanity — fail fast if checkout shape drifts
-        run: |
-          ls -la
-          test -d src/tls2dseg
-          test -d tests
-          test -f pyproject.toml
-      - name: HYGN-01 — no sys.path.insert in package source/tests
-        run: |
-          ! grep -rn 'sys\.path\.insert' src/ tests/
-      - name: HYGN-02 — no from src.tls2dseg.X imports
-        run: |
-          ! grep -rn 'from src\.tls2dseg\b' src/ tests/
-      - name: HYGN-04 — main.py / core.py / version.py deleted; pipeline/run.py exists
-        run: |
-          ! test -f main.py && \
-          ! test -f src/tls2dseg/core.py && \
-          ! test -f src/tls2dseg/version.py && \
-          test -f src/tls2dseg/pipeline/run.py
-      - name: HYGN-05 — __all__ exported from tls2dseg/__init__.py (typo fixed)
-        run: |
-          grep -q '^__all__' src/tls2dseg/__init__.py
-      - name: HYGN-06 — dead files deleted (bboxes_iou_gpt_brew, sam_everything)
-        # parking-lot.md is workspace-meta (separate repo) — verification of
-        # HYGN-06 documentation lives in the workspace-meta repo's lifecycle,
-        # not in tls2dseg CI.
-        run: |
-          ! test -f src/tls2dseg/bboxes_iou_gpt_brew.py && \
-          ! test -f src/tls2dseg/sam_everything.py
-      - name: HYGN-08 — hatchling backend + USER-FILL markers stripped
-        run: |
-          grep -q 'hatchling' pyproject.toml && \
-          ! grep -qE 'USER-FILL|USER-CHECK' pyproject.toml
-      - name: HYGN-09 — [project.scripts] tls2dseg = tls2dseg.cli:app (Phase 3 CFG-05)
-        run: |
-          grep -q 'tls2dseg = "tls2dseg.cli:app"' pyproject.toml
-      - name: LOG-01 — no print() in src/tls2dseg/ (Phase 3 strict gate, no carve-out)
-        run: |
-          # Reports + fails on any uncommented print() under src/tls2dseg/.
-          # Plan 03-06 + 03-07 invariant: ALL print() in the package converted
-          # to logging.getLogger("tls2dseg.<module>").<level>(...). See
-          # 03-VALIDATION.md row 03-06-03 for the verbatim grep wording.
-          ! grep -rnE '^[[:space:]]*print\(' src/tls2dseg/ --include='*.py' | grep -v '^[[:space:]]*#'
-      - name: BUGS-02 — np.nan tuple-unpack fixed in pipeline/run.py
-        run: |
-          ! grep -nE '^[^#]*d_azim_rad[^=]*,[^=]*d_elev_rad[^=]*=[^=]*np\.nan' src/tls2dseg/pipeline/run.py
-      # BUGS-06 grep gate retired in plan 03-08: Phase 2 milestone is now
-      # structurally satisfied by Phase 3's typed cfg.io.output_dir +
-      # ctx.run_dir wiring (pipeline/run.py:141-143). The original sentinel
-      # comment was removed by plan 03-06's main(cfg, ctx) refactor.
-      - name: DOC-05 — LICENSE placeholder file exists
-        run: |
-          test -f LICENSE
-      - name: visualization.py — matplotlib.use TkAgg removed (HYGN-06 + D-14/D-29)
-        run: |
-          ! grep -n 'matplotlib\.use' src/tls2dseg/visualization.py
-
-  # Phase 2 Wave 2 — hatchling build smoke (HYGN-08). Verifies the migrated
-  # build backend produces both sdist + wheel. fetch-depth: 0 needed so
-  # hatch-vcs can read git tags for version resolution.
+  # Hatchling build smoke. Verifies the migrated build backend
+  # produces both sdist + wheel.
   build-smoke:
-    name: Hatchling build smoke (HYGN-08)
+    name: build smoke
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -145,14 +65,12 @@ jobs:
           test -n "$(ls dist/tls2dseg-*.whl 2>/dev/null)"
           test -n "$(ls dist/tls2dseg-*.tar.gz 2>/dev/null)"
 
-  # Phase 2 Wave 2 — editable install + entry-point + Tier A smoke.
   # Uses `pip install -e . --no-deps` per RESEARCH §"Editable-install +
   # git+ssh path-dep interaction" workaround; `pip check` deliberately NOT
   # used as a gate (false-positive with --no-deps, RESEARCH §Pitfall 10).
-  # Full-resolution smoke is DIST-02 (Phase 8). `python -m pytest` (not
-  # bare `pytest`) per RESEARCH §Pitfall 12.
+  # Full-resolution smoke is DIST-02 (Phase 8).
   install-smoke:
-    name: Editable install + entry-point + tier_a (HYGN-07/09/10 + BUGS-01)
+    name: editable install smoke + entry-point check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -178,12 +96,6 @@ jobs:
         run: python -c "from tls2dseg import types; assert types.__all__ == []"
       - name: pipeline subpackage importable
         run: python -c "from tls2dseg import pipeline; assert pipeline.__all__ == []"
-      # BUGS-01 tier_a pytest step intentionally NOT here — install-smoke uses
-      # --no-deps so numpy + private pchandler aren't installed (and pytest's
-      # own transitive deps aren't either). Test-CI with real deps installed
-      # is the `tier_a` job below (Phase 3 CICD-01 scope). The BUGS-01
-      # regression-locker is reclassified to tier_b_light (D-A4-01) since it
-      # imports pchandler; it runs under `nox -s tier_b_light` locally.
 
   # Phase 3 Wave 4 (Plan 03-07) — CICD-01: Tier A pytest in cloud CI on every PR.
   # Python 3.11 only per D-A4-05 (3.12 deferred). Flags MUST match
@@ -192,7 +104,7 @@ jobs:
   # Installs with --no-deps so pchandler / pc2img / RAPIDS aren't pulled into
   # the runner (Tier A is the always-on, lightweight gate).
   tier_a:
-    name: tier_a pytest (CICD-01)
+    name: tier_a pytest
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
