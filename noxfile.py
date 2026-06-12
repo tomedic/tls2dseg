@@ -64,4 +64,8 @@ def tier_b_light(session: nox.Session) -> None:
     session.install("-e", "../PCHandler")  # installs PCHandler WITH deps
     session.install("-e", "../pc2img")  # installs pc2img WITH deps
     session.install("pytest")  # explicit in case not in transitive deps
+    # manifold3d: CPU-only trimesh boolean backend so the OBB-boolean IoU
+    # tests (TEST-06, test_bboxes_iou.py) execute instead of skip-guarding on
+    # an absent mesh-boolean engine. Pure pip dep, no GPU.
+    session.install("manifold3d")
     session.run("pytest", "-m", "tier_b_light", "-v", *session.posargs)
