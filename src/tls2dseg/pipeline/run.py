@@ -83,14 +83,13 @@ def main(cfg: RunConfig, ctx: RunContext) -> None:
         d3d_outlier_removal,
         merge_detections3d,
     )
-    from tls2dseg.graph_clustering import (
-        count_significant_overlaps,
+    from tls2dseg.engines.fusion.clustering import (
         detect_upper_tail_outliers,
-        filter_outlier_detections3d_edges_and_nodes,
-        get_edge_weights,
-        get_initial_sparse_connectivity,
         graph_clustering,
     )
+    from tls2dseg.engines.fusion.connectivity import get_initial_sparse_connectivity
+    from tls2dseg.engines.fusion.edge_weights import count_significant_overlaps, get_edge_weights
+    from tls2dseg.graph_clustering import filter_outlier_detections3d_edges_and_nodes
     from tls2dseg.grounded_sam2 import (
         initialize_gdino,
         initialize_sam2,

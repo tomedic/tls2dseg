@@ -60,9 +60,9 @@ def test_aabb_centroid_per_instance_not_overwritten() -> None:
     or collapses both centroids onto the last cluster — either failure
     mode is detected by the assertions below.
 
-    With preprocess=False, pcds_clean remains empty (no preprocess guard),
-    so the merge_pcd call is not exercised (the D-D-05 bug is only triggered
-    when preprocess=True). This test focuses on the BUGS-01 centroid regression.
+    With preprocess=False, pcd_i is still appended to pcds_clean (D-D-05 fix
+    ensures AABB path is symmetric with OBB), so merge_pcd succeeds.
+    This test focuses primarily on the BUGS-01 centroid regression.
     """
     # Deterministic synthetic clusters — RandomState(0) for reproducibility.
     rng = np.random.RandomState(0)
