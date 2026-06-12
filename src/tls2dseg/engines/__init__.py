@@ -58,6 +58,21 @@ def _populate_projection_registry() -> None:
 _populate_projection_registry()
 
 
+def _populate_fusion_registry() -> None:
+    """Lazily populate FUSION_ENGINES with the built-in graph-cluster engine.
+
+    Called once at module load.  Heavy deps (scipy, igraph, leidenalg) are
+    NOT imported here — only the class reference is stored.  The class itself
+    confines heavy imports to its ``fuse()`` method helpers (D-A-05).
+    """
+    from tls2dseg.engines.fusion.graph import GraphClusterFusionEngine
+
+    FUSION_ENGINES["graph_cluster"] = GraphClusterFusionEngine
+
+
+_populate_fusion_registry()
+
+
 def build_projection_engine(name: str, *args: object, **kwargs: object) -> ProjectionEngine:
     """Construct a projection engine by registry name.
 
