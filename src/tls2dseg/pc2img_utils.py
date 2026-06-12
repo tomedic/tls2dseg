@@ -1,8 +1,8 @@
+from __future__ import annotations
+
 import re
-from concurrent.futures import ProcessPoolExecutor
 from functools import partial
 from pathlib import Path
-from typing import Literal
 
 import imageio.v3 as iio
 import numpy as np
@@ -13,6 +13,9 @@ from pc2img.image_generation import SphericalImageGeneratorFromPCD
 from pc2img.util import convert_to_image
 from pchandler.geometry.core import PointCloudData
 from sklearn.neighbors import NearestNeighbors
+
+# Phase 4 plan 04-04 Task 3 (ENG-07): these functions have been moved to
+# engines.inference.shared. Re-exported here for backward compatibility.
 
 
 def pc2img_run(
@@ -432,123 +435,8 @@ def resolve_rotate_pcd_parameter(pcd, image_generation_parameters) -> float:
     return theta_deg
 
 
-def get_instance_and_semantic_mask(results: dict, text_prompt) -> tuple[np.ndarray, np.ndarray, dict]:
-    """
-    Creates 1 representative instance and 1 semantic segmentation mask from N individual object masks.
-
-    Args:
-        results: A dictionary with grounded_sam2 results containing all instance/semantics segmentation info
-                'masks' with M x w x h (M = mask number, w = width, h = height),
-                'input_boxes' with input bounding boxes (results of object detection),
-                'confidences' with confidence scores,
-                'class_names', 'class_ids', ...
-        text_prompt: a string with text prompts used for object detection with GroundedDINO
-                     (each "object" separated by a dot ".")
-    Returns:
-        instance_mask: A NumPy array of shape (H, W) with unique labels for each instance.
-        semantic_mask: A NumPy array of shape (H, W) with labels for each semantic class.
-        class_ids: A dictionary with str class_name int class_id value-pairs
-    """
-
-    H, W = results["masks"][0].shape  # Mask/image size
-    N = len(results["masks"])  # Number of detections
-
-    # Get dictionary mapping "semantic classes" to unique IDs
-    keys = text_prompt.split(".")  # → ['house','window','bicycle','door','grass','leaf']
-    id_map = {k: i + 1 for i, k in enumerate(keys)}  # → {'house':1, 'window':2, ..., 'leaf':6}
-    class_ids = [id_map[q] for q in results["class_names"]]  # a list of corresponding class IDs
-    results["class_ids"] = class_ids  # Store real class IDs corresponding to detected classes, not range(#C)
-
-    # Sorting masks from biggest to smallest, so if overlapping, the big ones do not superimpose the small ones
-    mask_sizes = np.zeros(N, dtype=int)
-    for i in range(N):
-        mask_sizes[i] = results["masks"][i].nnz
-    # Get indices sorted from biggest to smallest
-    sorted_indices = np.argsort(mask_sizes)[::-1]
-
-    # Initialize masks with zeros (background)
-    instance_mask = np.zeros((H, W), dtype=np.int32)
-    semantic_mask = np.zeros((H, W), dtype=np.int32)
-
-    for i in range(N):
-        # Get the instance mask
-        mask_i = results["masks"][sorted_indices[i]].toarray().astype(bool)  # Shape: (H, W), dtype: bool
-        # Assign a unique label to each instance in the instance mask
-        # Labels start from 1 (to have 0 for background)
-        instance_label = i + 1
-        instance_mask[mask_i] = instance_label
-
-        # Assign the semantic label to the semantic mask
-        # Labels are class_id + 1 to avoid using 0
-        semantic_mask[mask_i] = class_ids[sorted_indices[i]]
-
-    return instance_mask, semantic_mask, id_map
-
-
-def get_instance_and_semantic_mask_with_confidence(
-    results: dict, text_prompt, image_hw: tuple
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, dict]:
-    """
-    Creates 1 representative instance and 1 semantic segmentation mask from N individual object masks.
-
-    Args:
-        results: A dictionary with grounded_sam2 results containing all instance/semantics segmentation info
-                'masks' with M x w x h (M = mask number, w = width, h = height),
-                'input_boxes' with input bounding boxes (results of object detection),
-                'confidences' with confidence scores,
-                'class_names', 'class_ids', ...
-        text_prompt: a string with text prompts used for object detection with GroundedDINO
-                     (each "object" separated by a dot ".")
-        image_hw: a tuple with width and height of the image
-    Returns:
-        instance_mask: A NumPy array of shape (H, W) with unique labels for each instance.
-        semantic_mask: A NumPy array of shape (H, W) with labels for each semantic class.
-        confidence_mask: A NumPy array of shape (H, W) with confidences for each instance (detection).
-        class_ids: A dictionary with str class_name int class_id value-pairs
-    """
-
-    H, W = image_hw  # Mask/image size
-    N = len(results["masks"])  # Number of detections
-
-    # Get dictionary mapping "semantic classes" to unique IDs
-    keys = text_prompt.split(".")  # → ['house','window','bicycle','door','grass','leaf']
-    id_map = {k: i + 1 for i, k in enumerate(keys)}  # → {'house':1, 'window':2, ..., 'leaf':6}
-    class_ids = [id_map[q] for q in results["class_names"]]  # a list of corresponding class IDs
-    results["class_ids"] = class_ids  # Store real class IDs corresponding to detected classes, not range(#C)
-
-    # Get confidences
-    confidences = results["confidences"]
-
-    # Sorting masks from biggest to smallest, so if overlapping, the big ones do not superimpose the small ones
-    mask_sizes = np.zeros(N, dtype=int)
-    for i in range(N):
-        mask_sizes[i] = results["masks"][i].shape[0]
-    # Get indices sorted from biggest to smallest
-    sorted_indices = np.argsort(mask_sizes)[::-1]
-
-    # Initialize masks with zeros (background)
-    instance_mask = np.zeros((H, W), dtype=np.uint32)
-    semantic_mask = np.zeros((H, W), dtype=np.uint8)
-    confidence_mask = np.zeros((H, W), dtype=np.float16)
-
-    for i in range(N):
-        # Get the instance mask row and column indices
-        mask_i = results["masks"][sorted_indices[i]]
-        mask_i = np.unique(mask_i, axis=0)
-
-        # Assign a unique label to each instance in the instance mask
-        # Labels start from 1 (to have 0 for background)
-        instance_label = i + 1
-        instance_mask[mask_i[:, 0], mask_i[:, 1]] = instance_label
-
-        # Assign the semantic label to the semantic mask
-        # Labels are class_id + 1 to avoid using 0
-        semantic_mask[mask_i[:, 0], mask_i[:, 1]] = class_ids[sorted_indices[i]]
-
-        # Assign confidence score i to confidence mask
-        confidence_mask[mask_i[:, 0], mask_i[:, 1]] = confidences[sorted_indices[i]]
-
-    return instance_mask, semantic_mask, confidence_mask, id_map
+# get_instance_and_semantic_mask and get_instance_and_semantic_mask_with_confidence
+# are re-exported from tls2dseg.engines.inference.shared (see top of file).
 
 
 def resolve_necessary_image_resolution(pcd: PointCloudData, pcp_parameters: dict, d_azim_rad: float) -> float:
@@ -612,147 +500,5 @@ def reduce_image_resolution(
     return set_of_images
 
 
-def img_1to3_channels_encoding(
-    img: np.ndarray,
-    output_dtype: str | np.dtype | None = "float32",
-    replace_nan_with: Literal["max", "min", "random", "zero"] | float = "max",
-    normalize: Literal["0-1", "0-255"] | None = "0-1",
-    broadcast: bool = True,
-) -> np.ndarray:
-    """
-    Convert a HxWx, channel grayscale array with arbitrary value range and dtype into a HxWx3 channel grayscale array
-    of selected dtype with 0-255 value range. Goal: Preparing image data for deep learning frameworks
-    (e.g. HuggingFace transformers library, SAM/SAM2 by Facebook/Meta).
-
-    Parameters
-    ----------
-    img : np.ndarray
-        Input image 2-D array of Shape (H, W, ), dtype any, may contain NaNs.
-    output_dtype : {'uint8', 'float32', None}
-        Desired dtype of the output 3 channel image.
-    replace_nan_with : {'max', 'min', 'random', 'zero'} or float
-        Strategy for filling NaNs *before* further processing.
-    normalize: {'0-1', '0-255'} or None
-        If '0-1' or '0-255', normalize data to 0-1 or 0-255 values
-        If None - do nothing.
-    broadcast : bool
-        If True return an O(1) broadcast view
-        instead of materialising three copies.
-
-    Returns
-    -------
-    img : np.ndarray
-        Shape (H, W, 3) array of the requested dtype.
-    """
-
-    # Early stopping: if image already a 3 channel image with 0-255 value range, do nothing
-    if img.ndim == 3 and img.shape[2] == 3:
-        img_min, img_max = float(img.min()), float(img.max())
-        if img_min >= 0.0 and img_max <= 255.0:
-            return img
-
-    # Checks for other cases:
-    if img.ndim != 2:
-        raise ValueError(
-            "Input must be a 2-D array, check if your image is not already 3 channel image with 0-255 value range!"
-        )
-
-    if output_dtype not in ("uint8", "float32", None):
-        raise ValueError("dtype must be 'uint8', 'float32', or None")
-
-    # Make a copy to de-attach the image from the original ndarray
-    img = img.copy()
-
-    # ---- 1) handle NaNs ----------------------------------------------------
-    nan_mask = np.isnan(img)
-    img_min, img_max = np.nanmin(img), np.nanmax(img)
-    if nan_mask.any():
-        # Get values to replace nan with
-        if replace_nan_with == "max":
-            fill_val = img_max
-        elif replace_nan_with == "min":
-            fill_val = img_min
-        elif replace_nan_with == "random":
-            rng = np.random.default_rng()
-            fill_val = rng.uniform(img_min, img_max, size=img.shape[:2])
-        elif replace_nan_with == "zero":
-            fill_val = 0.0
-        elif isinstance(replace_nan_with, (int, float)):
-            fill_val = float(replace_nan_with)
-            img_max = max(replace_nan_with, img_max)
-        else:
-            raise ValueError("Invalid replace_nan_with option")
-        # Replace values
-        if replace_nan_with == "random":
-            img[nan_mask] = fill_val[nan_mask]
-        else:
-            img[nan_mask] = fill_val
-
-    # ---- 2) normalise slice-wise ------------------------------------------
-    if normalize is not None and normalize in ("0-1", "0-255"):
-        # constant slice -> all zeros, otherwise rescale to [0, 1]
-        img = np.zeros_like(img, dtype=np.float32) if img_max == img_min else (img - img_min) / (img_max - img_min)
-        if normalize == "0-255":
-            img = img * 255.0
-    elif normalize is None:
-        pass
-    else:
-        raise ValueError("normalize must have one of the 3 following values: '0-1', '0-255', None")
-
-    # ---- 3) cast to requested dtype ---------------------------------------
-    if output_dtype is not None:
-        output_dtype_np = np.dtype(output_dtype)
-        img = img.astype(output_dtype_np)
-
-    # ---- 4) replicate channels ---------------------------------------
-    img = np.broadcast_to(img[..., None], (*img.shape, 3)) if broadcast else np.repeat(img[..., None], 3, axis=2)
-
-    return img
-
-
-def get_per_mask_depth(detections_2d: dict, images_of_pcd_i: list) -> dict:
-    # Add a new field to detections_2d "object_distance" for each mask
-    # Get masks:
-    masks = detections_2d["masks"]
-    # Get range image:
-    image_features = [i for i in images_of_pcd_i[0]]
-    range_image_index = image_features.index("range")
-    range_image = images_of_pcd_i[range_image_index][1]
-
-    object_distances = np.empty(len(masks), dtype=np.float32)
-    for i, mask_i in enumerate(masks):
-        mask_ranges = range_image[mask_i[:, 0], mask_i[:, 1]]
-        object_distances[i] = np.nanmedian(mask_ranges)
-
-    detections_2d["object_distances"] = object_distances
-
-    return detections_2d
-
-
-# Helper function:
-def _compute_mask_median(args):
-    mask, range_image = args
-    # extract all range values under this mask, compute nan-median
-    return np.nanmedian(range_image[mask[:, 0], mask[:, 1]])
-
-
-def get_per_mask_depth_parallel(detections_2d: dict, images_of_pcd_i: list, n_jobs: int | None = None) -> dict:
-    # Add a new field to detections_2d "object_distance" for each mask
-    # Get masks:
-    masks = detections_2d["masks"]
-    # pull out the range image the same way you already do:
-    feature_names = [name[0] for name in images_of_pcd_i]
-    range_image_index = feature_names.index("range")
-    range_image = images_of_pcd_i[range_image_index][1]
-
-    # prep arguments so each worker gets (mask, range_image)
-    work_items = [(mask, range_image) for mask in masks]
-
-    object_distances = np.empty(len(masks), dtype=np.float32)
-    with ProcessPoolExecutor(max_workers=n_jobs) as exe:
-        # map returns in order if you use executor.map
-        for i, med in enumerate(exe.map(_compute_mask_median, work_items)):
-            object_distances[i] = med
-
-    detections_2d["object_distances"] = object_distances
-    return detections_2d
+# img_1to3_channels_encoding, get_per_mask_depth, get_per_mask_depth_parallel
+# are re-exported from tls2dseg.engines.inference.shared (see top of file).
