@@ -98,14 +98,13 @@ def main(cfg: RunConfig, ctx: RunContext) -> None:
         run_grounded_sam2_with_sahi,
         save_gsam2_results,
     )
+    from tls2dseg.lifting.masks_to_pcd import lift_mask_to_pcd, lift_masks_to_pcd
     from tls2dseg.pc2img_utils import (
         check_was_scanner_upsidedown,
         compute_image_dimensions,
         get_instance_and_semantic_mask_with_confidence,
         get_per_mask_depth_parallel,
         pc2img_run,
-        project_a_mask_2_pcd_as_scalarfield,
-        project_masks2pcd_as_scalarfields,
         reduce_image_resolution,
         resolve_necessary_image_resolution,
         resolve_rotate_pcd_parameter,
@@ -402,9 +401,9 @@ def main(cfg: RunConfig, ctx: RunContext) -> None:
                 logger.info("Lifting 2d masks to 3d")
                 # Create a point cloud copy for further data processing:
                 pcd_ij = pcd.copy()
-                project_masks2pcd_as_scalarfields(pcd_ij, instance_mask, semantic_mask)
+                lift_masks_to_pcd(pcd_ij, instance_mask, semantic_mask)
                 if pcp_parameters["keep_confidences"]:
-                    project_a_mask_2_pcd_as_scalarfield(pcd_ij, mask=confidence_mask, mask_name="confidence")
+                    lift_mask_to_pcd(pcd_ij, mask=confidence_mask, mask_name="confidence")
 
                 del instance_mask, semantic_mask, confidence_mask
                 gc.collect()
