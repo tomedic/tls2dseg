@@ -43,6 +43,21 @@ FUSION_ENGINES: dict[str, type] = {}
 """Registry mapping ``fusion.type`` config strings to engine constructors."""
 
 
+def _populate_projection_registry() -> None:
+    """Lazily populate PROJECTION_ENGINES with the built-in spherical engine.
+
+    Called once at module load.  Heavy deps (pyvips, pc2img, pchandler) are
+    NOT imported here — only the class reference is stored.  The class itself
+    confines heavy imports to its ``project()`` method body (D-A-05).
+    """
+    from tls2dseg.engines.projection.spherical import SphericalProjectionEngine
+
+    PROJECTION_ENGINES["spherical"] = SphericalProjectionEngine
+
+
+_populate_projection_registry()
+
+
 def build_projection_engine(name: str, *args: object, **kwargs: object) -> ProjectionEngine:
     """Construct a projection engine by registry name.
 
