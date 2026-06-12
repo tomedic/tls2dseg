@@ -230,9 +230,17 @@ def main(cfg: RunConfig, ctx: RunContext) -> None:
     text_prompt = inference_request.text_prompt
 
     if save_intermediate_results:
-        # make_output_folders was a Phase-1-2 helper; the stage1_dir is already
-        # created by build_context, so the call below would have been a no-op
-        # in modern flow. Keep the marker; Phase 4 ENG-* replaces.
+        # The legacy save helpers (save_gsam2_results, save_segmented_pcd_ij) read
+        # the intermediate output-dir keys (output_dir_od / output_dir_sam2 /
+        # output_dir_masks_json / output_dir_segmented_pcds) from
+        # inference_models_parameters and expect those dirs to exist on disk.
+        # make_output_folders creates them and registers the keys. Imported lazily —
+        # utils_main pulls pchandler, which must stay out of the tier_a import path.
+        # stage1_output_dir is then overridden to the canonical ctx.stage1_dir
+        # (build_context owns the stage-1 directory).
+        from tls2dseg.utils_main import make_output_folders
+
+        make_output_folders(output_dir_pathlib, image_generation_parameters, inference_models_parameters)
         inference_models_parameters["stage1_output_dir"] = ctx.stage1_dir
 
     # Use ctx.class_id_map (derived once by build_context per D-A2-03), then
