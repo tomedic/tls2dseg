@@ -548,10 +548,12 @@ class D3DExtractionConfig(BaseModel):
         description="Drop instances with fewer points (renamed from min_d3d_pcd_point_count).",
     )
     # tag: other
-    centroid_type: Literal["bbox_c", "instance_c"] = Field(
+    centroid_type: Literal["mean", "median", "bbox_c"] = Field(
         "bbox_c",
         json_schema_extra={"tag": "other"},
-        description="Centroid: bbox centroid ('bbox_c') or instance points centroid ('instance_c').",
+        description=(
+            "Instance centroid method: points mean ('mean'), points median ('median'), or bbox centre ('bbox_c')."
+        ),
     )
     # tag: other
     preprocess: bool = Field(
