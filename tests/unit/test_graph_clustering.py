@@ -39,10 +39,12 @@ def test_get_initial_sparse_connectivity_knn_i_lt_j_invariant() -> None:
 
 @pytest.mark.tier_a
 def test_get_initial_sparse_connectivity_knn_expected_pairs() -> None:
-    """3-point 1D line with knn_ps=1 → edges (0,1) and (1,2) expected.
+    """3-point 1D line with knn_ps=2 → edges (0,1) and (1,2) expected.
 
-    Each point's nearest neighbor (excluding self): 0→1, 1→0 or 2, 2→1.
-    After i<j dedup: {(0,1), (1,2)}.
+    With knn_ps=2, k_total = int(2*1 + 1) = 3 (all neighbors returned).
+    Node 0 neighbors: {1, 2}; node 1 neighbors: {0, 2}; node 2 neighbors: {0, 1}.
+    After i<j dedup: {(0,1), (0,2), (1,2)}.
+    At minimum both (0,1) and (1,2) must be present.
     """
     from tls2dseg.engines.fusion.connectivity import get_initial_sparse_connectivity
 
@@ -50,7 +52,7 @@ def test_get_initial_sparse_connectivity_knn_expected_pairs() -> None:
         [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [2.0, 0.0, 0.0]],
         dtype=np.float32,
     )
-    pairs = get_initial_sparse_connectivity(centroids, n_scans=1, method="knn", knn_ps=1)
+    pairs = get_initial_sparse_connectivity(centroids, n_scans=1, method="knn", knn_ps=2)
     pair_set = {(int(r[0]), int(r[1])) for r in pairs}
     assert (0, 1) in pair_set, f"Expected edge (0,1), got {pair_set}"
     assert (1, 2) in pair_set, f"Expected edge (1,2), got {pair_set}"
@@ -180,12 +182,16 @@ def test_graph_clustering_pcc_two_components() -> None:
     assert labels[0] != labels[2], "Nodes 0 and 2 should be in different clusters"
 
 
-@pytest.mark.tier_a
+@pytest.mark.tier_b_light
 def test_graph_clustering_hcs_two_components() -> None:
     """HCS on 4-node graph with two disconnected components → 2 clusters.
 
+    Marked tier_b_light because HCS uses networkx which requires a full dep
+    install (not available in tier_a --no-deps venv).
+
     Locks: TEST-07 graph_clustering method='hcs' cluster-count contract.
     """
+    pytest.importorskip("networkx")
     from tls2dseg.engines.fusion.clustering import graph_clustering
 
     num_nodes = 4
