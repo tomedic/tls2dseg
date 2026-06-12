@@ -121,7 +121,12 @@ class GroundedSAM2HFEngine:
             ).to(self._device)
 
             with torch.no_grad():
-                outputs = self._sam2_model(**inputs)
+                # multimask_output=False makes SAM2 return its single best mask,
+                # matching the direct engine's predict(multimask_output=False) seam.
+                # Sam2Model.forward defaults multimask_output=True (3 ranked candidates);
+                # taking candidate [0] is NOT equivalent to multimask_output=False (it is
+                # the first, not the highest-IoU mask) and yields lower-quality masks.
+                outputs = self._sam2_model(**inputs, multimask_output=False)
 
             # post_process_masks(masks, original_sizes) — SINGLE original_sizes arg
             # (Task 1 probe result: transformers 5.11.0 API)
@@ -130,10 +135,11 @@ class GroundedSAM2HFEngine:
                 inputs["original_sizes"],
             )
 
-            # masks_batch: list of tensors, each (N_prompts, n_masks, H, W)
-            # We use multimask_output=False equivalent: take the first predicted mask per box
+            # masks_batch: list of tensors, each (N_prompts, 1, H, W) — the
+            # candidate axis is length 1 because multimask_output=False above makes
+            # SAM2 emit exactly one (best) mask per box.
             for mask_tensor in masks_batch:
-                # shape: (n_boxes, n_candidates, H, W) — take first candidate
+                # shape: (n_boxes, 1, H, W) — squeeze the single-candidate axis
                 if mask_tensor.ndim == 4:
                     mask_tensor = mask_tensor[:, 0, :, :]  # (n_boxes, H, W)
                 mask_np = mask_tensor.cpu().numpy().astype(bool)
