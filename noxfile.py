@@ -52,14 +52,16 @@ def tier_a(session: nox.Session) -> None:
 # D-A4-02), so this session's flags are the authoritative source.
 @nox.session(python="3.11", name="tier_b_light")
 def tier_b_light(session: nox.Session) -> None:
-    """Run tier_b_light tests (requires PCHandler + pc2img via local editable installs)."""
-    session.install("-e", ".", "--no-deps")
-    session.install("-e", "../PCHandler", "-e", "../pc2img", "--no-deps")
-    session.install(
-        "pydantic-settings[yaml]>=2.14",
-        "typer>=0.13",
-        "pytest",
-        "numpy",
-        "scikit-learn",
-    )
+    """Run tier_b_light tests — pchandler+pc2img with deps; torch allowed; no real model runs.
+
+    D-D-06 (Phase 4 plan 02): installs tls2dseg + PCHandler + pc2img WITH their
+    transitive dependencies (no ``--no-deps``) so that imports of
+    ``pc2img_utils``, ``pchandler``, etc. resolve correctly.  Previously
+    ``--no-deps`` was used, but that caused ``imageio`` and other transitive
+    deps to be missing, breaking tier_b_light test collection.
+    """
+    session.install("-e", ".")  # installs tls2dseg WITH all its deps
+    session.install("-e", "../PCHandler")  # installs PCHandler WITH deps
+    session.install("-e", "../pc2img")  # installs pc2img WITH deps
+    session.install("pytest")  # explicit in case not in transitive deps
     session.run("pytest", "-m", "tier_b_light", "-v", *session.posargs)

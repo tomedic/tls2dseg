@@ -10,12 +10,17 @@ stable DL-framework ingestion (D-D-04 wrappers-only rule):
 * output_dtype enforcement → returned array has the requested dtype
 
 NOTE: ``img_1to3_channels_encoding`` currently lives in ``tls2dseg.pc2img_utils``
-which has module-level ``pyvips``/``pc2img`` imports.  Therefore the four encoding
-tests are marked ``tier_b_light`` (pyvips required at import time) until Plan
-04-04 Task 3 moves the function to ``tls2dseg.engines.inference.shared`` (pure
-numpy, no heavy deps).  After 04-04, the import path in each test function is
-updated and the marker upgrades to ``tier_a``.  Do NOT remove this comment before
-04-04 is done.
+which has module-level ``pyvips``/``pc2img``/``pchandler`` imports.  Therefore the
+four encoding tests are marked ``tier_b_light`` until Plan 04-04 Task 3 moves the
+function to ``tls2dseg.engines.inference.shared`` (pure numpy, no heavy deps).
+After 04-04, the import path in each test function is updated and the marker
+upgrades to ``tier_a``.  Do NOT remove this comment before 04-04 is done.
+
+pc2img_utils requires pyvips + pchandler (+ pchandler.geometry → cudf on GPU
+machines) at module load.  If any of those fail the four encoding tests are
+skipped so that ``nox -s tier_b_light`` remains green on machines without
+RAPIDS/cudf.  The broad try/except follows the PATTERNS.md "pchandler import
+guard" pattern.
 
 The lifting module import-cost guard (``test_lifting_module_importable_no_heavy_deps``)
 IS tier_a — it only imports ``tls2dseg.lifting.masks_to_pcd`` which must be
@@ -51,14 +56,28 @@ def test_lifting_module_importable_no_heavy_deps() -> None:
 # ------------------------------------------------------------------
 # img_1to3_channels_encoding — TEST-05 edge cases
 #
-# Marked tier_b_light because the current import path (tls2dseg.pc2img_utils)
-# pulls in pyvips at module level — absent in tier_a venv.
+# Marked tier_b_light; import is attempted at module level with a broad
+# try/except so that collection does not fail when pyvips/cudf is absent.
 # Plan 04-04 Task 3 will re-point to tls2dseg.engines.inference.shared
-# (pure numpy) and upgrade these to tier_a.
+# (pure numpy) and upgrade these tests to tier_a.
 # ------------------------------------------------------------------
+
+try:
+    from tls2dseg.pc2img_utils import img_1to3_channels_encoding as _img_encode
+
+    _SKIP_REASON = ""
+except Exception as _import_exc:
+    _img_encode = None  # type: ignore[assignment]
+    _SKIP_REASON = (
+        f"pc2img_utils not importable (pyvips/pchandler/cudf absent): {_import_exc!r}. "
+        "04-04 will re-point import to engines/inference/shared (tier_a)."
+    )
+
+_skip_img = pytest.mark.skipif(_img_encode is None, reason=_SKIP_REASON)
 
 
 @pytest.mark.tier_b_light
+@_skip_img
 def test_img_1to3_nan_input_returns_valid_float32_in_0_1() -> None:
     """NaN-containing input array → valid 3-channel float32 in [0, 1].
 
@@ -69,7 +88,7 @@ def test_img_1to3_nan_input_returns_valid_float32_in_0_1() -> None:
     04-04 re-points this import to tls2dseg.engines.inference.shared and
     upgrades this test to tier_a.
     """
-    from tls2dseg.pc2img_utils import img_1to3_channels_encoding
+    img_1to3_channels_encoding = _img_encode
 
     rng = np.random.default_rng(42)
     img = rng.random((8, 12)).astype(np.float64)
@@ -86,6 +105,7 @@ def test_img_1to3_nan_input_returns_valid_float32_in_0_1() -> None:
 
 
 @pytest.mark.tier_b_light
+@_skip_img
 def test_img_1to3_constant_image_no_divide_by_zero() -> None:
     """Constant image (img_max == img_min) → output is all-zeros, no ZeroDivisionError.
 
@@ -96,7 +116,7 @@ def test_img_1to3_constant_image_no_divide_by_zero() -> None:
     04-04 re-points this import to tls2dseg.engines.inference.shared and
     upgrades this test to tier_a.
     """
-    from tls2dseg.pc2img_utils import img_1to3_channels_encoding
+    img_1to3_channels_encoding = _img_encode
 
     img = np.full((4, 6), fill_value=7.5, dtype=np.float32)
 
@@ -109,6 +129,7 @@ def test_img_1to3_constant_image_no_divide_by_zero() -> None:
 
 
 @pytest.mark.tier_b_light
+@_skip_img
 def test_img_1to3_broadcast_true_vs_false_shapes() -> None:
     """broadcast=True returns a read-only broadcast view; broadcast=False returns full copy.
 
@@ -117,7 +138,7 @@ def test_img_1to3_broadcast_true_vs_false_shapes() -> None:
     04-04 re-points this import to tls2dseg.engines.inference.shared and
     upgrades this test to tier_a.
     """
-    from tls2dseg.pc2img_utils import img_1to3_channels_encoding
+    img_1to3_channels_encoding = _img_encode
 
     rng = np.random.default_rng(0)
     img = rng.random((5, 7)).astype(np.float32)
@@ -136,6 +157,7 @@ def test_img_1to3_broadcast_true_vs_false_shapes() -> None:
 
 
 @pytest.mark.tier_b_light
+@_skip_img
 def test_img_1to3_output_dtype_enforced() -> None:
     """output_dtype parameter is respected for both 'float32' and 'uint8'.
 
@@ -145,7 +167,7 @@ def test_img_1to3_output_dtype_enforced() -> None:
     04-04 re-points this import to tls2dseg.engines.inference.shared and
     upgrades this test to tier_a.
     """
-    from tls2dseg.pc2img_utils import img_1to3_channels_encoding
+    img_1to3_channels_encoding = _img_encode
 
     rng = np.random.default_rng(1)
     img = rng.random((4, 4)).astype(np.float64)
