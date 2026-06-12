@@ -1,39 +1,24 @@
-"""Unit test for BUGS-01 — AABB centroid array overwrite bug.
+"""Unit tests for clean_pcd_instances_and_get_detections3d — BUGS-01 + D-D-05.
 
-Phase 2 regression-locker (02-04). Pre-fix code at
+Phase 2 regression-locker (02-04) + Phase 4 plan 03 Task 3 (D-D-05).
+
+BUGS-01 (02-04): AABB centroid array overwrite bug — pre-fix code at
 ``tls2dseg/src/tls2dseg/detections_3d.py`` had the AABB + ``centroid_type=
 "bbox_c"`` branch writing ``centroids_d3d = (mx + mn) / 2`` (no ``[i]``
 subscript), which overwrites the entire pre-allocated ``(N, 3)`` array with
-the last-iteration ``(3,)`` vector. On ``N >= 2`` this either silently
-collapses every centroid to the last cluster's centroid, or — because the
-trailing ``centroids_d3d = centroids_d3d[keep_mask]`` line indexes a
-``(3,)`` array with an ``(N,)`` boolean mask — raises an ``IndexError``.
+the last-iteration ``(3,)`` vector.
 
-This test exercises the AABB + ``bbox_c`` branch with two synthetic, well-
-separated clusters and asserts the resulting centroids are (a) shape
-``(2, 3)`` and (b) distinct, located roughly at the two cluster centers.
+D-D-05 (04-03): AABB ``pcds_clean`` asymmetry bug — the OBB branch appends
+each cleaned pcd_i to pcds_clean, but the AABB branch did not, causing
+``PointCloudData.merge_pcd(pcds_clean)`` to crash on an empty list. The fix
+adds ``pcds_clean.append(pcd_i)`` in the AABB branch under the same
+``preprocess and npts_i > min_npts`` guard as OBB.
 
-The test FAILS on pre-fix code (IndexError or collapsed centroids) and
-PASSES once the ``[i]`` subscript is added (Task 3 of 02-04-PLAN.md).
+Phase 4 plan 03 Task 3 REMOVES the monkeypatch workaround and exercises the
+real AABB path — the merge_pcd call must now succeed with a non-empty list.
 
-Marked ``tier_b_light`` per Phase 3 D-A4-01 — this file imports
-``pchandler.geometry.PointCloudData``, and tier_a cloud CI installs
-``pip install -e . --no-deps`` (never pulls pchandler). Reclassifying to
-``tier_b_light`` keeps cloud CI's ``pytest -m tier_a`` collection clean and
-routes this regression-locker to the local ``nox -s tier_b_light`` session
-(which installs the PCHandler editable sibling). Lightweight, deterministic,
-no GPU, no I/O, no large fixtures otherwise.
+Marked ``tier_b_light`` — imports ``pchandler.geometry.PointCloudData``.
 """
-
-# Phase 3 D-A4-01: reclassified tier_a -> tier_b_light (this file imports
-# pchandler.geometry; tier_a cloud CI installs --no-deps and cannot resolve
-# pchandler). The local `nox -s tier_b_light` session installs PCHandler as
-# an editable sibling and picks this test up.
-
-from __future__ import annotations
-
-import numpy as np
-import pytest
 
 # Phase 3 D-A4-01: skip the WHOLE module if pchandler can't be imported (cloud
 # CI tier_a sandbox installs `pip install -e . --no-deps`; pchandler is absent
@@ -46,6 +31,11 @@ import pytest
 # tests/unit/ directory. The local `nox -s tier_b_light` session (which
 # `pip install -e ../PCHandler --no-deps`s a working PCHandler) will still
 # run this regression-locker.
+from __future__ import annotations
+
+import numpy as np
+import pytest
+
 try:
     from pchandler.geometry import PointCloudData
 except Exception as exc:
@@ -58,7 +48,7 @@ from tls2dseg.detections_3d import clean_pcd_instances_and_get_detections3d
 
 
 @pytest.mark.tier_b_light
-def test_aabb_centroid_per_instance_not_overwritten(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_aabb_centroid_per_instance_not_overwritten() -> None:
     """Two synthetic AABB clusters → two distinct centroids, not one shared (3,) row.
 
     Constructs a ``PointCloudData`` with two well-separated point clusters
@@ -70,16 +60,9 @@ def test_aabb_centroid_per_instance_not_overwritten(monkeypatch: pytest.MonkeyPa
     or collapses both centroids onto the last cluster — either failure
     mode is detected by the assertions below.
 
-    The function unconditionally calls ``PointCloudData.merge_pcd(pcds_clean)``
-    after the loop (line 226), but the AABB branch never appends to
-    ``pcds_clean`` (only the OBB branch does — a separate pre-existing
-    quirk in this file, out of scope for the BUGS-01 surgical fix). To
-    isolate the BUGS-01 assertion from that downstream merge step, this
-    test monkeypatches ``PointCloudData.merge_pcd`` to a stub that returns
-    the input pcd unchanged. Without the monkeypatch, the post-fix call
-    would crash inside ``ScalarFieldManager.merge`` on the empty
-    ``pcds_clean`` list — which is unrelated to the centroid-overwrite
-    bug we're locking.
+    With preprocess=False, pcds_clean remains empty (no preprocess guard),
+    so the merge_pcd call is not exercised (the D-D-05 bug is only triggered
+    when preprocess=True). This test focuses on the BUGS-01 centroid regression.
     """
     # Deterministic synthetic clusters — RandomState(0) for reproducibility.
     rng = np.random.RandomState(0)
@@ -87,12 +70,8 @@ def test_aabb_centroid_per_instance_not_overwritten(monkeypatch: pytest.MonkeyPa
     pts_b = pts_a + np.array([10.0, 0.0, 0.0], dtype=np.float32)
     pts = np.vstack([pts_a, pts_b]).astype(np.float32)
 
-    # Per-point instance labels: cluster 0 then cluster 1. The function uses
-    # np.unique() on this field to count detections — two unique IDs → two
-    # iterations of the per-instance loop.
+    # Per-point instance labels: cluster 0 then cluster 1.
     instances = np.concatenate([np.zeros(100, dtype=np.float32), np.ones(100, dtype=np.float32)])
-    # The function reads classes_pcd.data[mask][0] per-instance to populate
-    # the Detections3D.classes column — fill with a single class id.
     classes = np.zeros(200, dtype=np.float32)
 
     pcd = PointCloudData(
@@ -100,21 +79,8 @@ def test_aabb_centroid_per_instance_not_overwritten(monkeypatch: pytest.MonkeyPa
         scalar_fields={"instances": instances, "classes": classes},
     )
 
-    # Stub out the trailing PointCloudData.merge_pcd(pcds_clean) call. The
-    # AABB branch never appends to pcds_clean (separate quirk — OBB-only
-    # bookkeeping), so the live merge_pcd would receive [] and crash inside
-    # ScalarFieldManager.merge. We don't care about the merged pcd here; we
-    # only assert on the returned Detections3D.centroids.
-    monkeypatch.setattr(
-        PointCloudData,
-        "merge_pcd",
-        classmethod(lambda cls, _pcds_clean: pcd),
-    )
-
-    # Exercise the buggy code path: AABB bounding box + bbox_c centroid.
-    # preprocess=False skips the SOR + DBSCAN steps so the test stays Tier A
-    # (no heavy clustering libs touched). keep_confidences=False skips the
-    # confidence scalar-field read.
+    # preprocess=False: skips SOR + DBSCAN steps and skips pcds_clean.append
+    # so the legacy merge_pcd([]) issue is not triggered here.
     d3d_parameters = {
         "min_d3d_pcd_point_count": 10,
         "bounding_box_type": "aabb",
@@ -123,7 +89,7 @@ def test_aabb_centroid_per_instance_not_overwritten(monkeypatch: pytest.MonkeyPa
     }
     pcp_parameters = {
         "keep_confidences": False,
-        "output_resolution": 0.01,  # unused when preprocess=False, but read
+        "output_resolution": 0.01,
     }
 
     detections, _pcd_clean = clean_pcd_instances_and_get_detections3d(
@@ -138,8 +104,7 @@ def test_aabb_centroid_per_instance_not_overwritten(monkeypatch: pytest.MonkeyPa
 
     # Cluster A and cluster B are separated by [10, 0, 0]. PointCloudData may
     # apply a global coordinate shift internally (to center large coords), so
-    # we assert on the RELATIVE separation rather than absolute positions —
-    # the bug's signature is that both rows collapse to the same point.
+    # we assert on the RELATIVE separation rather than absolute positions.
     delta = centroids[1] - centroids[0]
     assert np.linalg.norm(delta - np.array([10.0, 0.0, 0.0])) < 1.0, (
         f"expected centroid[1] - centroid[0] ≈ (10, 0, 0); got {delta} — "
@@ -147,9 +112,70 @@ def test_aabb_centroid_per_instance_not_overwritten(monkeypatch: pytest.MonkeyPa
         "writing to the wrong index (per-instance overwrite bug)."
     )
 
-    # Belt-and-braces: the two centroids must not be identical (the silent-
-    # collapse failure mode).
+    # Belt-and-braces: the two centroids must not be identical.
     assert not np.allclose(centroids[0], centroids[1]), (
         f"expected two distinct centroids; both rows equal {centroids[0]!r} — "
         "AABB+bbox_c branch is overwriting the pre-allocated (N,3) array."
     )
+
+    # Also verify bboxes_type is correct
+    assert detections.bboxes_type == "aabb", f"Expected bboxes_type='aabb', got {detections.bboxes_type!r}"
+
+
+@pytest.mark.tier_b_light
+def test_aabb_pcds_clean_populated_with_preprocess() -> None:
+    """D-D-05: AABB path with preprocess=True populates pcds_clean → merge succeeds.
+
+    This test exercises the D-D-05 bug fix. With preprocess=True and enough
+    points, the AABB branch should append cleaned pcd_i to pcds_clean so
+    that PointCloudData.merge_pcd(pcds_clean) receives a non-empty list.
+
+    Without the D-D-05 fix this test would crash at merge_pcd with an empty
+    list (or an error inside ScalarFieldManager.merge). With the fix, the
+    call completes and returns a valid Detections3D.
+
+    No monkeypatch — exercises the real merge_pcd call path.
+    """
+    rng = np.random.RandomState(42)
+    # Two well-separated clusters with enough points to pass preprocess
+    pts_a = rng.randn(200, 3).astype(np.float32) * 0.1
+    pts_b = pts_a + np.array([10.0, 0.0, 0.0], dtype=np.float32)
+    pts = np.vstack([pts_a, pts_b]).astype(np.float32)
+
+    instances = np.concatenate(
+        [
+            np.zeros(200, dtype=np.float32),
+            np.ones(200, dtype=np.float32),
+        ]
+    )
+    classes = np.zeros(400, dtype=np.float32)
+
+    pcd = PointCloudData(
+        xyz=pts,
+        scalar_fields={"instances": instances, "classes": classes},
+    )
+
+    # preprocess=True + min_d3d_pcd_point_count=10: AABB branch should
+    # append pcd_i to pcds_clean when npts_i > min_npts
+    d3d_parameters = {
+        "min_d3d_pcd_point_count": 10,
+        "bounding_box_type": "aabb",
+        "centroid_type": "mean",
+        "preprocess": True,
+    }
+    pcp_parameters = {
+        "keep_confidences": False,
+        "output_resolution": 0.01,
+    }
+
+    # This call would crash (empty pcds_clean -> merge_pcd([]) error) without
+    # the D-D-05 fix. With the fix it completes successfully.
+    detections, pcd_clean = clean_pcd_instances_and_get_detections3d(
+        pcd, pcd_id=0.0, d3d_parameters=d3d_parameters, pcp_parameters=pcp_parameters
+    )
+
+    assert detections.bboxes_type == "aabb", f"Expected bboxes_type='aabb', got {detections.bboxes_type!r}"
+    assert detections.centroids.ndim == 2
+    assert detections.centroids.shape[1] == 3
+    # merged pcd should be a valid PointCloudData
+    assert isinstance(pcd_clean, PointCloudData)
