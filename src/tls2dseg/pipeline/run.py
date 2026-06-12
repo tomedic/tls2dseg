@@ -113,17 +113,19 @@ def main(cfg: RunConfig, ctx: RunContext) -> None:
         rotate_pcd_around_x,
         rotate_pcd_around_z,
     )
-    from tls2dseg.pc_preprocessing import (
+    from tls2dseg.pc_preprocessing import (  # save_segmented_pcd* stays here for Phase 5 (D-D-01)
+        save_segmented_pcd,
+        save_segmented_pcd_ij,
+    )
+    from tls2dseg.pcd_collection import SegPCDCollection
+    from tls2dseg.preprocessing.cleanup import (
         apply_robust_sor_filter,
         color_pcd_instances_by_random,
         filter_pcd_roi_range,
         remove_small_instances,
         remove_unclassified_points,
-        save_segmented_pcd,
-        save_segmented_pcd_ij,
         subsample_pcd_to_output_resolution,
     )
-    from tls2dseg.pcd_collection import SegPCDCollection
     from tls2dseg.utils_main import (
         assure_common_global_shift,
         get_segmented_and_merged_point_cloud,

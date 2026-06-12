@@ -137,6 +137,44 @@ def test_probe_all_partial_modules_present(monkeypatch: pytest.MonkeyPatch) -> N
 
 
 @pytest.mark.tier_a
+def test_probe_all_torch_cuda_raises_resolves_to_false(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``torch.cuda.is_available()`` raising resolves to ``torch_cuda_available=False`` (TEST-09).
+
+    Simulates the edge case where torch IS present (find_spec returns non-None)
+    but ``torch.cuda.is_available()`` raises (broken CUDA build, missing library,
+    etc.).  The broad ``except Exception`` in ``probe_all`` must catch the error
+    and leave ``torch_cuda_available=False`` — never propagate the exception.
+
+    Locks: RESEARCH.md §TEST-09 — ``probe_all()`` with ``torch.cuda.is_available()``
+    raising → ``Runtime.torch_cuda_available == False``.
+    """
+    import sys
+    import types
+
+    # Make find_spec see "torch" as present so probe_all enters the try block
+    real_find_spec = importlib.util.find_spec
+
+    def fake_find_spec(name: str, package: str | None = None) -> object | None:
+        if name == "torch":
+            return object()  # non-None → torch "present"
+        return real_find_spec(name, package) if name not in ("cuml", "sam2", "pyvips") else None
+
+    monkeypatch.setattr(importlib.util, "find_spec", fake_find_spec)
+
+    # Inject a fake torch module whose cuda.is_available() always raises
+    fake_cuda = types.SimpleNamespace(is_available=lambda: (_ for _ in ()).throw(RuntimeError("CUDA exploded")))
+    fake_torch = types.SimpleNamespace(cuda=fake_cuda)
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
+
+    rt = probe_all()
+
+    assert rt.torch_cuda_available is False, (
+        "torch.cuda.is_available() raising must resolve to torch_cuda_available=False "
+        "(best-effort broad catch in probe_all per D-11)"
+    )
+
+
+@pytest.mark.tier_a
 def test_probe_returns_bool_for_missing_module() -> None:
     """``_probe`` for an obviously-missing module name returns False (does not raise).
 
