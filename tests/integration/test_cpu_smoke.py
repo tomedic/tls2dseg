@@ -8,11 +8,13 @@ Phase 3 plan 04 (Task 4). Locks the verbatim REQUIREMENTS.md CPU-04 acceptance:
 And ROADMAP §"Phase 3" Success Criteria #3: CPU-04 end-to-end + CPU-03 single
 warning visible.
 
-This is a ``tier_b_light`` test per D-A4-01: it imports the full pipeline
+This is a ``tier_b_heavy`` test (graduated from ``tier_b_light`` in Plan 04-05
+per D-D-06 half 3): it imports the full pipeline
 (``tls2dseg.pipeline.run.main``) which transitively imports pchandler/pc2img
 + heavy ML deps (torch, transformers, sam2). It is NOT cloud-CI-runnable
-under ``pip install --no-deps``. Runs via ``nox -s tier_b_light`` locally
-and via Phase 7's self-hosted runner.
+under ``pip install --no-deps``. Runs via ``nox -s tier_b_heavy`` locally
+(Phase 7 adds that nox session; until then run manually with
+``pytest -m tier_b_heavy``).
 
 Forward-compatibility:
 * As of plan 03-04, ``tls2dseg.pipeline.run.main`` is still no-args (the
@@ -38,21 +40,21 @@ from pathlib import Path
 import pytest
 import yaml
 
-# Module-level skip: tier_b_light requires pchandler. Belt-and-braces in case
-# a tier_a runner accidentally collects this directory.
+# Module-level skip: tier_b_heavy requires pchandler/pc2img/torch. Belt-and-braces
+# in case a lighter runner accidentally collects this directory.
 pytestmark = [
-    pytest.mark.tier_b_light,
+    pytest.mark.tier_b_heavy,
     pytest.mark.skipif(
         importlib.util.find_spec("pchandler") is None,
-        reason="tier_b_light requires pchandler install",
+        reason="tier_b_heavy requires pchandler install",
     ),
     pytest.mark.skipif(
         importlib.util.find_spec("pc2img") is None,
-        reason="tier_b_light requires pc2img install",
+        reason="tier_b_heavy requires pc2img install",
     ),
     pytest.mark.skipif(
         importlib.util.find_spec("torch") is None,
-        reason="tier_b_light CPU smoke requires torch (heavy ML dep — install via project conda env)",
+        reason="tier_b_heavy CPU smoke requires torch (heavy ML dep — install via project conda env)",
     ),
 ]
 
