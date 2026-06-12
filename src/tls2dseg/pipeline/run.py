@@ -83,6 +83,7 @@ def main(cfg: RunConfig, ctx: RunContext) -> None:
         d3d_outlier_removal,
         merge_detections3d,
     )
+    from tls2dseg.engines import build_inference_engine
     from tls2dseg.engines.fusion.clustering import (
         detect_upper_tail_outliers,
         graph_clustering,
@@ -94,13 +95,6 @@ def main(cfg: RunConfig, ctx: RunContext) -> None:
         get_per_mask_depth_parallel,
     )
     from tls2dseg.graph_clustering import filter_outlier_detections3d_edges_and_nodes
-    from tls2dseg.grounded_sam2 import (
-        initialize_gdino,
-        initialize_sam2,
-        run_grounded_sam2,
-        run_grounded_sam2_with_sahi,
-        save_gsam2_results,
-    )
     from tls2dseg.lifting.masks_to_pcd import lift_mask_to_pcd, lift_masks_to_pcd
     from tls2dseg.pc2img_utils import (
         check_was_scanner_upsidedown,
@@ -126,6 +120,7 @@ def main(cfg: RunConfig, ctx: RunContext) -> None:
         remove_unclassified_points,
         subsample_pcd_to_output_resolution,
     )
+    from tls2dseg.types import InferenceRequest
     from tls2dseg.utils_main import (
         assure_common_global_shift,
         get_segmented_and_merged_point_cloud,
@@ -164,31 +159,28 @@ def main(cfg: RunConfig, ctx: RunContext) -> None:
         torch.backends.cuda.matmul.allow_tf32 = True
         torch.backends.cudnn.allow_tf32 = True
 
-    # Adapter dict for the legacy inference functions (still consume a dict).
-    # Phase 4 ENG-* replaces these with engine objects receiving (cfg, ctx).
-    # sam2-checkpoint and sam2-model-config only exist on GroundedSAM2Config;
-    # use getattr with None defaults so the dict builds for both engine types.
-    inference_models_parameters = {
-        "with_slice_inference": cfg.inference.slicing.enabled,
-        "bbox_model_id": cfg.inference.object_detection_model_id,
-        "box_threshold": cfg.inference.box_threshold,
-        "text_threshold": cfg.inference.text_threshold,
-        "sam2-model-config": getattr(cfg.inference, "sam2_model_config", None),
-        "sam2-checkpoint": str(getattr(cfg.inference, "sam2_checkpoint", "")),
-        "large_object_removal_threshold": cfg.inference.large_object_removal_threshold,
-        "partial_detection_edge_touching_threshold": cfg.inference.partial_detection_edge_touching_threshold,
-        "sam_box_prompt_batch_size": cfg.inference.sam_box_prompt_batch_size,
-        "device": device,
+    # Minimal parameter dict kept for legacy helpers still consumed below
+    # (save_gsam2_results + stage1 output-dir).  Inference is now handled by
+    # the engine registry (ENG-01..ENG-06, Phase 4).
+    inference_models_parameters: dict = {
         "dump_json_results": ctx.dump_json_results,
     }
-    slice_inference_parameters = {
-        "slice_width_height": cfg.inference.slicing.slice_width_height,
-        "overlap_width_height": cfg.inference.slicing.overlap_width_height,
-        "iou_threshold": cfg.inference.slicing.iou_threshold,
-        "overlap_filter_strategy": cfg.inference.slicing.overlap_filter_strategy,
-        "empty_slice_removal_threshold": cfg.inference.slicing.empty_slice_removal_threshold,
-        "thread_workers": ctx.n_workers,
-    }
+
+    # Frozen per-call request spec (D-A-02, D-A-04) — constructed once here
+    # and reused for every detect() call in the loop below (text prompt and
+    # tuning knobs are invariant within a run).
+    inference_request = InferenceRequest(
+        text_prompt=cfg.prompt.text,
+        box_threshold=cfg.inference.box_threshold,
+        text_threshold=cfg.inference.text_threshold,
+        slicing_enabled=cfg.inference.slicing.enabled,
+        slice_width_height=cfg.inference.slicing.slice_width_height,
+        overlap_width_height=cfg.inference.slicing.overlap_width_height,
+        iou_threshold=cfg.inference.slicing.iou_threshold,
+        overlap_filter_strategy=cfg.inference.slicing.overlap_filter_strategy,
+        large_object_removal_threshold=cfg.inference.large_object_removal_threshold,
+        partial_detection_edge_touching_threshold=cfg.inference.partial_detection_edge_touching_threshold,
+    )
     image_generation_parameters = {
         "image_width": cfg.projection.image_width,
         "scan_resolution": cfg.projection.scan_resolution,
@@ -232,7 +224,10 @@ def main(cfg: RunConfig, ctx: RunContext) -> None:
         "leiden_resolution": cfg.fusion.leiden_resolution,
         "small_cluster_removal_threshold": cfg.fusion.small_cluster_removal_threshold,
     }
-    text_prompt = cfg.prompt.text
+    # text_prompt is now carried in inference_request.text_prompt (D-A-02).
+    # Keep a local alias for the handful of downstream dict-based helpers that
+    # still reference it as a plain string (get_instance_and_semantic_mask_with_confidence).
+    text_prompt = inference_request.text_prompt
 
     if save_intermediate_results:
         # make_output_folders was a Phase-1-2 helper; the stage1_dir is already
@@ -251,9 +246,22 @@ def main(cfg: RunConfig, ctx: RunContext) -> None:
     # 1. Point Cloud Processing
     # _______________________________________________________________________
 
-    # Initialize Grounded SAM2 (Grounded DINO + SAM2)
-    gdino_model, gdino_processor = initialize_gdino(inference_models_parameters)
-    sam2_predictor = initialize_sam2(inference_models_parameters)
+    # Build the inference engine from config.inference.type (ENG-01..ENG-06).
+    # Engine __init__ loads the heavy models (DINO + SAM2); subsequent calls to
+    # engine.detect() are lightweight (no model reload per image).
+    logger.info("Building inference engine: %s", cfg.inference.type)
+    engine_kwargs: dict = {
+        "object_detection_model_id": cfg.inference.object_detection_model_id,
+        "sam_box_prompt_batch_size": cfg.inference.sam_box_prompt_batch_size,
+        "device": device,
+    }
+    # Engine-type-specific constructor kwargs:
+    if cfg.inference.type == "grounded_sam2":
+        engine_kwargs["sam2_checkpoint"] = str(cfg.inference.sam2_checkpoint)
+        engine_kwargs["sam2_model_config"] = cfg.inference.sam2_model_config
+    elif cfg.inference.type == "grounded_sam2_hf":
+        engine_kwargs["sam2_hf_model_id"] = cfg.inference.sam2_hf_model_id
+    inference_engine = build_inference_engine(cfg.inference.type, **engine_kwargs)
 
     # Find all point cloud files of defined "file_format" within data folder
     data_folder_path = Path(task_parameters["input_path"]).resolve()
@@ -352,32 +360,34 @@ def main(cfg: RunConfig, ctx: RunContext) -> None:
             # Set segmented point cloud (pcd_ij) counter:
             pcd_ij_id = pcd_i_id * 2 - 2
 
-            # Run Grounded SAM2 inference (for all images of a point cloud pcd_i)
+            # Run inference engine (for all images of a point cloud pcd_i).
+            # SAHI vs whole-image dispatch is driven by inference_request.slicing_enabled
+            # inside each engine's detect() method — no branching needed here.
             for j, image_j in enumerate(images_of_pcd_i):
                 pcd_ij_id += 1
                 image_j_numpy = image_j[1]
 
-                if inference_models_parameters["with_slice_inference"] is True:
+                if inference_request.slicing_enabled:
                     logger.info("Grounded SAM2 - Inference on image slices")
-                    results = run_grounded_sam2_with_sahi(
-                        image=image_j_numpy,
-                        text_prompt=text_prompt,
-                        gdino_model=gdino_model,
-                        gdino_processor=gdino_processor,
-                        sam2_predictor=sam2_predictor,
-                        inference_models_parameters=inference_models_parameters,
-                        slice_inference_parameters=slice_inference_parameters,
-                    )
                 else:
                     logger.info("Grounded SAM2 - Inference on a whole image")
-                    results = run_grounded_sam2(
-                        image=image_j_numpy,
-                        text_prompt=text_prompt,
-                        gdino_model=gdino_model,
-                        gdino_processor=gdino_processor,
-                        sam2_predictor=sam2_predictor,
-                        inference_models_parameters=inference_models_parameters,
-                    )
+
+                detections_2d = inference_engine.detect(image_j_numpy, request=inference_request)
+
+                # Adapter: convert Detections2D dataclass to dict consumed by
+                # the downstream helpers (get_per_mask_depth_parallel,
+                # get_instance_and_semantic_mask_with_confidence, save_gsam2_results).
+                # Phase 5 ORC-02 will replace the dict-based downstream helpers
+                # with typed equivalents; until then this thin adapter keeps the
+                # interface stable.
+                results: dict = {
+                    "masks": detections_2d.masks,
+                    "input_boxes": detections_2d.input_boxes,
+                    "confidences": detections_2d.confidences.tolist(),
+                    "class_names": detections_2d.class_names,
+                    "class_ids": detections_2d.class_ids,
+                    "mask_labels": detections_2d.mask_labels,
+                }
 
                 # Get per-mask depths:
                 get_per_mask_depth_parallel(results, images_of_pcd_i, n_jobs=task_parameters["n_workers"])
@@ -385,6 +395,8 @@ def main(cfg: RunConfig, ctx: RunContext) -> None:
                 # Save object detection (gdino) and segmentation (SAM2) results as .jpeg images and corresponding data in .json:
                 if save_intermediate_results:
                     logger.info("Saving intermediate results")
+                    from tls2dseg.grounded_sam2 import save_gsam2_results
+
                     save_gsam2_results(
                         image=images_of_pcd_i[j],
                         results=results,

@@ -18,16 +18,18 @@ from sam2.sam2_image_predictor import SAM2ImagePredictor
 from supervision.draw.color import ColorPalette
 from transformers import AutoModelForZeroShotObjectDetection, AutoProcessor
 
-from tls2dseg.grounded_sam2_utils import (
-    check_if_img_slice_complete,
-    check_if_img_slice_empty,
+from tls2dseg.engines.inference.shared import (
     convert_masks_to_sparse_masks,
+    img_1to3_channels_encoding,
     mask_to_rle,
     post_process_gdino_results,
     return_empty_detections,
+)
+from tls2dseg.grounded_sam2_utils import (
+    check_if_img_slice_complete,
+    check_if_img_slice_empty,
     run_sam2_bbox_prompt_inference_in_batches,
 )
-from tls2dseg.pc2img_utils import img_1to3_channels_encoding
 from tls2dseg.sparse_masks_inference_slicer import SparseMasksInferenceSlicer
 from tls2dseg.supervision_utils import CUSTOM_COLOR_MAP
 
