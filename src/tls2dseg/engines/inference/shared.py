@@ -207,10 +207,13 @@ def post_process_gdino_results(
 
     # - filters out bounding boxes and text predictions with low confidence scores,
     #   resizes the predictions to original size
+    # transformers >=4.51 renamed the GroundingDino post-process kwarg
+    # box_threshold -> threshold (same meaning: box/query confidence cutoff);
+    # text_threshold is unchanged. The tls2dseg config key stays "box_threshold".
     gdino_results = gdino_processor.post_process_grounded_object_detection(
         outputs,
         inputs.input_ids,
-        box_threshold=inference_models_parameters["box_threshold"],
+        threshold=inference_models_parameters["box_threshold"],
         text_threshold=inference_models_parameters["text_threshold"],
         target_sizes=[(slice_height, slice_width)],
     )
