@@ -58,6 +58,23 @@ def _populate_projection_registry() -> None:
 _populate_projection_registry()
 
 
+def _populate_inference_registry() -> None:
+    """Lazily populate INFERENCE_ENGINES with both built-in SAM2 engines.
+
+    Called once at module load.  Heavy deps (torch, sam2, transformers) are
+    NOT imported here — only the class references are stored.  Each class
+    confines heavy imports to its ``__init__`` method body (D-A-05).
+    """
+    from tls2dseg.engines.inference.grounded_sam2 import GroundedSAM2Engine
+    from tls2dseg.engines.inference.grounded_sam2_hf import GroundedSAM2HFEngine
+
+    INFERENCE_ENGINES["grounded_sam2"] = GroundedSAM2Engine
+    INFERENCE_ENGINES["grounded_sam2_hf"] = GroundedSAM2HFEngine
+
+
+_populate_inference_registry()
+
+
 def _populate_fusion_registry() -> None:
     """Lazily populate FUSION_ENGINES with the built-in graph-cluster engine.
 

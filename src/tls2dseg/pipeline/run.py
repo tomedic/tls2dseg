@@ -89,6 +89,10 @@ def main(cfg: RunConfig, ctx: RunContext) -> None:
     )
     from tls2dseg.engines.fusion.connectivity import get_initial_sparse_connectivity
     from tls2dseg.engines.fusion.edge_weights import count_significant_overlaps, get_edge_weights
+    from tls2dseg.engines.inference.shared import (
+        get_instance_and_semantic_mask_with_confidence,
+        get_per_mask_depth_parallel,
+    )
     from tls2dseg.graph_clustering import filter_outlier_detections3d_edges_and_nodes
     from tls2dseg.grounded_sam2 import (
         initialize_gdino,
@@ -101,8 +105,6 @@ def main(cfg: RunConfig, ctx: RunContext) -> None:
     from tls2dseg.pc2img_utils import (
         check_was_scanner_upsidedown,
         compute_image_dimensions,
-        get_instance_and_semantic_mask_with_confidence,
-        get_per_mask_depth_parallel,
         pc2img_run,
         reduce_image_resolution,
         resolve_necessary_image_resolution,
@@ -162,13 +164,15 @@ def main(cfg: RunConfig, ctx: RunContext) -> None:
 
     # Adapter dict for the legacy inference functions (still consume a dict).
     # Phase 4 ENG-* replaces these with engine objects receiving (cfg, ctx).
+    # sam2-checkpoint and sam2-model-config only exist on GroundedSAM2Config;
+    # use getattr with None defaults so the dict builds for both engine types.
     inference_models_parameters = {
         "with_slice_inference": cfg.inference.slicing.enabled,
         "bbox_model_id": cfg.inference.object_detection_model_id,
         "box_threshold": cfg.inference.box_threshold,
         "text_threshold": cfg.inference.text_threshold,
-        "sam2-model-config": cfg.inference.sam2_model_config,
-        "sam2-checkpoint": str(cfg.inference.sam2_checkpoint),
+        "sam2-model-config": getattr(cfg.inference, "sam2_model_config", None),
+        "sam2-checkpoint": str(getattr(cfg.inference, "sam2_checkpoint", "")),
         "large_object_removal_threshold": cfg.inference.large_object_removal_threshold,
         "partial_detection_edge_touching_threshold": cfg.inference.partial_detection_edge_touching_threshold,
         "sam_box_prompt_batch_size": cfg.inference.sam_box_prompt_batch_size,
