@@ -1,4 +1,8 @@
-"""CFG-07 — all 3 shipped example YAMLs round-trip cleanly through load_config().
+"""CFG-07 + TEST-08 — YAML round-trips + discriminated union validation.
+
+CFG-07: All 3 shipped example YAMLs round-trip cleanly through load_config().
+TEST-08: grounded_sam2_hf discriminator parses; extra=forbid rejects impossible
+         field combinations (D-C-02 threat T-04-INF-01).
 
 Locks the worked-example contract for downstream users: a researcher cloning
 the repo gets three runnable starting points (one per reference dataset per
@@ -22,6 +26,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from tls2dseg.config.loader import load_config
 
@@ -80,3 +85,87 @@ def test_example_yaml_roundtrips_through_load_config(
     )
     assert cfg.prompt.text, f"{yaml_name}: prompt.text must be non-empty (D-A1-09)."
     assert cfg.projection.features, f"{yaml_name}: projection.features must be a non-empty list (MODE-06)."
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TEST-08 — D-C-02 discriminated union + extra=forbid (T-04-INF-01)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Minimal YAML for TEST-08 tests — no SAM2_CHECKPOINT_PATH needed for HF variant.
+_MINIMAL_HF_YAML = """\
+mode: single-view
+io:
+  input_path: /tmp/tls2dseg_test_input
+  output_dir: /tmp/tls2dseg_test_output
+prompt:
+  text: wheat
+preprocessing:
+  output_resolution_m: 0.05
+projection:
+  features: [intensity, range]
+inference:
+  type: grounded_sam2_hf
+  sam2_hf_model_id: facebook/sam2.1-hiera-large
+d3d_extraction: {}
+fusion: {}
+"""
+
+_MINIMAL_GS2_YAML = """\
+mode: single-view
+io:
+  input_path: /tmp/tls2dseg_test_input
+  output_dir: /tmp/tls2dseg_test_output
+prompt:
+  text: wheat
+preprocessing:
+  output_resolution_m: 0.05
+projection:
+  features: [intensity, range]
+inference:
+  type: grounded_sam2
+  sam2_checkpoint: /tmp/tls2dseg_test_sam2.pt
+d3d_extraction: {}
+fusion: {}
+"""
+
+
+@pytest.mark.tier_a
+def test_grounded_sam2_hf_yaml_roundtrip(tmp_path: Path) -> None:
+    """TEST-08a: YAML with inference.type: grounded_sam2_hf parses through discriminated union.
+
+    Locks: D-C-02 — GroundedSAM2HFConfig is reachable via the InferenceConfig
+    discriminated union; cfg.inference.type resolves to 'grounded_sam2_hf' and
+    sam2_hf_model_id round-trips cleanly (T-04-INF-01 mitigated by extra=forbid).
+    """
+    yaml_path = tmp_path / "hf_test.yaml"
+    yaml_path.write_text(_MINIMAL_HF_YAML, encoding="utf-8")
+
+    cfg = load_config(yaml_path)
+
+    assert cfg.inference.type == "grounded_sam2_hf", f"Expected type='grounded_sam2_hf', got {cfg.inference.type!r}"
+    # sam2_hf_model_id is only on GroundedSAM2HFConfig
+    from tls2dseg.config.models import GroundedSAM2HFConfig
+
+    assert isinstance(cfg.inference, GroundedSAM2HFConfig), (
+        f"Expected GroundedSAM2HFConfig, got {type(cfg.inference).__name__}"
+    )
+    assert cfg.inference.sam2_hf_model_id == "facebook/sam2.1-hiera-large"
+
+
+@pytest.mark.tier_a
+def test_grounded_sam2_config_rejects_hf_only_field(tmp_path: Path) -> None:
+    """TEST-08b: GroundedSAM2Config extra='forbid' rejects sam2_hf_model_id (impossible combination).
+
+    Locks: T-04-INF-01 — a YAML with type=grounded_sam2 + sam2_hf_model_id raises
+    ValidationError. The two engine sub-models are non-overlapping; cross-engine
+    fields are unexpressible (D-C-02 security property).
+    """
+    bad_yaml = _MINIMAL_GS2_YAML.replace(
+        "inference:\n  type: grounded_sam2\n  sam2_checkpoint:",
+        "inference:\n  type: grounded_sam2\n  sam2_hf_model_id: facebook/sam2.1-hiera-large\n  sam2_checkpoint:",
+    )
+    yaml_path = tmp_path / "bad_hf_field.yaml"
+    yaml_path.write_text(bad_yaml, encoding="utf-8")
+
+    with pytest.raises(ValidationError):
+        load_config(yaml_path)

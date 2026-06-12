@@ -40,6 +40,7 @@ preprocessing:
 projection:
   features: {features_value}
 inference:
+  type: grounded_sam2
   sam2_checkpoint: /tmp/sam2.pt
 d3d_extraction: {{}}
 fusion: {{}}
@@ -103,6 +104,7 @@ preprocessing:
   output_resolution_m: 0.05
 projection: {}
 inference:
+  type: grounded_sam2
   sam2_checkpoint: /tmp/sam2.pt
 d3d_extraction: {}
 fusion: {}

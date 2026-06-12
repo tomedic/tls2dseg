@@ -33,6 +33,7 @@ preprocessing:
 projection:
   features: [intensity]
 inference:
+  type: grounded_sam2
   sam2_checkpoint: /tmp/sam2.pt
 d3d_extraction: {{}}
 fusion: {{}}

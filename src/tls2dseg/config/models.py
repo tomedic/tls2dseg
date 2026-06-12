@@ -31,7 +31,7 @@ Required-no-default fields (raise ``ValidationError`` when omitted):
 - ``PromptConfig.text``               (D-A1-09)
 - ``PreprocessingConfig.output_resolution_m``  (D-A1-11)
 - ``ProjectionConfig.features``       (MODE-06, D-A1-12; min_length=1)
-- ``InferenceConfig.sam2_checkpoint`` (D-A1-13; supports ``${ENV_VAR}``)
+- ``GroundedSAM2Config.sam2_checkpoint`` (D-A1-13; supports ``${ENV_VAR}``; required for ``type: grounded_sam2``)
 """
 
 from __future__ import annotations
@@ -39,7 +39,7 @@ from __future__ import annotations
 import logging
 import re
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -404,15 +404,15 @@ class SlicingConfig(BaseModel):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# InferenceConfig — Grounded-DINO + SAM2 inference
+# InferenceConfig — Grounded-DINO + SAM2 inference (discriminated union, D-C-02)
 # ─────────────────────────────────────────────────────────────────────────────
-class InferenceConfig(BaseModel):
-    """Grounded-DINO + SAM2 inference (D-A1-13).
 
-    Phase 4 ENG-* cross-phase note: many fields below are
-    ``grounded_sam2``-specific. Phase 4 likely moves them under a per-engine
-    sub-model (``inference.grounded_sam2.*``). Phase 3 keeps them flat at
-    ``inference.*`` level. ``type`` discriminator field is the Phase 4 hook.
+
+class InferenceSharedConfig(BaseModel):
+    """Shared inference settings — common to all engine types (D-C-02).
+
+    Fields ordered: tuning → pipings → other.
+    Every Field carries json_schema_extra={"tag": ...}.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -447,6 +447,32 @@ class InferenceConfig(BaseModel):
         json_schema_extra={"tag": "pipings"},
         description="SAM2 box-prompt batch size; GPU memory/throughput trade-off.",
     )
+    # tag: other (renamed from bbox_model_id per D-A1-13)
+    object_detection_model_id: str = Field(
+        "IDEA-Research/grounding-dino-base",
+        json_schema_extra={"tag": "other"},
+        description="HuggingFace model id for the object detection model (renamed from bbox_model_id).",
+    )
+    # tag: — (nested sub-block — has its own field tags)
+    slicing: SlicingConfig = Field(
+        default=SlicingConfig(),
+        json_schema_extra={"tag": "other"},
+        description="SAHI-style sliced inference sub-block.",
+    )
+
+
+class GroundedSAM2Config(InferenceSharedConfig):
+    """Per-engine config for GroundedSAM2Engine (direct sam2 package, D-C-01).
+
+    Required: sam2_checkpoint (no default — CFG-03).
+    """
+
+    # tag: other — discriminator (first, so pydantic finds it)
+    type: Literal["grounded_sam2"] = Field(
+        "grounded_sam2",
+        json_schema_extra={"tag": "other"},
+        description="Inference engine discriminator — selects GroundedSAM2Engine.",
+    )
     # tag: pipings (required — no default; CFG-03 removes the legacy hardcoded path)
     sam2_checkpoint: Path = Field(
         ...,
@@ -457,36 +483,44 @@ class InferenceConfig(BaseModel):
             "(NOT at validate-config time) per D-CD-05."
         ),
     )
-    # tag: other (Phase 4 ENG-* discriminator slot)
-    type: Literal["grounded_sam2"] = Field(
-        "grounded_sam2",
-        json_schema_extra={"tag": "other"},
-        description="Inference engine discriminator (Phase 4 ENG-* expansion slot).",
-    )
-    # tag: other (renamed from bbox_model_id per D-A1-13)
-    object_detection_model_id: str = Field(
-        "IDEA-Research/grounding-dino-base",
-        json_schema_extra={"tag": "other"},
-        description="HuggingFace model id for the object detection model (renamed from bbox_model_id).",
-    )
     # tag: other (renamed from hyphenated sam2-model-config per D-A1-03)
     sam2_model_config: str = Field(
         "configs/sam2.1/sam2.1_hiera_l.yaml",
         json_schema_extra={"tag": "other"},
         description="SAM2 model config file path (relative to SAM2 package install).",
     )
-    # tag: — (nested sub-block — has its own field tags)
-    # NOTE: SlicingConfig() called with no args is intentional — every field has
-    # a default. mypy strict mode flags this as "missing required args" because
-    # pydantic v2 treats every field as required at the dataclass-signature level;
-    # the call-arg ignore is the canonical fix per pydantic GH #6300.
-    # We use SubModel() shape (not Field(default_factory=...)) to keep RunConfig
-    # hydra-zen-compatible per D-A1-00.
-    slicing: SlicingConfig = Field(
-        default=SlicingConfig(),
+
+
+class GroundedSAM2HFConfig(InferenceSharedConfig):
+    """Per-engine config for GroundedSAM2HFEngine (HF transformers, D-C-01).
+
+    ENG-05: uses Sam2Processor/Sam2Model.from_pretrained (transformers 5.11.0).
+    Default model id confirmed by Task 1 probe (facebook/sam2.1-hiera-large).
+    """
+
+    # tag: other — discriminator
+    type: Literal["grounded_sam2_hf"] = Field(
+        "grounded_sam2_hf",
         json_schema_extra={"tag": "other"},
-        description="SAHI-style sliced inference sub-block.",
+        description="Inference engine discriminator — selects GroundedSAM2HFEngine.",
     )
+    # tag: other
+    sam2_hf_model_id: str = Field(
+        "facebook/sam2.1-hiera-large",
+        json_schema_extra={"tag": "other"},
+        description=(
+            "HuggingFace model id for the SAM2 model. "
+            "Confirmed: Sam2Processor/Sam2Model under transformers 5.11.0 (ENG-05 probe)."
+        ),
+    )
+
+
+# Discriminated union — the public type alias used everywhere (RunConfig.inference).
+# Pydantic resolves the concrete sub-model by matching ``inference.type``.
+InferenceConfig = Annotated[
+    GroundedSAM2Config | GroundedSAM2HFConfig,
+    Field(discriminator="type"),
+]
 
 
 # ─────────────────────────────────────────────────────────────────────────────

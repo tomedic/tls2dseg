@@ -46,6 +46,7 @@ preprocessing:
 projection:
   features: [intensity]
 inference:
+  type: grounded_sam2
   sam2_checkpoint: /tmp/sam2.pt
 d3d_extraction: {}
 fusion: {}
@@ -74,6 +75,7 @@ preprocessing:
 projection:
   features: [intensity]
 inference:
+  type: grounded_sam2
   sam2_checkpoint: /tmp/sam2.pt
   box_threshhold: 0.10
 d3d_extraction: {}
@@ -103,6 +105,7 @@ preprocessing:
 projection:
   features: [intensity]
 inference:
+  type: grounded_sam2
   sam2-checkpoint: /tmp/sam2.pt
   sam2_checkpoint: /tmp/sam2.pt
 d3d_extraction: {}
@@ -132,6 +135,7 @@ preprocessing:
 projection:
   features: [intensity]
 inference:
+  type: grounded_sam2
   sam2_checkpoint: /tmp/sam2.pt
   slicing:
     enabled: true

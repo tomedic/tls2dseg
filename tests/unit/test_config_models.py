@@ -42,6 +42,7 @@ from tls2dseg.config import (
     SlicingConfig,
 )
 from tls2dseg.config.loader import load_config
+from tls2dseg.config.models import GroundedSAM2Config, GroundedSAM2HFConfig, InferenceSharedConfig
 
 
 @pytest.mark.tier_a
@@ -53,7 +54,12 @@ def test_runconfig_frozen_and_extra_forbid_invariants() -> None:
 
 @pytest.mark.tier_a
 def test_every_sub_model_has_extra_forbid_and_frozen() -> None:
-    """Every sub-model has extra='forbid' + frozen=True (D-A1-17)."""
+    """Every sub-model has extra='forbid' + frozen=True (D-A1-17).
+
+    InferenceConfig is now a discriminated union (type alias); the concrete
+    sub-models (InferenceSharedConfig, GroundedSAM2Config, GroundedSAM2HFConfig)
+    are checked individually (D-C-02).
+    """
     sub_models = [
         IOConfig,
         RuntimeConfig,
@@ -61,7 +67,10 @@ def test_every_sub_model_has_extra_forbid_and_frozen() -> None:
         PreprocessingConfig,
         ProjectionConfig,
         SlicingConfig,
-        InferenceConfig,
+        # Inference discriminated union — concrete sub-models (D-C-02)
+        InferenceSharedConfig,
+        GroundedSAM2Config,
+        GroundedSAM2HFConfig,
         D3DExtractionConfig,
         FusionConfig,
         LoggingConfig,
@@ -75,6 +84,9 @@ def test_every_sub_model_has_extra_forbid_and_frozen() -> None:
 def test_every_field_carries_tag_annotation() -> None:
     """Every field on every model has a ``tag`` annotation in the
     locked vocabulary {primary, tuning, pipings, other} (D-A1-04, prep for DOC-02).
+
+    InferenceConfig is a discriminated union (type alias); the concrete
+    sub-models are checked individually (D-C-02).
     """
     allowed_tags = {"primary", "tuning", "pipings", "other"}
     all_models = [
@@ -85,7 +97,10 @@ def test_every_field_carries_tag_annotation() -> None:
         PreprocessingConfig,
         ProjectionConfig,
         SlicingConfig,
-        InferenceConfig,
+        # Inference discriminated union — concrete sub-models (D-C-02)
+        InferenceSharedConfig,
+        GroundedSAM2Config,
+        GroundedSAM2HFConfig,
         D3DExtractionConfig,
         FusionConfig,
         LoggingConfig,
@@ -112,7 +127,8 @@ def test_load_config_minimal_yaml_round_trip(minimal_yaml_path: Path) -> None:
     assert isinstance(cfg.prompt, PromptConfig)
     assert isinstance(cfg.preprocessing, PreprocessingConfig)
     assert isinstance(cfg.projection, ProjectionConfig)
-    assert isinstance(cfg.inference, InferenceConfig)
+    # InferenceConfig is a discriminated union type alias; use the base shared class
+    assert isinstance(cfg.inference, InferenceSharedConfig)
     assert isinstance(cfg.inference.slicing, SlicingConfig)
     assert isinstance(cfg.d3d_extraction, D3DExtractionConfig)
     assert isinstance(cfg.fusion, FusionConfig)
@@ -265,6 +281,7 @@ preprocessing:
 projection:
   features: [intensity]
 inference:
+  type: grounded_sam2
   sam2_checkpoint: ${SAM2_CHECKPOINT_PATH_TEST}
 d3d_extraction: {}
 fusion: {}
@@ -292,6 +309,7 @@ preprocessing:
 projection:
   features: [intensity]
 inference:
+  type: grounded_sam2
   sam2_checkpoint: ${TLS2DSEG_UNSET_TEST_VAR}
 d3d_extraction: {}
 fusion: {}
