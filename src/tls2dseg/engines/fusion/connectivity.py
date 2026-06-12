@@ -16,8 +16,6 @@ from __future__ import annotations
 import logging
 
 import numpy as np
-from scipy.sparse import coo_matrix, csr_matrix
-from scipy.spatial import cKDTree
 
 logger = logging.getLogger("tls2dseg.engines.fusion.connectivity")
 
@@ -59,12 +57,15 @@ def get_initial_sparse_connectivity(
         Edge list [i,j] with i<j for which adj[i,j]=True.
     """
 
+    # Validate inputs before any heavy imports (keeps tier_a safe for validation tests)
     if method not in {"knn", "radius"}:
         raise ValueError("method must be 'knn' or 'radius'")
     if method == "knn" and n_scans is None:
         raise ValueError("scan_ids required for knn method")
     if semantic_gate and class_ids is None:
         raise ValueError("class_ids required when semantic_gate=True")
+
+    from scipy.spatial import cKDTree
 
     # ----------  KD-tree query ----------
     tree = cKDTree(centroids)
@@ -97,7 +98,7 @@ def get_initial_sparse_connectivity(
 
 def sparse_connectivity_pairs2csr_matrix(
     pairs: np.ndarray | list, edge_weights: np.ndarray | None = None
-) -> csr_matrix:
+) -> object:  # returns scipy.sparse.csr_matrix
     """
     Convert a list/array of node-pairs (i, j) into a symmetric CSR adjacency matrix,
     optionally using precomputed edge weights.
@@ -116,6 +117,8 @@ def sparse_connectivity_pairs2csr_matrix(
         N = max node index in pairs + 1.
         If `edge_weights` is None, `adj` is boolean. Otherwise, numeric dtype of edge_weights.
     """
+    from scipy.sparse import coo_matrix
+
     # Convert pairs to numpy array
     pairs = np.asarray(pairs, dtype=int)
     if pairs.ndim != 2 or pairs.shape[1] != 2:

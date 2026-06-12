@@ -113,13 +113,28 @@ try:
 except ImportError:
     _TRIMESH_AVAILABLE = False
 
+# OBB boolean IoU requires a working backend: manifold3d package OR blender in PATH.
+# Without a backend, trimesh.boolean.intersection raises ModuleNotFoundError and the
+# function silently returns 0.0 — making IoU assertions meaningless.
+try:
+    import manifold3d
+
+    _MANIFOLD_AVAILABLE = True
+except ImportError:
+    import shutil
+
+    _MANIFOLD_AVAILABLE = shutil.which("blender") is not None
+
+_OBB_BOOLEAN_AVAILABLE = _TRIMESH_AVAILABLE and _MANIFOLD_AVAILABLE
+
 
 @pytest.mark.tier_b_light
-@pytest.mark.skipif(not _TRIMESH_AVAILABLE, reason="trimesh not available")
+@pytest.mark.skipif(not _OBB_BOOLEAN_AVAILABLE, reason="trimesh boolean engine (manifold3d or blender) not available")
 def test_obb_iou_naive_identical_boxes() -> None:
     """Two identical OBBs (identity rotation) → IoU ≈ 1.0.
 
     Locks: TEST-06 OBB tier_b_light identical-box case.
+    Requires a trimesh boolean engine (manifold3d or blender).
     """
     from tls2dseg.engines.fusion.bboxes_iou import compute_obb_iou_naive
 
@@ -135,11 +150,12 @@ def test_obb_iou_naive_identical_boxes() -> None:
 
 
 @pytest.mark.tier_b_light
-@pytest.mark.skipif(not _TRIMESH_AVAILABLE, reason="trimesh not available")
+@pytest.mark.skipif(not _OBB_BOOLEAN_AVAILABLE, reason="trimesh boolean engine (manifold3d or blender) not available")
 def test_obb_iou_naive_non_overlapping_boxes() -> None:
     """Two far-apart OBBs → IoU ≈ 0.0.
 
     Locks: TEST-06 OBB tier_b_light disjoint-box case.
+    Requires a trimesh boolean engine (manifold3d or blender).
     """
     from tls2dseg.engines.fusion.bboxes_iou import compute_obb_iou_naive
 

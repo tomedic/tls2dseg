@@ -5,8 +5,16 @@ Phase 4 plan 03 Task 1 (TEST-07). Locks the contract of
 ``tls2dseg.engines.fusion.clustering``, and
 ``tls2dseg.engines.fusion.edge_weights``.
 
-All tests are tier_a (imports ONLY tls2dseg.engines.fusion.* + numpy/scipy).
-No pchandler, no trimesh, no torch.
+Tier assignments:
+- connectivity / CSR tests: tier_b_light — scipy.spatial.cKDTree and
+  scipy.sparse are NOT available in the tier_a nox session (``--no-deps``
+  installs only numpy/pydantic/typer/pytest). These tests are marked
+  tier_b_light with a scipy skip guard.  [Rule 1 auto-fix: tier_a marker
+  would cause ModuleNotFoundError at run time]
+- Invalid-method validation test: tier_a safe — ValueError is raised
+  BEFORE scipy is imported (validation moved to top of function).
+- clustering / outlier / PCC tests: tier_a (stdlib + numpy only).
+- HCS graph clustering test: tier_b_light (networkx not in tier_a venv).
 """
 
 from __future__ import annotations
@@ -15,15 +23,30 @@ import numpy as np
 import pytest
 
 # ---------------------------------------------------------------------------
+# Module-level availability flags for conditional skip
+# ---------------------------------------------------------------------------
+
+try:
+    import scipy.sparse
+    import scipy.spatial
+
+    _SCIPY_AVAILABLE = True
+except ImportError:
+    _SCIPY_AVAILABLE = False
+
+
+# ---------------------------------------------------------------------------
 # connectivity — get_initial_sparse_connectivity
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.tier_a
+@pytest.mark.tier_b_light
+@pytest.mark.skipif(not _SCIPY_AVAILABLE, reason="scipy not available")
 def test_get_initial_sparse_connectivity_knn_i_lt_j_invariant() -> None:
     """5-point line, knn=1 per scan → all edges have i < j.
 
     Locks: TEST-07 get_initial_sparse_connectivity i<j invariant.
+    tier_b_light: needs scipy.spatial.cKDTree (not in tier_a --no-deps venv).
     """
     from tls2dseg.engines.fusion.connectivity import get_initial_sparse_connectivity
 
@@ -37,14 +60,17 @@ def test_get_initial_sparse_connectivity_knn_i_lt_j_invariant() -> None:
     assert np.all(pairs[:, 0] < pairs[:, 1]), f"i<j invariant violated: {pairs[pairs[:, 0] >= pairs[:, 1]]}"
 
 
-@pytest.mark.tier_a
+@pytest.mark.tier_b_light
+@pytest.mark.skipif(not _SCIPY_AVAILABLE, reason="scipy not available")
 def test_get_initial_sparse_connectivity_knn_expected_pairs() -> None:
-    """3-point 1D line with knn_ps=2 → edges (0,1) and (1,2) expected.
+    """3-point 1D line with knn_ps=2 → edges (0,1) and (1,2) present.
 
     With knn_ps=2, k_total = int(2*1 + 1) = 3 (all neighbors returned).
     Node 0 neighbors: {1, 2}; node 1 neighbors: {0, 2}; node 2 neighbors: {0, 1}.
     After i<j dedup: {(0,1), (0,2), (1,2)}.
     At minimum both (0,1) and (1,2) must be present.
+
+    tier_b_light: needs scipy.spatial.cKDTree (not in tier_a --no-deps venv).
     """
     from tls2dseg.engines.fusion.connectivity import get_initial_sparse_connectivity
 
@@ -60,7 +86,10 @@ def test_get_initial_sparse_connectivity_knn_expected_pairs() -> None:
 
 @pytest.mark.tier_a
 def test_get_initial_sparse_connectivity_invalid_method() -> None:
-    """Invalid method raises ValueError.
+    """Invalid method raises ValueError BEFORE scipy is imported.
+
+    The ValueError is raised at the top of the function (input validation),
+    before ``from scipy.spatial import cKDTree``, so this test is tier_a safe.
 
     Locks: input validation contract.
     """
@@ -76,11 +105,13 @@ def test_get_initial_sparse_connectivity_invalid_method() -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.tier_a
+@pytest.mark.tier_b_light
+@pytest.mark.skipif(not _SCIPY_AVAILABLE, reason="scipy not available")
 def test_sparse_connectivity_pairs2csr_matrix_shape_and_symmetry() -> None:
     """pairs → symmetric CSR of expected shape (N, N).
 
     Locks: TEST-07 sparse_connectivity_pairs2csr_matrix shape+symmetry contract.
+    tier_b_light: needs scipy.sparse (not in tier_a --no-deps venv).
     """
     from tls2dseg.engines.fusion.connectivity import sparse_connectivity_pairs2csr_matrix
 
@@ -95,11 +126,13 @@ def test_sparse_connectivity_pairs2csr_matrix_shape_and_symmetry() -> None:
     assert diff.nnz == 0, "CSR matrix is not symmetric"
 
 
-@pytest.mark.tier_a
+@pytest.mark.tier_b_light
+@pytest.mark.skipif(not _SCIPY_AVAILABLE, reason="scipy not available")
 def test_sparse_connectivity_pairs2csr_matrix_with_weights() -> None:
     """Edge weights are preserved and matrix is symmetric.
 
     Locks: weighted variant contract.
+    tier_b_light: needs scipy.sparse (not in tier_a --no-deps venv).
     """
     from tls2dseg.engines.fusion.connectivity import sparse_connectivity_pairs2csr_matrix
 
@@ -123,8 +156,6 @@ def test_detect_upper_tail_outliers_iqr_detects_large_value() -> None:
     """IQR method detects a clear upper-tail outlier in a small array.
 
     Locks: detect_upper_tail_outliers basic contract (method='iqr').
-    Note: detect_upper_tail_outliers lives in graph.py / graph_clustering source;
-    we import it from the engines.fusion.clustering module.
     """
     from tls2dseg.engines.fusion.clustering import detect_upper_tail_outliers
 

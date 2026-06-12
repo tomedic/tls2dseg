@@ -22,7 +22,6 @@ from collections import Counter, defaultdict
 from typing import Literal
 
 import numpy as np
-from scipy.stats import nbinom
 
 logger = logging.getLogger("tls2dseg.engines.fusion.clustering")
 
@@ -71,6 +70,8 @@ def detect_upper_tail_outliers(
     elif method == "percentile":
         cutoff = np.percentile(data, percentile)
     elif method == "negative_binomial":
+        from scipy.stats import nbinom
+
         # Detect outliers based on negative binomial distribution
         mean, var = data.mean(), data.var(ddof=1)
         # Var = mean + mean^2 / r  ->  r = mean^2 / (var - mean)
