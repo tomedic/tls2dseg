@@ -35,6 +35,86 @@ if TYPE_CHECKING:
 logger = logging.getLogger("tls2dseg.engines.projection.spherical")
 
 
+def check_was_scanner_upsidedown(pcd: object, threshold_deg: float = 10) -> bool:
+    """Re-export: test whether the scanner was mounted upside-down.
+
+    Reads the local-Z column of ``pcd.tmat_socs2prcs`` and returns True if
+    the angle between local-Z and global-Z exceeds ``180 - threshold_deg``
+    degrees (scanner inverted). Pure numpy — tier_a testable with a synthetic
+    4x4 matrix mock (D-D-04 wrappers-only rule, TEST-03).
+
+    Parameters
+    ----------
+    pcd :
+        Any object with a ``tmat_socs2prcs`` attribute of shape ``(4, 4)``.
+    threshold_deg :
+        Angle tolerance; default 10 means > 170° counts as upside-down.
+    """
+    import numpy as np
+
+    local_z = pcd.tmat_socs2prcs[:3, 2]
+    cos_theta = np.clip(local_z[2], -1.0, 1.0)
+    angle_rad = np.arccos(cos_theta)
+    angle_deg = np.degrees(angle_rad)
+    return bool(angle_deg > 180 - threshold_deg)
+
+
+def resolve_scanning_resolution_parameter(
+    pcd: object,
+    image_generation_parameters: dict,
+) -> tuple[float, float]:
+    """Resolve scan resolution from image_generation_parameters.
+
+    Acceptable values for ``image_generation_parameters["scan_resolution"]``:
+    - ``"auto"``: estimate from the point cloud (needs ``pcd.spherical_coordinates``).
+    - ``"<mm>@<m>"``: e.g. ``"1.0mm@10m"`` → ``arcsin(0.001/10)``.
+    - numeric / numeric-string: treated as degrees, converted to radians.
+
+    Returns ``(d_azim_rad, d_elev_rad)`` as a tuple of two floats.
+    Pure computation path (mm@ and numeric branches) is tier_a testable
+    (D-D-04 wrappers-only rule, TEST-03).
+
+    The ``"auto"`` branch delegates to ``pc2img_utils.estimate_scanning_resolution``
+    (inside the call, not at import time) to keep the tier_a import path clean.
+    """
+    import re
+
+    import numpy as np
+
+    scanning_resolution = image_generation_parameters["scan_resolution"]
+
+    # 1) AUTO — delegate to the heavy implementation inside the call body
+    if isinstance(scanning_resolution, str) and scanning_resolution.strip().lower() == "auto":
+        # pc2img_utils is only imported here (not at module level) to stay tier_a
+        from tls2dseg.pc2img_utils import estimate_scanning_resolution
+
+        image_generation_parameters.setdefault("subsampling_fraction", 0.01)
+        image_generation_parameters.setdefault("patch_frac", 0.01)
+        d_azim, d_elev = estimate_scanning_resolution(pcd, image_generation_parameters)
+        return float(d_azim), float(d_elev)
+
+    # 2) "mm@<m>" pattern — pure math, tier_a safe
+    if isinstance(scanning_resolution, str) and "mm@" in scanning_resolution.lower():
+        m = re.match(r"^\s*([\d\.]+)\s*mm\s*@\s*([\d\.]+)\s*m\s*$", scanning_resolution, re.IGNORECASE)
+        if not m:
+            raise ValueError(f"Invalid mm@ format: {scanning_resolution!r}")
+        mm_val = float(m.group(1))
+        m_val = float(m.group(2))
+        d = float(np.arcsin((mm_val / 1000.0) / m_val))
+        return d, d
+
+    # 3) numeric or numeric-string → degrees to radians — pure math, tier_a safe
+    try:
+        deg = float(scanning_resolution)
+        d = float(np.deg2rad(deg))
+        return d, d
+    except Exception as err:
+        raise ValueError(
+            f"Unrecognised scan_resolution value: {scanning_resolution!r}. "
+            "Accepted: 'auto', '<mm>@<m>', or a numeric degrees value."
+        ) from err
+
+
 class SphericalProjectionEngine:
     """Concrete ``ProjectionEngine`` for TLS spherical projection via pc2img.
 
