@@ -27,6 +27,8 @@ nox docs). Equivalent to ``--reuse-existing-venvs`` on the CLI. Critical for
 pre-push hook latency — without it, every push rebuilds the venv from scratch.
 """
 
+import os
+
 import nox
 
 nox.options.reuse_venv = "yes"
@@ -69,3 +71,30 @@ def tier_b_light(session: nox.Session) -> None:
     # an absent mesh-boolean engine. Pure pip dep, no GPU.
     session.install("manifold3d")
     session.run("pytest", "-m", "tier_b_light", "-v", *session.posargs)
+
+
+# tier_b_heavy: real models / GPU / cudf / large fixtures. Unlike tier_a and
+# tier_b_light (isolated CPU venvs), this session uses NO isolated venv and
+# delegates to a project conda env that already has torch+CUDA+cudf+sam2 plus the
+# editable pchandler/pc2img installs. `nox` need NOT be installed in that conda env
+# — nox stays the orchestrator in the base env and shells into the conda env via
+# `conda run`. Override the env name with TLS2DSEG_HEAVY_CONDA_ENV.
+@nox.session(venv_backend="none", name="tier_b_heavy")
+def tier_b_heavy(session: nox.Session) -> None:
+    """Run tier_b_heavy tests inside the project conda env (default tls2dseg_2025)."""
+    env_name = os.environ.get("TLS2DSEG_HEAVY_CONDA_ENV", "tls2dseg_2025")
+    session.run(
+        "conda",
+        "run",
+        "--no-capture-output",
+        "-n",
+        env_name,
+        "python",
+        "-m",
+        "pytest",
+        "-m",
+        "tier_b_heavy",
+        "-v",
+        *session.posargs,
+        external=True,
+    )
