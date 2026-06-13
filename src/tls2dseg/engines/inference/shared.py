@@ -35,6 +35,8 @@ from typing import Literal
 
 import numpy as np
 
+from tls2dseg.config.text import split_class_keys
+
 logger = logging.getLogger("tls2dseg.engines.inference.shared")
 
 
@@ -111,8 +113,8 @@ def parse_gdino_results(gdino_results, text_prompt: str) -> tuple:
     class_names = gdino_results[0]["labels"]  # get class names
 
     # Get class_ids corresponding defined relative to the original text_prompt and corresponding to class_names
-    keys = text_prompt.split(".")  # → ['house','window','bicycle','door','grass','leaf']
-    id_map = {k: i + 1 for i, k in enumerate(keys)}  # → {'house':1, 'window':2, ..., 'leaf':6}
+    keys = split_class_keys(text_prompt)
+    id_map = {k: i + 1 for i, k in enumerate(keys)}
     class_names = resolve_class_names(class_names, keys)  # if class name corresponds to 2 valid classes - pick 1
 
     # Removing eventual detections that are not related to any of the valid class categories
@@ -317,8 +319,8 @@ def get_instance_and_semantic_mask(results: dict, text_prompt) -> tuple[np.ndarr
     N = len(results["masks"])  # Number of detections
 
     # Get dictionary mapping "semantic classes" to unique IDs
-    keys = text_prompt.split(".")  # → ['house','window','bicycle','door','grass','leaf']
-    id_map = {k: i + 1 for i, k in enumerate(keys)}  # → {'house':1, 'window':2, ..., 'leaf':6}
+    keys = split_class_keys(text_prompt)
+    id_map = {k: i + 1 for i, k in enumerate(keys)}
     class_ids = [id_map[q] for q in results["class_names"]]  # a list of corresponding class IDs
     results["class_ids"] = class_ids  # Store real class IDs corresponding to detected classes, not range(#C)
 
@@ -374,8 +376,8 @@ def get_instance_and_semantic_mask_with_confidence(
     N = len(results["masks"])  # Number of detections
 
     # Get dictionary mapping "semantic classes" to unique IDs
-    keys = text_prompt.split(".")  # → ['house','window','bicycle','door','grass','leaf']
-    id_map = {k: i + 1 for i, k in enumerate(keys)}  # → {'house':1, 'window':2, ..., 'leaf':6}
+    keys = split_class_keys(text_prompt)
+    id_map = {k: i + 1 for i, k in enumerate(keys)}
     class_ids = [id_map[q] for q in results["class_names"]]  # a list of corresponding class IDs
     results["class_ids"] = class_ids  # Store real class IDs corresponding to detected classes, not range(#C)
 

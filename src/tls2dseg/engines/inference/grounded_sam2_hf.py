@@ -25,6 +25,7 @@ from functools import partial
 
 import numpy as np
 
+from tls2dseg.config.text import split_class_keys
 from tls2dseg.engines.inference.shared import (
     check_if_img_slice_complete,
     check_if_img_slice_empty,
@@ -283,7 +284,7 @@ class GroundedSAM2HFEngine:
             )
             detections = slicer(image)
 
-            keys = text_prompt.split(".")
+            keys = split_class_keys(text_prompt)
             class_id_map = {k: i + 1 for i, k in enumerate(keys)}
             inverted_map = {v: k for k, v in class_id_map.items()}
 

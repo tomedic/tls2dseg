@@ -44,6 +44,8 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from tls2dseg.config.text import split_class_keys
+
 logger = logging.getLogger("tls2dseg.config.models")
 
 
@@ -152,13 +154,11 @@ class PromptConfig(BaseModel):
     @field_validator("text", mode="after")
     @classmethod
     def _normalize_text(cls, v: str) -> str:
-        """Lowercase + ensure trailing period (D-A1-09)."""
-        v = v.lower().strip()
-        if not v:
+        """Lowercase, drop empty class segments, end in exactly one period."""
+        keys = split_class_keys(v.lower())
+        if not keys:
             raise ValueError("prompt.text must be non-empty")
-        if not v.endswith("."):
-            v = v + "."
-        return v
+        return ". ".join(keys) + "."
 
 
 # ─────────────────────────────────────────────────────────────────────────────

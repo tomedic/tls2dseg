@@ -30,6 +30,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
+from tls2dseg.config.text import split_class_keys
 from tls2dseg.runtime.capability import Runtime
 from tls2dseg.runtime.output_layout import create_run_dirs, make_run_id
 
@@ -152,13 +153,9 @@ def _probe_git() -> tuple[str | None, bool]:
 def _derive_class_id_map(prompt_text: str) -> dict[str, int]:
     """Derive class_id_map from prompt text — preserves pipeline/run.py:278-280 convention.
 
-    Pipeline convention: ``text.split(".")`` → enumerate from 1 with the
-    keyword as key, then add ``"background": 0``. Empty strings (from a
-    trailing dot like ``"wheat."``) are skipped so the map is clean — the
-    real pipeline tolerates them but the cleaner shape is friendlier for
-    Phase 6 MZ-* keying.
+    Keys are enumerated from 1, then ``"background": 0`` is added.
     """
-    keys = [k.strip() for k in prompt_text.split(".") if k.strip()]
+    keys = split_class_keys(prompt_text)
     class_id_map: dict[str, int] = {k: i + 1 for i, k in enumerate(keys)}
     class_id_map["background"] = 0
     return class_id_map
