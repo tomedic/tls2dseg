@@ -19,12 +19,13 @@ import logging
 import matplotlib.pyplot as plt
 import numpy as np
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+from mpl_toolkits.mplot3d.axes3d import Axes3D
 from scipy.spatial.transform import Rotation as R
 
 logger = logging.getLogger("tls2dseg.viz.render")
 
 
-def set_axes_equal(ax: object) -> None:
+def set_axes_equal(ax: Axes3D) -> None:
     """Set equal scaling for a 3D plot."""
     x_limits = ax.get_xlim3d()
     y_limits = ax.get_ylim3d()

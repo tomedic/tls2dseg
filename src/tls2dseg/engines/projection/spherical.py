@@ -27,7 +27,8 @@ Closest analog: ``tls2dseg.pc2img_utils`` (wraps lines 18-68, 71-112, 678-735).
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from tls2dseg.types import ProjectionResult
@@ -35,7 +36,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger("tls2dseg.engines.projection.spherical")
 
 
-def check_was_scanner_upsidedown(pcd: object, threshold_deg: float = 10) -> bool:
+def check_was_scanner_upsidedown(pcd: Any, threshold_deg: float = 10) -> bool:
     """Re-export: test whether the scanner was mounted upside-down.
 
     Reads the local-Z column of ``pcd.tmat_socs2prcs`` and returns True if
@@ -137,7 +138,7 @@ class SphericalProjectionEngine:
     def __init__(
         self,
         image_generation_parameters: dict,
-        pcd_path: object | None = None,
+        pcd_path: Path | None = None,
     ) -> None:
         # Store config only — no heavy imports here (D-A-05).
         self._params = image_generation_parameters

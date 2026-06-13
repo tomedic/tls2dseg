@@ -70,7 +70,7 @@ def resolve_class_names(class_names: list[str], valid_keys: list[str]) -> list[s
 
 
 # Create empty detections object for early terminations:
-def return_empty_detections():  # type: ignore[return]
+def return_empty_detections():
     """Return an empty supervision.Detections object (heavy import confined here)."""
     import supervision as sv  # tier_b only — supervision not in tier_a venv
 

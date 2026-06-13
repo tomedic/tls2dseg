@@ -85,7 +85,7 @@ jobs:
           pip install -e . --no-deps
       - name: Install Typer CLI runtime deps (Phase 3 CFG-05 — entry-point smoke needs these even under --no-deps)
         run: |
-          pip install "typer>=0.13" "pydantic-settings[yaml]>=2.14" "pydantic>=2.0" "rich-toolkit"
+          pip install "typer>=0.13" "pydantic-settings[yaml]>=2.14" "pydantic>=2.0" "rich-toolkit" numpy
       - name: Install dev extras parse-smoke (--no-deps, ruff/mypy/pytest metadata only)
         run: pip install ".[dev]" --no-deps
       - name: HYGN-07 — tls2dseg imports + has __version__

@@ -113,7 +113,7 @@ def build_projection_engine(name: str, *args: object, **kwargs: object) -> Proje
             "Add the engine to PROJECTION_ENGINES in engines/__init__.py."
         )
     cls = PROJECTION_ENGINES[name]
-    return cls(*args, **kwargs)  # type: ignore[return-value]
+    return cls(*args, **kwargs)
 
 
 def build_inference_engine(name: str, *args: object, **kwargs: object) -> InferenceEngine:
@@ -140,7 +140,7 @@ def build_inference_engine(name: str, *args: object, **kwargs: object) -> Infere
             "Add the engine to INFERENCE_ENGINES in engines/__init__.py."
         )
     cls = INFERENCE_ENGINES[name]
-    return cls(*args, **kwargs)  # type: ignore[return-value]
+    return cls(*args, **kwargs)
 
 
 def build_fusion_engine(name: str, *args: object, **kwargs: object) -> FusionEngine:
@@ -166,7 +166,7 @@ def build_fusion_engine(name: str, *args: object, **kwargs: object) -> FusionEng
             "Add the engine to FUSION_ENGINES in engines/__init__.py."
         )
     cls = FUSION_ENGINES[name]
-    return cls(*args, **kwargs)  # type: ignore[return-value]
+    return cls(*args, **kwargs)
 
 
 __all__ = [

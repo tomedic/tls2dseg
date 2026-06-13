@@ -22,11 +22,12 @@ from __future__ import annotations
 
 import dataclasses
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 
 if TYPE_CHECKING:
+    from tls2dseg.detections_3d import Detections3D
     from tls2dseg.types import FusionInput, FusionResult
 
 logger = logging.getLogger("tls2dseg.engines.fusion.graph")
@@ -72,7 +73,7 @@ class GraphClusterFusionEngine:
     outlier_detection_method: str = "negative_binomial"
     outlier_detection_threshold: float = 0.05
     # clustering
-    graph_clustering_method: str = "leiden"
+    graph_clustering_method: Literal["leiden", "hcs", "pcc"] = "leiden"
     min_supporters: int = 1
     leiden_resolution: float = 1.0
     small_cluster_removal_threshold: int = 2
@@ -196,20 +197,20 @@ class GraphClusterFusionEngine:
 
 
 def _filter_outlier_detections3d_edges_and_nodes(
-    d3d_collection: object,
+    d3d_collection: Detections3D,
     pairs: np.ndarray,
     edge_weights: np.ndarray,
     outliers: np.ndarray,
-) -> tuple[object, np.ndarray, np.ndarray]:
+) -> tuple[Detections3D, np.ndarray, np.ndarray]:
     """Remove outlier detections and any edges touching them.
 
     Engine-internal helper (moved from graph_clustering.py lines 295-341).
     Signature mirrors the original; re-implemented here to avoid importing
     the original graph_clustering module which still imports from the old paths.
     """
-    from tls2dseg.detections_3d import Detections3D, filter_detections3d
+    from tls2dseg.detections_3d import filter_detections3d
 
-    d3d: Detections3D = d3d_collection  # type: ignore[assignment]
+    d3d: Detections3D = d3d_collection
     N_old = int(d3d.pcd_ids.shape[0])
     outliers_arr = np.asarray(outliers, dtype=int)
 
