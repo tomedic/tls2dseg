@@ -44,6 +44,32 @@ from collections.abc import Mapping
 from typing import Any
 
 
+class DedupWarningsFilter(logging.Filter):
+    """Drop exact-duplicate WARNING+ records (same logger + level + message).
+
+    Dependencies (notably ``pchandler``) emit the same per-field WARNING on every
+    point-cloud load/operation — e.g. ``Scalar field `intensity` not converted to
+    float32`` repeated for each scalar field on each load — which floods ``run.log``.
+    This filter keeps the FIRST occurrence of each distinct WARNING/ERROR/CRITICAL
+    message and silently drops identical repeats. INFO/DEBUG records (progress lines
+    that legitimately repeat with differing text) are always passed through, so no
+    status output is lost. The seen-set lives for the process lifetime (one CLI run).
+    """
+
+    def __init__(self, name: str = "") -> None:
+        super().__init__(name)
+        self._seen: set[tuple[str, int, str]] = set()
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.levelno < logging.WARNING:
+            return True
+        key = (record.name, record.levelno, record.getMessage())
+        if key in self._seen:
+            return False
+        self._seen.add(key)
+        return True
+
+
 def bootstrap_logger(level: str = "INFO") -> None:
     """Phase 1 — pre-load ``basicConfig`` so config-loader output is captured.
 
@@ -114,6 +140,7 @@ def configure_logging(
             "stream": "ext://sys.stderr",
             "formatter": "detailed",
             "level": "DEBUG",
+            "filters": ["dedup_warnings"],
         }
     }
     handler_names: list[str] = ["console"]
@@ -126,6 +153,7 @@ def configure_logging(
             "level": "DEBUG",
             "mode": "a",
             "encoding": "utf-8",
+            "filters": ["dedup_warnings"],
         }
         handler_names.append("file")
 
@@ -152,6 +180,14 @@ def configure_logging(
             "detailed": {
                 "format": "[%(levelname)s|%(name)s|L%(lineno)d] %(asctime)s: %(message)s",
                 "datefmt": "%Y-%m-%dT%H:%M:%S%z",
+            },
+        },
+        "filters": {
+            # One shared instance attached to every handler (dictConfig instantiates
+            # named filters once) so the dedup seen-set is process-global, collapsing
+            # repeated dependency WARNINGs (e.g. pchandler float32 spam) across handlers.
+            "dedup_warnings": {
+                "()": "tls2dseg.runtime.logging_setup.DedupWarningsFilter",
             },
         },
         "handlers": handlers_cfg,
