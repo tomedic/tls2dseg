@@ -150,7 +150,13 @@ def test_warn_bary_knn_cpu_fallback_fires_exactly_once(
         ig._warn_bary_knn_cpu_fallback()
         ig._warn_bary_knn_cpu_fallback()  # second call must be silent
 
-    fallback_records = [r for r in caplog.records if "fallback" in r.message.lower()]
+    # Select the bary_knn CPU-fallback WARNING by a token that is actually IN the
+    # message (and consistent with the contract-token assertion below). The message
+    # describes the fallback as "cuml.neighbors unavailable — using sklearn ..." and
+    # never uses the literal word "fallback", so the old `"fallback" in message`
+    # filter selected 0 records once this test started actually running (it was
+    # previously skip-guarded on the pchandler import — CPU-01).
+    fallback_records = [r for r in caplog.records if "cuml.neighbors unavailable" in r.message.lower()]
     assert len(fallback_records) == 1, (
         f"expected exactly one fallback WARNING; got {len(fallback_records)} "
         f"(messages: {[r.message for r in fallback_records]!r}) — "
