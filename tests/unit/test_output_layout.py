@@ -3,7 +3,7 @@
 Phase 3 plan 04 (Task 3). Locks the runtime/output_layout.py public surface:
 
 * make_run_id: 'timestamp' shape vs 'timestamp_scanset' (D-A2-06).
-* create_run_dirs: idempotent mkdir of the four-subdir layout (D-A2-05).
+* create_run_dirs: idempotent mkdir of the three-subdir layout (D-A2-05).
 * write_provenance: always-write config.yaml + context.yaml (round-trip);
   best-effort git.txt + env.txt (D-A2-07).
 
@@ -83,7 +83,7 @@ def test_make_run_id_unknown_strategy_raises() -> None:
 
 @pytest.mark.tier_a
 def test_create_run_dirs_creates_full_layout(tmp_path: Path) -> None:
-    """All four subdirs land under run_dir per D-A2-05."""
+    """All three subdirs land under run_dir per D-A2-05."""
     run_dir = tmp_path / "run-id-x"
 
     create_run_dirs(run_dir)
@@ -91,7 +91,7 @@ def test_create_run_dirs_creates_full_layout(tmp_path: Path) -> None:
     assert (run_dir / "run_info").is_dir()
     assert (run_dir / "intermediate" / "stage_1_partial").is_dir()
     assert (run_dir / "results").is_dir()
-    assert (run_dir / "logs").is_dir()
+    assert not (run_dir / "logs").exists()
 
 
 @pytest.mark.tier_a

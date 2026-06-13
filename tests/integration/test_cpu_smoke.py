@@ -169,7 +169,7 @@ def test_cpu_smoke_runs_to_stage1_completion(
     assert ctx.run_info_dir.is_dir()
     assert ctx.stage1_dir.is_dir()
     assert ctx.results_dir.is_dir()
-    assert ctx.logs_dir.is_dir()
+    assert not (ctx.run_dir / "logs").exists()
 
 
 def test_cpu_smoke_warning_fires_exactly_once(

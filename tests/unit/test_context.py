@@ -2,7 +2,7 @@
 
 Phase 3 plan 04 (Task 3). Locks the runtime/context.py public surface:
 
-* RunContext is a frozen dataclass with 17 fields per CONTEXT.md D-A2-03.
+* RunContext is a frozen dataclass with 16 fields per CONTEXT.md D-A2-03.
 * build_context creates the per-run dir tree per D-A2-05.
 * build_context wires class_id_map from cfg.prompt.text per pipeline/run.py:278-280.
 * build_context honors run_id override (--run-id CLI flag per D-A3-02).
@@ -76,7 +76,7 @@ def test_runcontext_is_frozen_dataclass() -> None:
 
 @pytest.mark.tier_a
 def test_runcontext_has_d_a2_03_fields() -> None:
-    """RunContext field set matches D-A2-03 exactly — 17 fields, no more, no less."""
+    """RunContext field set matches D-A2-03 exactly — 16 fields, no more, no less."""
     field_names = {f.name for f in dataclasses.fields(RunContext)}
     expected = {
         "run_id",
@@ -84,7 +84,6 @@ def test_runcontext_has_d_a2_03_fields() -> None:
         "run_info_dir",
         "stage1_dir",
         "results_dir",
-        "logs_dir",
         "device",
         "capability",
         "n_workers",
@@ -96,8 +95,8 @@ def test_runcontext_has_d_a2_03_fields() -> None:
         "git_dirty",
         "per_class_metadata",
     }
-    # 16 in the set above + per_class_metadata's default factory =
-    # the "17 fields per D-A2-03" headline. The set comparison rejects
+    # 15 in the set above + per_class_metadata's default factory =
+    # the "16 fields per D-A2-03" headline. The set comparison rejects
     # both missing fields and silent additions (e.g. someone smuggling
     # a Phase 6 ClassMetadata field in before the MZ-05 sequencing).
     assert field_names == expected, (
@@ -127,7 +126,7 @@ def test_per_class_metadata_annotation_is_dict_str_any() -> None:
 
 @pytest.mark.tier_a
 def test_build_context_creates_d_a2_05_layout(tmp_path: Path, minimal_runconfig_yaml: str) -> None:
-    """build_context creates run_info/, intermediate/stage_1_partial/, results/, logs/.
+    """build_context creates run_info/, intermediate/stage_1_partial/, results/.
 
     Locks D-A2-05 — the per-run output dir layout the user requested in
     Phase 2 as a carry-over feature.
@@ -136,19 +135,18 @@ def test_build_context_creates_d_a2_05_layout(tmp_path: Path, minimal_runconfig_
 
     ctx = build_context(cfg, _runtime_no_cuda())
 
-    # Run dir + four subdirs all exist after build_context returns.
+    # Run dir + three subdirs all exist after build_context returns.
     assert ctx.run_dir.is_dir()
     assert ctx.run_info_dir.is_dir()
     assert ctx.stage1_dir.is_dir()
     assert ctx.results_dir.is_dir()
-    assert ctx.logs_dir.is_dir()
 
     # Layout matches D-A2-05 verbatim.
     assert ctx.run_dir.parent == tmp_path
     assert ctx.run_info_dir == ctx.run_dir / "run_info"
     assert ctx.stage1_dir == ctx.run_dir / "intermediate" / "stage_1_partial"
     assert ctx.results_dir == ctx.run_dir / "results"
-    assert ctx.logs_dir == ctx.run_dir / "logs"
+    assert not (ctx.run_dir / "logs").exists()
 
 
 @pytest.mark.tier_a
