@@ -9,8 +9,12 @@ These tests are explicitly ``tier_a``: no pchandler/pc2img/torch imports.
 
 from __future__ import annotations
 
+import pathlib
+import re
+
 import pytest
 
+import tls2dseg.config.text as _config_text
 from tls2dseg.config.models import PromptConfig
 from tls2dseg.config.text import split_class_keys
 from tls2dseg.runtime.context import _derive_class_id_map
@@ -65,3 +69,22 @@ def test_promptconfig_all_empty_raises(raw: str) -> None:
     """An all-empty prompt still raises ValueError('prompt.text must be non-empty')."""
     with pytest.raises(ValueError, match="must be non-empty"):
         PromptConfig(text=raw)
+
+
+@pytest.mark.tier_a
+def test_no_bare_prompt_split_in_source() -> None:
+    """Every prompt class-key split must route through split_class_keys.
+
+    A bare ``text_prompt.split(".")`` desyncs id-map keys (stripped here) from
+    class names produced elsewhere — the producer/consumer split must share one
+    helper. Reads source by path so no heavy engine modules get imported.
+    """
+    src_root = pathlib.Path(_config_text.__file__).resolve().parent.parent
+    bare_split = re.compile(r"\b(?:text_prompt|prompt_text)\.split\(")
+    offenders = [
+        f"{path.relative_to(src_root)}:{i}"
+        for path in src_root.rglob("*.py")
+        for i, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1)
+        if bare_split.search(line)
+    ]
+    assert not offenders, "prompt split bypasses split_class_keys at: " + ", ".join(offenders)

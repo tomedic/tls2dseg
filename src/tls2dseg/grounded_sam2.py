@@ -18,6 +18,7 @@ from sam2.sam2_image_predictor import SAM2ImagePredictor
 from supervision.draw.color import ColorPalette
 from transformers import AutoModelForZeroShotObjectDetection, AutoProcessor
 
+from tls2dseg.config.text import split_class_keys
 from tls2dseg.engines.inference.shared import (
     convert_masks_to_sparse_masks,
     img_1to3_channels_encoding,
@@ -330,8 +331,8 @@ def run_grounded_sam2_with_sahi(
     logger.info("Inference completed")
 
     # Get class_ids relative to the original text_prompt and corresponding to class_names
-    keys = text_prompt.split(".")  # → ['house','window','bicycle','door','grass','leaf']
-    class_id_map = {k: i + 1 for i, k in enumerate(keys)}  # → {'house':1, 'window':2, ..., 'leaf':6}
+    keys = split_class_keys(text_prompt)
+    class_id_map = {k: i + 1 for i, k in enumerate(keys)}
     inverted_map = {v: k for k, v in class_id_map.items()}
 
     # Set main output variables
