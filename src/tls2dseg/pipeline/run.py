@@ -236,7 +236,7 @@ def main(cfg: RunConfig, ctx: RunContext) -> None:
         # inference_models_parameters and expect those dirs to exist on disk.
         # make_output_folders creates them and registers the keys. Imported lazily —
         # utils_main pulls pchandler, which must stay out of the tier_a import path.
-        # stage1_output_dir is then overridden to the canonical ctx.stage1_dir
+        # stage1_output_dir is set at run.py:244 to ctx.stage1_dir
         # (build_context owns the stage-1 directory).
         from tls2dseg.utils_main import make_output_folders
 
@@ -602,4 +602,4 @@ def main(cfg: RunConfig, ctx: RunContext) -> None:
         color_pcd_instances_by_random(pcd_merged)
 
     # Save point cloud with final results
-    save_segmented_pcd(data_folder_path, output_dir_pathlib, pcd_merged, class_id_map)
+    save_segmented_pcd(data_folder_path, ctx.results_dir, pcd_merged, class_id_map)

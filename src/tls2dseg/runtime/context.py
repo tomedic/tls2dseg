@@ -13,7 +13,7 @@ The two have **different** frozen-mutation exception types:
 This is the CFG-04 lock-in proof (RESEARCH.md Pitfall 4). A silent migration
 of ``RunContext`` to pydantic would break the contract immediately.
 
-Field set per CONTEXT.md D-A2-03 (17 fields, ordered: identity → paths → device
+Field set per CONTEXT.md D-A2-03 (16 fields, ordered: identity → paths → device
 → capability → policy → maps → timing → git provenance → Phase 6 slot).
 
 Closest in-package analog: ``tls2dseg.runtime.capability.Runtime`` (plan 02)
@@ -44,7 +44,7 @@ logger = logging.getLogger("tls2dseg.runtime.context")
 class RunContext:
     """Frozen per-run runtime snapshot — resolved at process start.
 
-    Fields per CONTEXT.md D-A2-03 (17 fields). Construct via :func:`build_context`
+    Fields per CONTEXT.md D-A2-03 (16 fields). Construct via :func:`build_context`
     — direct construction is technically possible but bypasses run-dir creation
     and class_id_map derivation.
 
@@ -60,7 +60,6 @@ class RunContext:
     run_info_dir: Path
     stage1_dir: Path
     results_dir: Path
-    logs_dir: Path
     # ── device + capability snapshot ───────────────────────────────────────
     device: Literal["cpu", "cuda"]
     capability: Runtime
@@ -170,8 +169,8 @@ def build_context(
 
     Side-effects:
     1. Creates the per-run output dir tree at ``cfg.io.output_dir / run_id``
-       (run_info/, intermediate/stage_1_partial/, results/, logs/) — atomic
-       in the sense that all four mkdirs are issued before this function
+       (run_info/, intermediate/stage_1_partial/, results/) — atomic
+       in the sense that all three mkdirs are issued before this function
        returns; idempotent (``exist_ok=True``).
     2. Probes git via subprocess for sha + dirty status (best-effort).
 
@@ -201,7 +200,6 @@ def build_context(
     run_info_dir = run_dir / "run_info"
     stage1_dir = run_dir / "intermediate" / "stage_1_partial"
     results_dir = run_dir / "results"
-    logs_dir = run_dir / "logs"
 
     # Atomic-ish: all mkdirs happen before we return. mkdir is the trust
     # boundary for cfg.io.output_dir (T-03-path-validate); pydantic already
@@ -220,7 +218,6 @@ def build_context(
         run_info_dir=run_info_dir,
         stage1_dir=stage1_dir,
         results_dir=results_dir,
-        logs_dir=logs_dir,
         device=device,
         capability=runtime,
         n_workers=cfg.runtime.n_workers,

@@ -152,7 +152,7 @@ def run_cmd(
 
     # ── PHASE 2 logging: dictConfig with per_package overrides + optional file
     # handler. dictConfig replaces basicConfig handlers cleanly (RESEARCH §Pattern 8).
-    # log_file is finalized AFTER build_context once ctx.logs_dir exists.
+    # log_file is finalized AFTER build_context once ctx.run_info_dir exists.
     configure_logging(level=log_level, per_package=cfg.logging.per_package)
 
     # Build runtime + context.
@@ -162,9 +162,9 @@ def run_cmd(
     runtime = probe_all()
     ctx = build_context(cfg, runtime, run_id=run_id)
 
-    # Re-configure logging once we know ctx.logs_dir — wires the file handler.
+    # Re-configure logging once we know ctx.run_info_dir — wires the file handler.
     if cfg.logging.log_to_file:
-        log_file = str(ctx.logs_dir / "run.log")
+        log_file = str(ctx.run_info_dir / "run.log")
         configure_logging(level=log_level, per_package=cfg.logging.per_package, log_file=log_file)
 
     write_provenance(ctx, cfg)

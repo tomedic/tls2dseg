@@ -7,11 +7,10 @@ provenance contract. Closes the user's Phase 2 carry-over feature request
 Layout per D-A2-05::
 
     {cfg.io.output_dir}/{run_id}/
-        run_info/                 # config.yaml, context.yaml, git.txt, env.txt
+        run_info/                 # config.yaml, context.yaml, git.txt, env.txt, run.log
         intermediate/
             stage_1_partial/      # stage-1 per-scan partials (resumability)
         results/                  # final segmented point clouds
-        logs/                     # run.log (when cfg.logging.log_to_file)
 
 Provenance under ``run_info/`` per D-A2-07:
 
@@ -106,9 +105,9 @@ def make_run_id(strategy: str, input_path: Path) -> str:
 
 
 def create_run_dirs(run_dir: Path) -> None:
-    """mkdir the four-subdir layout per D-A2-05. Idempotent.
+    """mkdir the three-subdir layout per D-A2-05. Idempotent.
 
-    Issues four ``mkdir(parents=True, exist_ok=True)`` calls — one per
+    Issues three ``mkdir(parents=True, exist_ok=True)`` calls — one per
     subdir. Pattern matches pipeline/run.py:244-248 (existing stage-1
     partial dir creation), kept here for the full set so consumers don't
     each re-derive the layout.
@@ -117,7 +116,6 @@ def create_run_dirs(run_dir: Path) -> None:
     (run_dir / "run_info").mkdir(parents=True, exist_ok=True)
     (run_dir / "intermediate" / "stage_1_partial").mkdir(parents=True, exist_ok=True)
     (run_dir / "results").mkdir(parents=True, exist_ok=True)
-    (run_dir / "logs").mkdir(parents=True, exist_ok=True)
 
 
 def _serialize_for_yaml(obj: Any) -> Any:

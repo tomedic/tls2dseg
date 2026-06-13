@@ -121,7 +121,7 @@ def configure_logging(
         pipeline/run.py:21.
     log_file
         Optional path for a FileHandler attached to the ``tls2dseg`` logger.
-        ``cli.run_cmd`` sets this from ``ctx.logs_dir / 'run.log'`` when
+        ``cli.run_cmd`` sets this from ``ctx.run_info_dir / 'run.log'`` when
         ``cfg.logging.log_to_file`` is True. None → console-only.
 
     Notes
