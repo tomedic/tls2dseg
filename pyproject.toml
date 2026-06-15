@@ -145,6 +145,10 @@ ignore = []
 # E402 mirrors the warning-filter-before-import pattern; SIM210/E501/RUF059 are
 # pre-existing legacy patterns.
 "src/tls2dseg/pipeline/run.py" = ["E402", "SIM210", "E501", "RUF059"]
+# stage1/stage2: np.seterr + warnings.filterwarnings must run before torch/pchandler
+# imports that emit the suppressed messages (same pattern as run.py / detections_3d.py).
+"src/tls2dseg/pipeline/stage1.py" = ["E402"]
+"src/tls2dseg/pipeline/stage2.py" = ["E402"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["tls2dseg"]
