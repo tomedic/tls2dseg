@@ -1,13 +1,13 @@
 {
-  "_comment": "Placeholder values — fill from first plan-04 smoke run (FakeInferenceEngine n_detections=1, 2 scans x 2 features)",
+  "_comment": "FakeInferenceEngine(n_detections=1), 2 scans x 2 features. instance_count/bbox_count = sum of pcd_ids lengths across d3d_collection entries.",
   "single_view": {
-    "instance_count": 0,
-    "bbox_count": 0,
-    "class_id_histogram": {}
+    "instance_count": 2,
+    "bbox_count": 2,
+    "class_id_histogram": {"1": 2}
   },
   "multi_view": {
-    "instance_count": 0,
-    "bbox_count": 0,
-    "class_id_histogram": {}
+    "instance_count": 1,
+    "bbox_count": 2,
+    "class_id_histogram": {"1": 2}
   }
 }
