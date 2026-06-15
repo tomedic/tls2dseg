@@ -29,7 +29,7 @@ def _restore_logging_state() -> Generator[None, None, None]:
     Critical: prior tests may run ``configure_logging`` which sets
     ``propagate=False`` on the ``tls2dseg`` logger. Without restoring
     propagate, caplog (which uses root propagation) silently loses records
-    from ``tls2dseg.pipeline.run`` etc.
+    from ``tls2dseg.pipeline.pipeline`` etc.
     """
     root = logging.getLogger()
     saved_handlers = list(root.handlers)
@@ -37,7 +37,7 @@ def _restore_logging_state() -> Generator[None, None, None]:
     names = (
         "tls2dseg",
         "tls2dseg.pipeline",
-        "tls2dseg.pipeline.run",
+        "tls2dseg.pipeline.pipeline",
         "tls2dseg.runtime",
         "tls2dseg.runtime.context",
         "tls2dseg.config",
@@ -77,12 +77,12 @@ def test_single_view_warning_fires_once(caplog: pytest.LogCaptureFixture) -> Non
     cache-based gate works. caplog's root handler captures the record via
     propagation (tls2dseg.pipeline.run has propagate=True by default).
     """
-    from tls2dseg.pipeline.run import _warn_single_view_dispatch_pending
+    from tls2dseg.pipeline.pipeline import _warn_single_view_dispatch_pending
 
     # Reset cache so the test isn't piggybacking on a prior invocation.
     _warn_single_view_dispatch_pending.cache_clear()
 
-    with caplog.at_level(logging.WARNING, logger="tls2dseg.pipeline.run"):
+    with caplog.at_level(logging.WARNING, logger="tls2dseg.pipeline.pipeline"):
         _warn_single_view_dispatch_pending()
         _warn_single_view_dispatch_pending()
         _warn_single_view_dispatch_pending()
@@ -102,11 +102,11 @@ def test_single_view_warning_text_matches_d_a1_06_verbatim(caplog: pytest.LogCap
     Locks the message format so future refactors don't accidentally rephrase
     the user-facing warning.
     """
-    from tls2dseg.pipeline.run import _warn_single_view_dispatch_pending
+    from tls2dseg.pipeline.pipeline import _warn_single_view_dispatch_pending
 
     _warn_single_view_dispatch_pending.cache_clear()
 
-    with caplog.at_level(logging.WARNING, logger="tls2dseg.pipeline.run"):
+    with caplog.at_level(logging.WARNING, logger="tls2dseg.pipeline.pipeline"):
         _warn_single_view_dispatch_pending()
 
     msgs = [r.message for r in caplog.records]

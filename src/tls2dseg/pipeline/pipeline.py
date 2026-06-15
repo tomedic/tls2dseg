@@ -7,6 +7,7 @@ pc2img, sam2) live inside __init__ and stage method bodies, never at module leve
 from __future__ import annotations
 
 import logging
+from functools import cache
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -18,6 +19,19 @@ if TYPE_CHECKING:
     from tls2dseg.types import InferenceRequest
 
 logger = logging.getLogger("tls2dseg.pipeline.pipeline")
+
+
+@cache
+def _warn_single_view_dispatch_pending() -> None:
+    """Fire exactly one WARNING per process when mode=single-view is requested.
+
+    Preserved from the Phase-3 interim shim (previously in pipeline/run.py).
+    Wrapped in functools.cache — fires at most once per process.
+    """
+    logger.warning(
+        "mode=single-view captured but Phase 3 still runs full pipeline; "
+        "per-mode dispatch lands in Phase 5 ORC-02. (Once per process.)"
+    )
 
 
 class Pipeline:

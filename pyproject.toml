@@ -141,10 +141,6 @@ ignore = []
 # detections_3d.py calls warnings.filterwarnings() / logging.setLevel() before the
 # imports that emit the suppressed messages; the filter must execute first.
 "src/tls2dseg/detections_3d.py" = ["E402"]
-# pipeline/run.py — relocated legacy entry-point; lenient until it gets rewritten.
-# E402 mirrors the warning-filter-before-import pattern; SIM210/E501/RUF059 are
-# pre-existing legacy patterns.
-"src/tls2dseg/pipeline/run.py" = ["E402", "SIM210", "E501", "RUF059"]
 # stage1/stage2: np.seterr + warnings.filterwarnings must run before torch/pchandler
 # imports that emit the suppressed messages (same pattern as run.py / detections_3d.py).
 "src/tls2dseg/pipeline/stage1.py" = ["E402"]
@@ -182,10 +178,9 @@ check_untyped_defs = false
 exclude = []
 
 # Per-module strictness ratchet. `tls2dseg.pipeline` (no wildcard) matches only
-# `pipeline/__init__.py`; `tls2dseg.pipeline.run` is intentionally NOT in the
-# strict-override list so relocated legacy code stays lenient.
+# `pipeline/__init__.py`; pipeline.pipeline/stage1/stage2 are also held strict.
 [[tool.mypy.overrides]]
-module = ["tls2dseg.cli", "tls2dseg.diagnostics", "tls2dseg.types", "tls2dseg.pipeline", "tls2dseg.pipeline.stage1", "tls2dseg.pipeline.stage2", "tls2dseg.preprocessing.nms_combine"]
+module = ["tls2dseg.cli", "tls2dseg.diagnostics", "tls2dseg.types", "tls2dseg.pipeline", "tls2dseg.pipeline.pipeline", "tls2dseg.pipeline.stage1", "tls2dseg.pipeline.stage2", "tls2dseg.preprocessing.nms_combine"]
 disallow_untyped_defs = true
 disallow_incomplete_defs = true
 warn_return_any = true
@@ -197,20 +192,6 @@ module = ["tls2dseg.config.*", "tls2dseg.runtime.*"]
 disallow_untyped_defs = true
 disallow_incomplete_defs = true
 warn_return_any = true
-
-# Phase 3 UAT defect 5 closure (plan 03-10):
-# pipeline/run.py is relocated legacy code (D-04, see lines 177-179 above) that
-# Phase 4 will rewrite as part of engine extraction + pure-function refactor
-# (ROADMAP Phase 4). Until that rewrite ships, fully exclude this module from
-# mypy. The ~13 call-site mismatches with pchandler.get_edge_weights /
-# graph_clustering / detect_upper_tail_outliers cannot be cleanly annotated from
-# the tls2dseg side without adding type stubs INSIDE pchandler / pc2img — and
-# the dep-repo scope guard (CLAUDE.md §"Dep-repo scope") forbids that. Revisit
-# when Phase 4 replaces this code; this override can be removed wholesale at
-# that time.
-[[tool.mypy.overrides]]
-module = ["tls2dseg.pipeline.run"]
-ignore_errors = true
 
 # ----------------------------------------------------------------------------
 # Pytest — test runner config

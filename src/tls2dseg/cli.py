@@ -178,9 +178,9 @@ def run_cmd(
         raise typer.Exit(code=0)
 
     # Dispatch the pipeline.
-    from tls2dseg.pipeline.run import main as pipeline_main
+    from tls2dseg.pipeline.pipeline import Pipeline
 
-    pipeline_main(cfg, ctx)
+    Pipeline(cfg, ctx).run()
 
 
 @app.command(name="validate-config")
