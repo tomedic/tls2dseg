@@ -1,0 +1,13 @@
+{
+  "_comment": "Placeholder values — fill from first plan-04 smoke run (FakeInferenceEngine n_detections=1, 2 scans x 2 features)",
+  "single_view": {
+    "instance_count": 0,
+    "bbox_count": 0,
+    "class_id_histogram": {}
+  },
+  "multi_view": {
+    "instance_count": 0,
+    "bbox_count": 0,
+    "class_id_histogram": {}
+  }
+}

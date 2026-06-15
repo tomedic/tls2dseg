@@ -181,7 +181,7 @@ exclude = []
 # `pipeline/__init__.py`; `tls2dseg.pipeline.run` is intentionally NOT in the
 # strict-override list so relocated legacy code stays lenient.
 [[tool.mypy.overrides]]
-module = ["tls2dseg.cli", "tls2dseg.diagnostics", "tls2dseg.types", "tls2dseg.pipeline"]
+module = ["tls2dseg.cli", "tls2dseg.diagnostics", "tls2dseg.types", "tls2dseg.pipeline", "tls2dseg.preprocessing.nms_combine"]
 disallow_untyped_defs = true
 disallow_incomplete_defs = true
 warn_return_any = true
