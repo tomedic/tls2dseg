@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import dataclasses
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
@@ -30,7 +30,7 @@ logger = logging.getLogger("tls2dseg.pipeline.stage1")
 class Stage1Result:
     """Container for stage-1 outputs passed to stage-2 or returned to the caller."""
 
-    pcd_collection: object
+    pcd_collection: Any
     d3d_collection: list
     n_scans: int
 
@@ -170,7 +170,7 @@ def run_stage1(
         projection_results = projection_engine.project(
             pcd_i,
             features=features,
-            resolution=(0, cfg.projection.image_width),
+            resolution=(0, 0),
         )
 
         # subsample + global-shift after projection (project() may mutate pcd_i in-place)
@@ -190,7 +190,7 @@ def run_stage1(
         for j, projection_result in enumerate(projection_results):
             pcd_ij_id = pcd_ij_id_base + j + 1
             image_j_numpy = projection_result.image
-            image_j_tuple = (projection_result.feature_name, image_j_numpy)
+            image_j_tuple = (projection_result.feature_name, image_j_numpy, projection_result.path)
 
             logger.info(
                 "Inference — scan %d/%d feature %s",
