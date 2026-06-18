@@ -9,7 +9,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from tls2dseg.preprocessing.nms_combine import nms_combine_detections
+from tls2dseg.preprocessing.nms_combine import _greedy_nms_indices, nms_combine_detections
 from tls2dseg.types import Detections2D
 
 
@@ -78,3 +78,61 @@ def test_nms_combine_unknown_strategy_raises() -> None:
 
     with pytest.raises(ValueError):
         nms_combine_detections([d1], iou_threshold=0.80, overlap_filter_strategy="greedymmm")
+
+
+@pytest.mark.tier_a
+def test_nms_combine_class_aware_keeps_different_classes() -> None:
+    """class_agnostic=False: two heavily overlapping boxes of different classes both survive.
+
+    Numpy path only (no supervision). Exercises the class-aware gate in
+    _greedy_nms_indices (WR-01 fix).
+    """
+    # Two nearly-identical boxes, different classes
+    boxes = np.array([[0.0, 0.0, 10.0, 10.0], [0.1, 0.1, 10.1, 10.1]], dtype=np.float32)
+    confs = np.array([0.9, 0.8], dtype=np.float32)
+    class_ids = np.array([1, 2], dtype=np.int32)
+
+    kept = _greedy_nms_indices(boxes, confs, class_ids, iou_threshold=0.50, class_agnostic=False)
+
+    assert len(kept) == 2, f"Both different-class boxes should survive class-aware NMS, got {kept}"
+
+
+@pytest.mark.tier_a
+def test_nms_combine_class_agnostic_suppresses_different_classes() -> None:
+    """class_agnostic=True: lower-confidence box suppressed even across classes.
+
+    Numpy path only (no supervision). Exercises the class-agnostic path in
+    _greedy_nms_indices.
+    """
+    boxes = np.array([[0.0, 0.0, 10.0, 10.0], [0.1, 0.1, 10.1, 10.1]], dtype=np.float32)
+    confs = np.array([0.9, 0.8], dtype=np.float32)
+    class_ids = np.array([1, 2], dtype=np.int32)
+
+    kept = _greedy_nms_indices(boxes, confs, class_ids, iou_threshold=0.50, class_agnostic=True)
+
+    assert len(kept) == 1, f"class-agnostic NMS should suppress the lower-confidence box, got {kept}"
+    assert 0 in kept, "Highest-confidence box (index 0) should be the survivor"
+
+
+@pytest.mark.tier_a
+def test_nms_combine_api_class_agnostic_flag_propagates() -> None:
+    """nms_combine_detections forwards class_agnostic to the numpy path correctly.
+
+    Two overlapping boxes with different class_ids:
+    - class_agnostic=False  → both kept
+    - class_agnostic=True   → only highest-confidence survives
+    """
+    box_a = [0.0, 0.0, 10.0, 10.0]
+    box_b = [0.1, 0.1, 10.1, 10.1]
+    d1 = _make_d2d(box_a, class_id=1, confidence=0.9)
+    d2 = _make_d2d(box_b, class_id=2, confidence=0.8)
+
+    result_aware = nms_combine_detections(
+        [d1, d2], iou_threshold=0.50, overlap_filter_strategy="nms", class_agnostic=False
+    )
+    result_agnostic = nms_combine_detections(
+        [d1, d2], iou_threshold=0.50, overlap_filter_strategy="nms", class_agnostic=True
+    )
+
+    assert len(result_aware.input_boxes) == 2, "Class-aware: different-class overlap should keep both"
+    assert len(result_agnostic.input_boxes) == 1, "Class-agnostic: should suppress lower-confidence"
