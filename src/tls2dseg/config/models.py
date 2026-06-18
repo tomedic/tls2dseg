@@ -248,12 +248,14 @@ class ProjectionConfig(BaseModel):
         description="Projection engine discriminator (Phase 4 ENG-* expansion slot).",
     )
     # tag: other
-    image_width: int | float | Literal["scan_resolution"] = Field(
+    image_width: int | str = Field(
         "scan_resolution",
         json_schema_extra={"tag": "other"},
         description=(
-            "Image width in pixels (int), fraction of scan resolution (float in (0,1]), "
-            "or 'scan_resolution' (literal — match scanner native angular increment)."
+            "Image width in pixels (int), a fractional string of the form "
+            "'<frac>-scan_resolution' (e.g. '0.5-scan_resolution'), "
+            "or 'scan_resolution' (match scanner native angular increment). "
+            "Bare floats are rejected — use the string form for fractions."
         ),
     )
     # tag: other
@@ -288,27 +290,40 @@ class ProjectionConfig(BaseModel):
     def _coerce_image_width(cls, v: object) -> object:
         """Dispatch value-type union for image_width (RESEARCH.md Pattern 6).
 
-        YAML may deliver numeric values as either int/float or numeric strings
-        (e.g. ``"800"``). The string sentinel ``"scan_resolution"`` must take
-        precedence over numeric coercion of arbitrary strings.
+        Accepted: int pixel width, 'scan_resolution', '<frac>-scan_resolution'
+        (e.g. '0.5-scan_resolution'), or a numeric string that converts to int.
+        Bare floats are rejected — use '<frac>-scan_resolution' for fractions.
         """
+        import re
+
+        _ERR = (
+            "image_width must be int (pixels), 'scan_resolution', or "
+            "'<frac>-scan_resolution' (e.g. '0.5-scan_resolution'). Got: {v!r}"
+        )
         if isinstance(v, bool):
-            # bool is a subclass of int — reject explicitly so True/False don't pass as 1/0.
+            raise ValueError(_ERR.format(v=v))
+        if isinstance(v, float):
             raise ValueError(
-                f"image_width must be int (pixels), float in (0,1] (fraction), or 'scan_resolution'. Got bool: {v!r}"
+                f"image_width does not accept bare floats. "
+                f"Use '<frac>-scan_resolution' (e.g. '{v}-scan_resolution') instead. Got: {v!r}"
             )
         if isinstance(v, str):
-            if v == "scan_resolution":
+            s = v.strip().lower()
+            if s == "scan_resolution":
                 return v
-            # Numeric string — try int first, then float.
+            if re.match(r"^[\d.]+[\s-]+scan_resolution$", s):
+                return v
+            # Numeric string — coerce to int only (no bare-float coercion).
             try:
                 f = float(v)
+                if f != int(f):
+                    raise ValueError(
+                        f"image_width string '{v}' converts to a non-integer float. "
+                        f"Use '{f}-scan_resolution' for a fractional width."
+                    )
+                return int(f)
             except ValueError as exc:
-                raise ValueError(
-                    f"image_width must be int (pixels), float in (0,1] (fraction), "
-                    f"or 'scan_resolution'. Got string: {v!r}"
-                ) from exc
-            return int(f) if f == int(f) else f
+                raise ValueError(_ERR.format(v=v)) from exc
         return v
 
     @field_validator("scan_resolution", mode="after")
