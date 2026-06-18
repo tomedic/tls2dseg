@@ -201,8 +201,8 @@ class GroundedSAM2Engine:
             "overlap_width_height": request.overlap_width_height,
             "iou_threshold": request.iou_threshold,
             "overlap_filter_strategy": request.overlap_filter_strategy,
-            "empty_slice_removal_threshold": 0.95,  # default
-            "thread_workers": 1,
+            "empty_slice_removal_threshold": request.empty_slice_removal_threshold,
+            "thread_workers": request.thread_workers,
         }
 
         text_prompt = request.text_prompt
@@ -227,7 +227,7 @@ class GroundedSAM2Engine:
                 overlap_ratio_wh=None,
                 iou_threshold=request.iou_threshold,
                 overlap_filter=filter_strategy,
-                thread_workers=1,
+                thread_workers=request.thread_workers,
             )
             detections = slicer(image)
 

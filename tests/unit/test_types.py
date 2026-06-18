@@ -100,6 +100,8 @@ def test_inference_request_is_frozen_dataclass() -> None:
         overlap_filter_strategy="nms",
         large_object_removal_threshold=0.30,
         partial_detection_edge_touching_threshold=5,
+        thread_workers=4,
+        empty_slice_removal_threshold=0.95,
     )
     with pytest.raises(dataclasses.FrozenInstanceError):
         req.text_prompt = "changed"  # type: ignore[misc]
@@ -121,6 +123,8 @@ def test_inference_request_field_set() -> None:
         "overlap_filter_strategy",
         "large_object_removal_threshold",
         "partial_detection_edge_touching_threshold",
+        "thread_workers",
+        "empty_slice_removal_threshold",
     }
     actual_fields = {f.name for f in dataclasses.fields(InferenceRequest)}
     assert actual_fields == expected_fields, (

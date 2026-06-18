@@ -90,6 +90,8 @@ def test_fake_engine_detect_returns_detections2d(
         overlap_filter_strategy="nms",
         large_object_removal_threshold=0.30,
         partial_detection_edge_touching_threshold=5,
+        thread_workers=4,
+        empty_slice_removal_threshold=0.95,
     )
 
     detections_2d = engine.detect(image, request=request)
@@ -129,6 +131,8 @@ def test_dispatch_does_not_import_torch_or_sam2(
         overlap_filter_strategy="nms",
         large_object_removal_threshold=0.30,
         partial_detection_edge_touching_threshold=5,
+        thread_workers=4,
+        empty_slice_removal_threshold=0.95,
     )
     engine.detect(image, request=request)
 

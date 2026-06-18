@@ -102,6 +102,8 @@ def _make_inference_request() -> object:
         overlap_filter_strategy="nms",
         large_object_removal_threshold=0.8,
         partial_detection_edge_touching_threshold=10,
+        thread_workers=4,
+        empty_slice_removal_threshold=0.95,
     )
 
 

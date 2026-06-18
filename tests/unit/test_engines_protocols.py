@@ -87,6 +87,8 @@ def test_fake_inference_engine_conforms_to_protocol() -> None:
         overlap_filter_strategy="nms",
         large_object_removal_threshold=0.30,
         partial_detection_edge_touching_threshold=5,
+        thread_workers=4,
+        empty_slice_removal_threshold=0.95,
     )
 
     # Call detect() and assert concrete return type (Pitfall 3)

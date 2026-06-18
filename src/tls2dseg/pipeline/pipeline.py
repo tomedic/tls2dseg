@@ -86,6 +86,8 @@ class Pipeline:
             overlap_filter_strategy=cfg.inference.slicing.overlap_filter_strategy,
             large_object_removal_threshold=cfg.inference.large_object_removal_threshold,
             partial_detection_edge_touching_threshold=cfg.inference.partial_detection_edge_touching_threshold,
+            thread_workers=cfg.runtime.n_workers,
+            empty_slice_removal_threshold=cfg.inference.slicing.empty_slice_removal_threshold,
         )
 
         image_generation_parameters: dict = {

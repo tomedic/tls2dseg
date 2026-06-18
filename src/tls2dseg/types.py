@@ -96,6 +96,10 @@ class InferenceRequest:
 
     ``slots=True`` for performance — ``InferenceRequest`` is constructed
     once per ``detect()`` call (potentially N * scan-count per run).
+
+    ``thread_workers`` is sourced from ``runtime.n_workers`` (no separate
+    YAML field); ``empty_slice_removal_threshold`` is sourced from
+    ``inference.slicing.empty_slice_removal_threshold``.
     """
 
     text_prompt: str
@@ -108,6 +112,8 @@ class InferenceRequest:
     overlap_filter_strategy: str
     large_object_removal_threshold: float
     partial_detection_edge_touching_threshold: int
+    thread_workers: int
+    empty_slice_removal_threshold: float
 
 
 @dataclasses.dataclass
