@@ -137,17 +137,22 @@ def run_stage1(
         have_processed_all = len(pcd_map) == n_scans * n_features and len(d3d_map) == n_scans * n_features
     checkpoint_enabled = cfg.io.resume_from_checkpoint
 
-    pcd_collection = SegPCDCollection(raw_pcd_paths=pcd_file_paths, features=features, class_id_map=class_id_map)
+    sv_slots = 1 if cfg.mode == "single-view" else None
+    pcd_collection = SegPCDCollection(
+        raw_pcd_paths=pcd_file_paths, features=features, class_id_map=class_id_map, slots_per_scan=sv_slots
+    )
     d3d_collection: list = []
 
     if checkpoint_enabled and have_processed_all:
         for pcd_i_id in range(1, n_scans + 1):
             if cfg.mode == "single-view":
                 scan_expected_ids = [(pcd_i_id - 1) * n_features + 1]
+                slot_start = pcd_i_id - 1
             else:
                 scan_expected_ids = list(range((pcd_i_id - 1) * n_features + 1, pcd_i_id * n_features + 1))
+                slot_start = (pcd_i_id - 1) * n_features
             pcd_collection, d3d_collection, _ = load_previously_saved_inference_results_if_any(
-                pcd_i_id, pcd_collection, pcd_map, d3d_collection, d3d_map, scan_expected_ids
+                pcd_i_id, pcd_collection, pcd_map, d3d_collection, d3d_map, scan_expected_ids, slot_start
             )
         return Stage1Result(
             pcd_collection=pcd_collection,
@@ -162,10 +167,12 @@ def run_stage1(
         if checkpoint_enabled:
             if cfg.mode == "single-view":
                 scan_expected_ids = [(pcd_i_id - 1) * n_features + 1]
+                slot_start = pcd_i_id - 1
             else:
                 scan_expected_ids = list(range((pcd_i_id - 1) * n_features + 1, pcd_i_id * n_features + 1))
+                slot_start = (pcd_i_id - 1) * n_features
             pcd_collection, d3d_collection, load_flag = load_previously_saved_inference_results_if_any(
-                pcd_i_id, pcd_collection, pcd_map, d3d_collection, d3d_map, scan_expected_ids
+                pcd_i_id, pcd_collection, pcd_map, d3d_collection, d3d_map, scan_expected_ids, slot_start
             )
             if load_flag:
                 continue
@@ -184,7 +191,10 @@ def run_stage1(
             resolution=(0, 0),
         )
 
-        # subsample + global-shift after projection (project() may mutate pcd_i in-place)
+        # subsample + global-shift after projection (project() may mutate pcd_i in-place).
+        # Safe ordering: lift_masks_to_pcd re-derives pixel↔point correspondence from
+        # pcd.fov (azimuth/elevation spherical coordinates), not from projection-time
+        # point ordering, so the subsampled cloud's FoV still maps correctly.
         pcd_i = subsample_pcd_to_output_resolution(pcd_i, pcp_parameters)
         pcd_i, common_global_shift = assure_common_global_shift(pcd_i, common_global_shift, pcd_i_id)
         pcd_collection.global_shift = common_global_shift
@@ -250,7 +260,7 @@ def run_stage1(
                 # single-view: lift happens once after combine, not per-feature
             else:
                 # multi-view: lift each feature set independently
-                instance_mask, semantic_mask, confidence_mask, class_id_map = (
+                instance_mask, semantic_mask, confidence_mask, image_class_id_map = (
                     get_instance_and_semantic_mask_with_confidence(
                         results, text_prompt, image_hw=image_j_numpy.shape[:2]
                     )
@@ -261,7 +271,7 @@ def run_stage1(
                 if pcp_parameters["keep_confidences"]:
                     lift_mask_to_pcd(pcd_ij, mask=confidence_mask, mask_name="confidence")
 
-                del instance_mask, semantic_mask, confidence_mask
+                del instance_mask, semantic_mask, confidence_mask, image_class_id_map
                 gc.collect()
 
                 pcd_ij = remove_unclassified_points(pcd_ij, task_parameters)
@@ -314,13 +324,14 @@ def run_stage1(
 
             get_per_mask_depth_parallel(combined_results, scan_images, n_jobs=task_parameters["n_workers"])
 
-            instance_mask, semantic_mask, confidence_mask, class_id_map = (
+            instance_mask, semantic_mask, confidence_mask, image_class_id_map = (
                 get_instance_and_semantic_mask_with_confidence(
                     combined_results,
                     text_prompt,
                     image_hw=projection_results[0].image.shape[:2],
                 )
             )
+            del image_class_id_map
 
             pcd_i_sv = pcd_i.copy()
             lift_masks_to_pcd(pcd_i_sv, instance_mask, semantic_mask)
@@ -344,9 +355,10 @@ def run_stage1(
             odir_pcd_sv = stage1_odir_partial / Path(f"pcd_ij_{sv_pcd_ij_id}.pkl")
             odir_d3d_sv = stage1_odir_partial / Path(f"d3d_ij_{sv_pcd_ij_id}.pkl")
 
-            pcd_collection.seg_pcds[sv_pcd_ij_id - 1] = pcd_i_sv
+            # single-view collection is sized one slot per scan (pcd_i_id-1)
+            pcd_collection.seg_pcds[pcd_i_id - 1] = pcd_i_sv
             inst_count = np.unique(pcd_i_sv.scalar_fields["instances"]).size
-            pcd_collection.pcd_n_instances[sv_pcd_ij_id - 1] = inst_count
+            pcd_collection.pcd_n_instances[pcd_i_id - 1] = inst_count
 
             with open(odir_pcd_sv, "wb") as f:
                 pickle.dump(pcd_i_sv, f)

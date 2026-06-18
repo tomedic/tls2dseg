@@ -143,7 +143,13 @@ def id_from_path(p: Path) -> int:
 
 
 def load_previously_saved_inference_results_if_any(
-    pcd_i_id, pcd_collection, pcd_map, d3d_collection, d3d_map, expected_ids: list[int]
+    pcd_i_id,
+    pcd_collection,
+    pcd_map,
+    d3d_collection,
+    d3d_map,
+    expected_ids: list[int],
+    collection_slot_start: int,
 ) -> tuple[SegPCDCollection, list, bool]:
     # Initial load flag:
     load_flag = False
@@ -154,13 +160,13 @@ def load_previously_saved_inference_results_if_any(
     # If True - load corresponding segmented PointCloudData and Detections3D
     if have_all:
         # Accumulate into temporaries; commit only when all expected ids load.
-        loaded_pcds: dict[int, object] = {}
+        loaded_pcds: list[object] = []
         loaded_d3ds: list = []
         all_loaded = True
         for id_ij in expected_ids:
             try:
                 with open(pcd_map[id_ij], "rb") as f:
-                    loaded_pcds[id_ij] = pickle.load(f)
+                    loaded_pcds.append(pickle.load(f))
                 with open(d3d_map[id_ij], "rb") as f:
                     loaded_d3ds.append(pickle.load(f))
             except (OSError, pickle.UnpicklingError, EOFError):
@@ -170,8 +176,8 @@ def load_previously_saved_inference_results_if_any(
                 )
                 break
         if all_loaded:
-            for id_ij, pcd_obj in loaded_pcds.items():
-                pcd_collection.seg_pcds[id_ij - 1] = pcd_obj
+            for k, pcd_obj in enumerate(loaded_pcds):
+                pcd_collection.seg_pcds[collection_slot_start + k] = pcd_obj
             d3d_collection.extend(loaded_d3ds)
             load_flag = True
 

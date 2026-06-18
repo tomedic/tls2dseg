@@ -11,6 +11,8 @@ class SegPCDCollection:
     raw_pcd_paths: list[Path]  # n_pcds
     features: list
     class_id_map: dict
+    # Optional override: when set, n_seg_pcds = n_raw_pcds * slots_per_scan
+    slots_per_scan: int | None = None
     # Self-populated at initialization:
     n_raw_pcds: int = field(init=False)
     n_seg_pcds: int = field(init=False)
@@ -30,7 +32,8 @@ class SegPCDCollection:
         # Full initialization with correct/final values:
         self.n_raw_pcds = len(self.raw_pcd_paths)
         self.n_features = len(self.features)
-        self.n_seg_pcds = self.n_raw_pcds * self.n_features
+        effective_slots = self.slots_per_scan if self.slots_per_scan is not None else self.n_features
+        self.n_seg_pcds = self.n_raw_pcds * effective_slots
 
         if self.raw_pcd_id.size == 0:
             self.raw_pcd_id = np.repeat(np.arange(self.n_raw_pcds, dtype=np.uint16), self.n_features)
