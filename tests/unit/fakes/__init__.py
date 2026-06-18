@@ -61,6 +61,9 @@ class FakeProjectionEngine:
             for feature in features
         ]
 
+    def set_output_dir_images(self, path: Path) -> None:
+        """No-op: FakeProjectionEngine does not write PNGs."""
+
 
 @dataclasses.dataclass
 class FakeInferenceEngine:

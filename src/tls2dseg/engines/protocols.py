@@ -20,6 +20,7 @@ Closest analog: ``tls2dseg.runtime.capability`` (frozen dataclass conventions)
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
@@ -65,6 +66,20 @@ class ProjectionEngine(Protocol):
         -------
         list[ProjectionResult]
             One ``ProjectionResult`` per entry in ``features``.
+        """
+        ...
+
+    def set_output_dir_images(self, path: Path) -> None:
+        """Set the directory where spherical feature PNGs are written.
+
+        Callers (e.g. stage1) invoke this after ``make_output_folders`` resolves
+        the run-specific image output directory.  Must be called before the first
+        ``project()`` so the directory is included in every projection's params.
+
+        Parameters
+        ----------
+        path :
+            Filesystem path (``pathlib.Path`` or equivalent) for PNG output.
         """
         ...
 

@@ -144,6 +144,15 @@ class SphericalProjectionEngine:
         self._params = image_generation_parameters
         self._pcd_path = pcd_path
 
+    def set_output_dir_images(self, path: Path) -> None:
+        """Set the directory where spherical feature PNGs are written.
+
+        Mutates the shared params dict so every subsequent ``project()`` call
+        (which shallow-copies ``self._params``) includes ``output_dir_images``.
+        The caller is responsible for creating the directory.
+        """
+        self._params["output_dir_images"] = path
+
     def project(
         self,
         pcd: object,

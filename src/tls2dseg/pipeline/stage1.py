@@ -125,7 +125,9 @@ def run_stage1(
         from tls2dseg.utils_main import make_output_folders
 
         inference_models_parameters: dict = {"dump_json_results": ctx.dump_json_results}
-        make_output_folders(ctx.run_dir, {"features": features}, inference_models_parameters)
+        _img_params: dict = {"features": features}
+        make_output_folders(ctx.run_dir, _img_params, inference_models_parameters)
+        projection_engine.set_output_dir_images(_img_params["output_dir_images"])
         inference_models_parameters["stage1_output_dir"] = ctx.stage1_dir
     else:
         inference_models_parameters = {"dump_json_results": False}
