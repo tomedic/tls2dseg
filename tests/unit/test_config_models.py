@@ -215,19 +215,24 @@ def test_prompt_text_lowercase_and_trailing_period() -> None:
 
 @pytest.mark.tier_a
 def test_image_width_value_type_union_dispatch() -> None:
-    """ProjectionConfig.image_width: int|float|Literal['scan_resolution']
-    dispatches correctly across all three arms (D-A1-12, Pattern 6).
+    """ProjectionConfig.image_width accepts int, 'scan_resolution', and '<frac>-scan_resolution'.
+
+    CR-04: bare floats are rejected — use '<frac>-scan_resolution' for fractional widths.
     """
+    from pydantic import ValidationError
+
     p_int = ProjectionConfig(features=["intensity"], image_width=800)
     assert p_int.image_width == 800
     assert isinstance(p_int.image_width, int)
 
-    p_float = ProjectionConfig(features=["intensity"], image_width=0.5)
-    assert p_float.image_width == 0.5
-    assert isinstance(p_float.image_width, float)
-
     p_lit = ProjectionConfig(features=["intensity"], image_width="scan_resolution")
     assert p_lit.image_width == "scan_resolution"
+
+    p_frac = ProjectionConfig(features=["intensity"], image_width="0.5-scan_resolution")
+    assert p_frac.image_width == "0.5-scan_resolution"
+
+    with pytest.raises(ValidationError):
+        ProjectionConfig(features=["intensity"], image_width=0.5)
 
 
 @pytest.mark.tier_a
