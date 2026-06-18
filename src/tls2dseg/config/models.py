@@ -389,6 +389,17 @@ class SlicingConfig(BaseModel):
         json_schema_extra={"tag": "tuning"},
         description="IoU threshold for cross-slice detection merging.",
     )
+    # tag: tuning
+    nms_combine_class_agnostic: bool = Field(
+        False,
+        json_schema_extra={"tag": "tuning"},
+        description=(
+            "Class semantics for the single-view multi-feature NMS combine. "
+            "false (default) = class-aware: overlapping detections of *different* classes "
+            "are kept; only same-class duplicates are suppressed. "
+            "true = class-agnostic: overlapping detections are suppressed regardless of class."
+        ),
+    )
     # tag: other
     overlap_filter_strategy: Literal["nms", "nmm"] = Field(
         "nms",
