@@ -1,16 +1,11 @@
-"""Tier-A tests for once-per-process WARNING semantics (D-A1-06 + CPU-03).
+"""Tier-A tests for once-per-process WARNING semantics (CPU-03).
 
-Phase 3 plan 06 — Task 3. Two surfaces locked in:
-
-* ``pipeline.run._warn_single_view_dispatch_pending`` — functools.cache wrapped
-  function. Calling it twice produces exactly one WARNING record per process
-  per D-A1-06 (mode=single-view text verbatim).
 * pc2img's ``_warn_bary_knn_cpu_fallback`` (plan 03-03 surface) — CPU fallback
   WARNING propagates through the ``tls2dseg.*`` logger hierarchy and is
   visible at user-level INFO+ (CPU-03 final visibility layer).
 
-Test 2 is skipped when pc2img is missing — keeps the file tier_a-runnable
-in cloud CI without forcing pc2img install.
+Skipped when pc2img is missing — keeps the file tier_a-runnable in cloud CI
+without forcing pc2img install.
 """
 
 from __future__ import annotations
@@ -66,52 +61,6 @@ def _restore_logging_state() -> Generator[None, None, None]:
             lg.propagate = True
             for h in list(lg.handlers):
                 lg.removeHandler(h)
-
-
-@pytest.mark.tier_a
-def test_single_view_warning_fires_once(caplog: pytest.LogCaptureFixture) -> None:
-    """The mode=single-view dispatch-pending WARNING fires exactly once per process (D-A1-06).
-
-    Uses functools.cache — once the function has been called once, subsequent
-    calls are no-ops. Reset the cache before invocations to verify the
-    cache-based gate works. caplog's root handler captures the record via
-    propagation (tls2dseg.pipeline.run has propagate=True by default).
-    """
-    from tls2dseg.pipeline.pipeline import _warn_single_view_dispatch_pending
-
-    # Reset cache so the test isn't piggybacking on a prior invocation.
-    _warn_single_view_dispatch_pending.cache_clear()
-
-    with caplog.at_level(logging.WARNING, logger="tls2dseg.pipeline.pipeline"):
-        _warn_single_view_dispatch_pending()
-        _warn_single_view_dispatch_pending()
-        _warn_single_view_dispatch_pending()
-
-    single_view_warnings = [r for r in caplog.records if "mode=single-view" in r.message and r.levelname == "WARNING"]
-    assert len(single_view_warnings) == 1, (
-        f"expected EXACTLY ONE 'mode=single-view' warning per process "
-        f"(D-A1-06 functools.cache contract); got {len(single_view_warnings)}: "
-        f"{[r.message for r in single_view_warnings]}"
-    )
-
-
-@pytest.mark.tier_a
-def test_single_view_warning_text_matches_d_a1_06_verbatim(caplog: pytest.LogCaptureFixture) -> None:
-    """The warning text matches CONTEXT.md D-A1-06 verbatim phrasing.
-
-    Locks the message format so future refactors don't accidentally rephrase
-    the user-facing warning.
-    """
-    from tls2dseg.pipeline.pipeline import _warn_single_view_dispatch_pending
-
-    _warn_single_view_dispatch_pending.cache_clear()
-
-    with caplog.at_level(logging.WARNING, logger="tls2dseg.pipeline.pipeline"):
-        _warn_single_view_dispatch_pending()
-
-    msgs = [r.message for r in caplog.records]
-    matched = [m for m in msgs if "single-view" in m and "Phase 5" in m]
-    assert matched, f"warning text doesn't match D-A1-06 phrasing; got: {msgs!r}"
 
 
 @pytest.mark.tier_a
