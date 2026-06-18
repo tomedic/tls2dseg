@@ -320,6 +320,7 @@ def run_stage1(
                 scan_d2d_list,
                 iou_threshold=inference_request.iou_threshold,
                 overlap_filter_strategy=inference_request.overlap_filter_strategy,
+                class_agnostic=cfg.inference.slicing.nms_combine_class_agnostic,
             )
 
             combined_results: dict = {
