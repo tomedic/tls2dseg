@@ -113,40 +113,41 @@ class GroundedSAM2Engine:
             image_slice, normalize="0-1", output_dtype="float32", replace_nan_with="max", broadcast=True
         )
 
-        # Grounded-DINO
-        inputs = self._gdino_processor(
-            images=image_slice,
-            text=text_prompt,
-            return_tensors="pt",
-            do_rescale=False,
-        ).to(self._device)
-        with torch.no_grad():
-            outputs = self._gdino_model(**inputs)
+        with torch.autocast(device_type=self._device, dtype=torch.bfloat16):
+            # Grounded-DINO
+            inputs = self._gdino_processor(
+                images=image_slice,
+                text=text_prompt,
+                return_tensors="pt",
+                do_rescale=False,
+            ).to(self._device)
+            with torch.no_grad():
+                outputs = self._gdino_model(**inputs)
 
-        input_boxes, _, class_ids, confidences, empty_flag = post_process_gdino_results(
-            self._gdino_processor,
-            outputs,
-            inputs,
-            text_prompt,
-            inference_models_parameters,
-            slice_height,
-            slice_width,
-        )
-
-        del inputs, outputs
-        torch.cuda.empty_cache()
-        gc.collect()
-
-        if empty_flag:
-            return return_empty_detections()
-
-        # SAM2 (direct)
-        masks: list = []
-        with self._sam_lock:
-            self._sam2_predictor.set_image(image_slice)
-            masks = run_sam2_bbox_prompt_inference_in_batches(
-                self._sam2_predictor, input_boxes, self._sam_box_prompt_batch_size, masks
+            input_boxes, _, class_ids, confidences, empty_flag = post_process_gdino_results(
+                self._gdino_processor,
+                outputs,
+                inputs,
+                text_prompt,
+                inference_models_parameters,
+                slice_height,
+                slice_width,
             )
+
+            del inputs, outputs
+            torch.cuda.empty_cache()
+            gc.collect()
+
+            if empty_flag:
+                return return_empty_detections()
+
+            # SAM2 (direct)
+            masks: list = []
+            with self._sam_lock:
+                self._sam2_predictor.set_image(image_slice)
+                masks = run_sam2_bbox_prompt_inference_in_batches(
+                    self._sam2_predictor, input_boxes, self._sam_box_prompt_batch_size, masks
+                )
 
         masks = convert_masks_to_sparse_masks(masks)
 
@@ -245,34 +246,35 @@ class GroundedSAM2Engine:
             image_encoded = img_1to3_channels_encoding(
                 image, normalize="0-1", output_dtype="float32", replace_nan_with="max", broadcast=True
             )
-            inputs = self._gdino_processor(
-                images=image_encoded,
-                text=text_prompt,
-                return_tensors="pt",
-                do_rescale=False,
-            ).to(self._device)
-            with torch.no_grad():
-                outputs = self._gdino_model(**inputs)
+            with torch.autocast(device_type=self._device, dtype=torch.bfloat16):
+                inputs = self._gdino_processor(
+                    images=image_encoded,
+                    text=text_prompt,
+                    return_tensors="pt",
+                    do_rescale=False,
+                ).to(self._device)
+                with torch.no_grad():
+                    outputs = self._gdino_model(**inputs)
 
-            input_boxes, class_names, class_ids, confidences, _ = post_process_gdino_results(
-                self._gdino_processor,
-                outputs,
-                inputs,
-                text_prompt,
-                inference_models_parameters,
-                image_height,
-                image_width,
-            )
-            del inputs, outputs
-            torch.cuda.empty_cache()
-            gc.collect()
-
-            masks_batched: list = []
-            with self._sam_lock:
-                self._sam2_predictor.set_image(image_encoded)
-                masks_batched = run_sam2_bbox_prompt_inference_in_batches(
-                    self._sam2_predictor, input_boxes, self._sam_box_prompt_batch_size, masks_batched
+                input_boxes, class_names, class_ids, confidences, _ = post_process_gdino_results(
+                    self._gdino_processor,
+                    outputs,
+                    inputs,
+                    text_prompt,
+                    inference_models_parameters,
+                    image_height,
+                    image_width,
                 )
+                del inputs, outputs
+                torch.cuda.empty_cache()
+                gc.collect()
+
+                masks_batched: list = []
+                with self._sam_lock:
+                    self._sam2_predictor.set_image(image_encoded)
+                    masks_batched = run_sam2_bbox_prompt_inference_in_batches(
+                        self._sam2_predictor, input_boxes, self._sam_box_prompt_batch_size, masks_batched
+                    )
             masks = convert_masks_to_sparse_masks(masks_batched)
             torch.cuda.empty_cache()
             gc.collect()

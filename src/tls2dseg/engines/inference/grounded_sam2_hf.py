@@ -174,35 +174,36 @@ class GroundedSAM2HFEngine:
             image_slice, normalize="0-1", output_dtype="float32", replace_nan_with="max", broadcast=True
         )
 
-        # Grounded-DINO
-        inputs = self._gdino_processor(
-            images=image_slice,
-            text=text_prompt,
-            return_tensors="pt",
-            do_rescale=False,
-        ).to(self._device)
-        with torch.no_grad():
-            outputs = self._gdino_model(**inputs)
+        with torch.autocast(device_type=self._device, dtype=torch.bfloat16):
+            # Grounded-DINO
+            inputs = self._gdino_processor(
+                images=image_slice,
+                text=text_prompt,
+                return_tensors="pt",
+                do_rescale=False,
+            ).to(self._device)
+            with torch.no_grad():
+                outputs = self._gdino_model(**inputs)
 
-        input_boxes, _, class_ids, confidences, empty_flag = post_process_gdino_results(
-            self._gdino_processor,
-            outputs,
-            inputs,
-            text_prompt,
-            inference_models_parameters,
-            slice_height,
-            slice_width,
-        )
+            input_boxes, _, class_ids, confidences, empty_flag = post_process_gdino_results(
+                self._gdino_processor,
+                outputs,
+                inputs,
+                text_prompt,
+                inference_models_parameters,
+                slice_height,
+                slice_width,
+            )
 
-        del inputs, outputs
-        torch.cuda.empty_cache()
-        gc.collect()
+            del inputs, outputs
+            torch.cuda.empty_cache()
+            gc.collect()
 
-        if empty_flag:
-            return return_empty_detections()
+            if empty_flag:
+                return return_empty_detections()
 
-        # SAM2 (HF)
-        masks = self._run_sam2_hf_batched(image_slice, input_boxes)
+            # SAM2 (HF)
+            masks = self._run_sam2_hf_batched(image_slice, input_boxes)
 
         torch.cuda.empty_cache()
         gc.collect()
@@ -299,29 +300,30 @@ class GroundedSAM2HFEngine:
                 image, normalize="0-1", output_dtype="float32", replace_nan_with="max", broadcast=True
             )
 
-            inputs = self._gdino_processor(
-                images=image_encoded,
-                text=text_prompt,
-                return_tensors="pt",
-                do_rescale=False,
-            ).to(self._device)
-            with torch.no_grad():
-                outputs = self._gdino_model(**inputs)
+            with torch.autocast(device_type=self._device, dtype=torch.bfloat16):
+                inputs = self._gdino_processor(
+                    images=image_encoded,
+                    text=text_prompt,
+                    return_tensors="pt",
+                    do_rescale=False,
+                ).to(self._device)
+                with torch.no_grad():
+                    outputs = self._gdino_model(**inputs)
 
-            input_boxes, class_names, class_ids, confidences, _ = post_process_gdino_results(
-                self._gdino_processor,
-                outputs,
-                inputs,
-                text_prompt,
-                inference_models_parameters,
-                image_height,
-                image_width,
-            )
-            del inputs, outputs
-            torch.cuda.empty_cache()
-            gc.collect()
+                input_boxes, class_names, class_ids, confidences, _ = post_process_gdino_results(
+                    self._gdino_processor,
+                    outputs,
+                    inputs,
+                    text_prompt,
+                    inference_models_parameters,
+                    image_height,
+                    image_width,
+                )
+                del inputs, outputs
+                torch.cuda.empty_cache()
+                gc.collect()
 
-            masks = self._run_sam2_hf_batched(image_encoded, input_boxes)
+                masks = self._run_sam2_hf_batched(image_encoded, input_boxes)
             torch.cuda.empty_cache()
             gc.collect()
 

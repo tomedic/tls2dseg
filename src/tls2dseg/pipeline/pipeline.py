@@ -66,8 +66,7 @@ class Pipeline:
 
         device = ctx.device
 
-        # Torch autocast + TF32 setup (same block as run.py:156-160):
-        torch.autocast(device_type=device, dtype=torch.bfloat16).__enter__()
+        # TF32 setup — idempotent global config, safe in __init__:
         if device == "cuda" and torch.cuda.get_device_properties(0).major >= 8:
             torch.backends.cuda.matmul.allow_tf32 = True
             torch.backends.cudnn.allow_tf32 = True
