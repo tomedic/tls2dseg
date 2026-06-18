@@ -143,37 +143,36 @@ def id_from_path(p: Path) -> int:
 
 
 def load_previously_saved_inference_results_if_any(
-    pcd_i_id, pcd_collection, pcd_map, d3d_collection, d3d_map
+    pcd_i_id, pcd_collection, pcd_map, d3d_collection, d3d_map, expected_ids: list[int]
 ) -> tuple[SegPCDCollection, list, bool]:
     # Initial load flag:
     load_flag = False
 
-    # IDs expected for this point cloud (block of n_features):
-    nF = pcd_collection.n_features
-    start_id = (pcd_i_id - 1) * nF + 1
-    end_id = pcd_i_id * nF
-    expected_ids = list(range(start_id, end_id + 1))
-
-    # Check if all results already computed:
+    # Check if all results for this scan are on disk:
     have_all = all((i in d3d_map) and (i in pcd_map) for i in expected_ids)
 
     # If True - load corresponding segmented PointCloudData and Detections3D
     if have_all:
-        # Load cached results
+        # Accumulate into temporaries; commit only when all expected ids load.
+        loaded_pcds: dict[int, object] = {}
+        loaded_d3ds: list = []
+        all_loaded = True
         for id_ij in expected_ids:
             try:
-                # Load PointCloudData
                 with open(pcd_map[id_ij], "rb") as f:
-                    pcd_collection.seg_pcds[id_ij - 1] = pickle.load(f)
-                # Load Detections3D
+                    loaded_pcds[id_ij] = pickle.load(f)
                 with open(d3d_map[id_ij], "rb") as f:
-                    d3d_loaded = pickle.load(f)
-                d3d_collection.append(d3d_loaded)
-                # Point cloud loaded
-                load_flag = True
-            except Exception:
+                    loaded_d3ds.append(pickle.load(f))
+            except (OSError, pickle.UnpicklingError, EOFError):
+                all_loaded = False
                 logger.warning(
                     "Failed loading previously computed results of %dth pcd, running inference again.", pcd_i_id
                 )
+                break
+        if all_loaded:
+            for id_ij, pcd_obj in loaded_pcds.items():
+                pcd_collection.seg_pcds[id_ij - 1] = pcd_obj
+            d3d_collection.extend(loaded_d3ds)
+            load_flag = True
 
     return pcd_collection, d3d_collection, load_flag

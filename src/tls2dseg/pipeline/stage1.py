@@ -130,8 +130,11 @@ def run_stage1(
     else:
         inference_models_parameters = {"dump_json_results": False}
 
-    # --- full checkpoint: all (scan, feature) pairs already on disk ---
-    have_processed_all = len(pcd_map) == n_scans * n_features and len(d3d_map) == n_scans * n_features
+    # --- full checkpoint: mode-correct count ---
+    if cfg.mode == "single-view":
+        have_processed_all = len(pcd_map) == n_scans and len(d3d_map) == n_scans
+    else:
+        have_processed_all = len(pcd_map) == n_scans * n_features and len(d3d_map) == n_scans * n_features
     checkpoint_enabled = cfg.io.resume_from_checkpoint
 
     pcd_collection = SegPCDCollection(raw_pcd_paths=pcd_file_paths, features=features, class_id_map=class_id_map)
@@ -139,8 +142,12 @@ def run_stage1(
 
     if checkpoint_enabled and have_processed_all:
         for pcd_i_id in range(1, n_scans + 1):
+            if cfg.mode == "single-view":
+                scan_expected_ids = [(pcd_i_id - 1) * n_features + 1]
+            else:
+                scan_expected_ids = list(range((pcd_i_id - 1) * n_features + 1, pcd_i_id * n_features + 1))
             pcd_collection, d3d_collection, _ = load_previously_saved_inference_results_if_any(
-                pcd_i_id, pcd_collection, pcd_map, d3d_collection, d3d_map
+                pcd_i_id, pcd_collection, pcd_map, d3d_collection, d3d_map, scan_expected_ids
             )
         return Stage1Result(
             pcd_collection=pcd_collection,
@@ -153,8 +160,12 @@ def run_stage1(
     for pcd_i_id, pcd_path_i in enumerate(pcd_file_paths, start=1):
         # --- per-scan checkpoint resume ---
         if checkpoint_enabled:
+            if cfg.mode == "single-view":
+                scan_expected_ids = [(pcd_i_id - 1) * n_features + 1]
+            else:
+                scan_expected_ids = list(range((pcd_i_id - 1) * n_features + 1, pcd_i_id * n_features + 1))
             pcd_collection, d3d_collection, load_flag = load_previously_saved_inference_results_if_any(
-                pcd_i_id, pcd_collection, pcd_map, d3d_collection, d3d_map
+                pcd_i_id, pcd_collection, pcd_map, d3d_collection, d3d_map, scan_expected_ids
             )
             if load_flag:
                 continue
