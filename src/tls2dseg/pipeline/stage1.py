@@ -144,6 +144,7 @@ def run_stage1(
     d3d_collection: list = []
 
     if checkpoint_enabled and have_processed_all:
+        all_loaded = True
         for pcd_i_id in range(1, n_scans + 1):
             if cfg.mode == "single-view":
                 scan_expected_ids = [(pcd_i_id - 1) * n_features + 1]
@@ -151,14 +152,22 @@ def run_stage1(
             else:
                 scan_expected_ids = list(range((pcd_i_id - 1) * n_features + 1, pcd_i_id * n_features + 1))
                 slot_start = (pcd_i_id - 1) * n_features
-            pcd_collection, d3d_collection, _ = load_previously_saved_inference_results_if_any(
+            pcd_collection, d3d_collection, load_flag = load_previously_saved_inference_results_if_any(
                 pcd_i_id, pcd_collection, pcd_map, d3d_collection, d3d_map, scan_expected_ids, slot_start
             )
-        return Stage1Result(
-            pcd_collection=pcd_collection,
-            d3d_collection=d3d_collection,
-            n_scans=n_scans,
+            if not load_flag:
+                all_loaded = False
+        if all_loaded:
+            return Stage1Result(
+                pcd_collection=pcd_collection,
+                d3d_collection=d3d_collection,
+                n_scans=n_scans,
+            )
+        # One or more scans failed to load — reset and fall through to per-scan loop
+        pcd_collection = SegPCDCollection(
+            raw_pcd_paths=pcd_file_paths, features=features, class_id_map=class_id_map, slots_per_scan=sv_slots
         )
+        d3d_collection = []
 
     common_global_shift = np.zeros((3,), dtype=np.float64)
 
