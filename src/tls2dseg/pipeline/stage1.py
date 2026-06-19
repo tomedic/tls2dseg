@@ -196,6 +196,7 @@ def run_stage1(
 
         # --- projection via engine (replaces inline pc2img_run block) ---
         logger.info("Projecting scan %d/%d: %s", pcd_i_id, n_scans, pcd_path_i.name)
+        projection_engine.set_pcd_path(pcd_path_i)
         projection_results = projection_engine.project(
             pcd_i,
             features=features,

@@ -83,6 +83,19 @@ class ProjectionEngine(Protocol):
         """
         ...
 
+    def set_pcd_path(self, path: Path) -> None:
+        """Set the source-cloud path used for per-scan PNG naming.
+
+        Callers invoke this once per scan before ``project()`` so each scan's
+        intermediate PNGs are named by its own stem rather than a fallback.
+
+        Parameters
+        ----------
+        path :
+            Path to the current scan's source file (e.g. ``scan_0.e57``).
+        """
+        ...
+
 
 @runtime_checkable
 class InferenceEngine(Protocol):

@@ -153,6 +153,10 @@ class SphericalProjectionEngine:
         """
         self._params["output_dir_images"] = path
 
+    def set_pcd_path(self, path: Path) -> None:
+        """Set the source-cloud path used for per-scan PNG naming."""
+        self._pcd_path = path
+
     def project(
         self,
         pcd: object,

@@ -64,6 +64,9 @@ class FakeProjectionEngine:
     def set_output_dir_images(self, path: Path) -> None:
         """No-op: FakeProjectionEngine does not write PNGs."""
 
+    def set_pcd_path(self, path: Path) -> None:
+        """No-op: FakeProjectionEngine does not use pcd_path for naming."""
+
 
 @dataclasses.dataclass
 class FakeInferenceEngine:
