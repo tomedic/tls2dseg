@@ -382,7 +382,7 @@ def run_stage1(
 
             # write one final PLY per scan to results/
             logger.info("Writing single-view final PLY for scan %d/%d", pcd_i_id, n_scans)
-            save_segmented_pcd(data_folder_path, ctx.results_dir, pcd_i_sv, class_id_map)
+            save_segmented_pcd(data_folder_path, ctx.results_dir, pcd_i_sv, class_id_map, output_stem=pcd_path_i.stem)
 
             del pcd_i_sv, d3d_i
             gc.collect()

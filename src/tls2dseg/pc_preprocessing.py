@@ -230,11 +230,18 @@ def save_segmented_pcd_ij(
     return None
 
 
-def save_segmented_pcd(data_dir: Path, out_dir: Path, pcd: PointCloudData, class_id_map: dict):
+def save_segmented_pcd(
+    data_dir: Path,
+    out_dir: Path,
+    pcd: PointCloudData,
+    class_id_map: dict,
+    output_stem: str | None = None,
+):
     # Save segmented point cloud and related transformation parameters
     logger.info("Saving point cloud")
 
-    output_pcd_name = data_dir.name + "_segmented.ply"  # _seg for segmented
+    stem = output_stem if output_stem is not None else data_dir.name
+    output_pcd_name = stem + "_segmented.ply"
     output_pcd_path = out_dir / Path(output_pcd_name)
 
     save_ply(output_pcd_path, pcd, retain_colors=True, retain_normals=True, scalar_fields=None)
