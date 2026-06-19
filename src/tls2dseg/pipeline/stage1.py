@@ -269,6 +269,28 @@ def run_stage1(
                         mask_labels=list(detections_2d.mask_labels),
                     )
                 )
+                if save_intermediate_results:
+                    # per-feature intermediate dump — does not disturb NMS-combine flow
+                    feat_instance_mask, feat_semantic_mask, feat_confidence_mask, feat_class_id_map = (
+                        get_instance_and_semantic_mask_with_confidence(
+                            results, text_prompt, image_hw=image_j_numpy.shape[:2]
+                        )
+                    )
+                    pcd_feat = pcd_i.copy()
+                    lift_masks_to_pcd(pcd_feat, feat_instance_mask, feat_semantic_mask)
+                    if pcp_parameters["keep_confidences"]:
+                        lift_mask_to_pcd(pcd_feat, mask=feat_confidence_mask, mask_name="confidence")
+                    del feat_instance_mask, feat_semantic_mask, feat_confidence_mask, feat_class_id_map
+                    gc.collect()
+                    pcd_feat = remove_unclassified_points(pcd_feat, task_parameters)
+                    pcd_feat = remove_small_instances(pcd_feat, min_pts=50)
+                    pcd_feat = toggle_socs2prcs(pcd_feat)
+                    apply_robust_sor_filter(pcd_feat, k_neighbors=50, std_ratio=2)
+                    save_segmented_pcd_ij(
+                        pcd_path_i, pcd_feat, inference_models_parameters, class_id_map, image_j_tuple
+                    )
+                    del pcd_feat
+                    gc.collect()
                 # single-view: lift happens once after combine, not per-feature
             else:
                 # multi-view: lift each feature set independently
