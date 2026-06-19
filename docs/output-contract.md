@@ -26,17 +26,17 @@ There is no `stage_1_results/` directory and no `logs/` directory.
 ## Single-view mode
 
 Stage 1 processes each scan independently. For each input scan, one final
-segmented point cloud is written to `results/`:
+segmented point cloud is written to `results/`, named by the scan file stem:
 
 ```
 results/
-└── <scan_folder_name>_segmented.ply   # one file per input scan
+└── <scan_name>_segmented.ply   # one file per input scan (named by scan stem)
 ```
 
 Per-feature segmented point clouds (`*_<feature>_prcs_seg.ply` or
 `*_<feature>_socs_seg.ply`) are intermediate artifacts. They are written to
-the stage-1 area only when `save_intermediate_results` is enabled; they are
-never placed in `results/`.
+`intermediate/segmented_point_clouds/` only when `save_intermediate` is enabled;
+they are never placed in `results/`.
 
 Stage 2 (cross-scan fusion) does not run in single-view mode.
 
