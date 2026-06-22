@@ -31,7 +31,7 @@ from __future__ import annotations
 import dataclasses
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypedDict
 
 import numpy as np
 
@@ -114,6 +114,18 @@ class InferenceRequest:
     partial_detection_edge_touching_threshold: int
     thread_workers: int
     empty_slice_removal_threshold: float
+    resize_factor: float = 1.0
+    is_full_image_pass: bool = False
+    pass_class_names: tuple[str, ...] = ()
+
+
+class ClassMetadata(TypedDict):
+    """Per-class metadata populated by the multi-zoom dispatcher."""
+
+    resize_factor: float
+    was_tiled: bool
+    tile_size_px: int | None
+    grouped_with: tuple[str, ...]
 
 
 @dataclasses.dataclass
@@ -197,6 +209,7 @@ class FusionResult:
 
 
 __all__ = [
+    "ClassMetadata",
     "Detections2D",
     "Detections3D",
     "FusionInput",
