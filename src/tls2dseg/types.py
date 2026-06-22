@@ -79,6 +79,7 @@ class ProjectionResult:
     feature_name: str
     image: np.ndarray
     path: Path
+    d_azim_rad: float = 0.0
 
 
 @dataclasses.dataclass(frozen=True, slots=True)

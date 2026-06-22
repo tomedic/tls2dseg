@@ -163,6 +163,7 @@ class SphericalProjectionEngine:
         *,
         features: list[str],
         resolution: tuple[int, int],
+        skip_image_reduction: bool = False,
     ) -> list[ProjectionResult]:
         """Project a point cloud scan to a list of per-feature spherical images.
 
@@ -243,7 +244,7 @@ class SphericalProjectionEngine:
         images_raw = pc2img_run(pcd, pcd_path, params, image_width=image_width, image_height=image_height)
 
         # --- Step 5: optional resolution reduction ---
-        if "output_resolution" in params and params.get("output_resolution") is not None:
+        if not skip_image_reduction and "output_resolution" in params and params.get("output_resolution") is not None:
             reduction_coeff = resolve_necessary_image_resolution(pcd, params, d_azim_rad)
             if reduction_coeff < 1.0:
                 images_raw = reduce_image_resolution(images_raw, reduction_coeff, params, pcd_path)
@@ -252,6 +253,8 @@ class SphericalProjectionEngine:
         results: list[ProjectionResult] = []
         for feature_name, image, path in images_raw:
             path_obj = Path(path) if isinstance(path, str) else path
-            results.append(ProjectionResult(feature_name=feature_name, image=image, path=path_obj))
+            results.append(
+                ProjectionResult(feature_name=feature_name, image=image, path=path_obj, d_azim_rad=d_azim_rad)
+            )
 
         return results
