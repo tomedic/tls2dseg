@@ -582,7 +582,7 @@ class InferenceSharedConfig(BaseModel):
     )
     # tag: tuning
     large_object_removal_threshold: float = Field(
-        0.30,
+        0.9,
         json_schema_extra={"tag": "tuning"},
         description="Drop detections whose bbox area exceeds this fraction of image area.",
     )
