@@ -610,6 +610,12 @@ class InferenceSharedConfig(BaseModel):
         json_schema_extra={"tag": "other"},
         description="SAHI-style sliced inference sub-block.",
     )
+    # tag: — (nested sub-block — has its own field tags)
+    multi_zoom: MultiZoomConfig = Field(
+        default=MultiZoomConfig(),
+        json_schema_extra={"tag": "other"},
+        description="Per-class adaptive multi-zoom inference sub-block.",
+    )
 
 
 class GroundedSAM2Config(InferenceSharedConfig):
