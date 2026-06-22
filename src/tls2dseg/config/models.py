@@ -41,7 +41,7 @@ import re
 from pathlib import Path
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from tls2dseg.config.text import split_class_keys
@@ -427,6 +427,131 @@ class SlicingConfig(BaseModel):
         json_schema_extra={"tag": "other"},
         description="Skip slices whose empty-pixel fraction exceeds this threshold.",
     )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ClassSpec — per-class size spec for multi-zoom inference (MZ-01 / D-CFG-01)
+# ─────────────────────────────────────────────────────────────────────────────
+class ClassSpec(BaseModel):
+    """Per-class size spec for multi-zoom inference (D-CFG-01).
+
+    ``text_prompt`` uses the same dot-separated format as ``PromptConfig.text``.
+    ``sizes_m`` must have exactly one entry per class token.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    # tag: primary
+    text_prompt: str = Field(
+        ...,
+        json_schema_extra={"tag": "primary"},
+        description="Dot-separated class prompt (same format as prompt.text). One size per token.",
+    )
+    # tag: primary
+    sizes_m: list[float] = Field(
+        ...,
+        json_schema_extra={"tag": "primary"},
+        description="Representative physical size (meters) for each class token, in order. All values must be > 0.",
+    )
+
+    @field_validator("sizes_m", mode="after")
+    @classmethod
+    def _validate_sizes_positive(cls, v: list[float]) -> list[float]:
+        if any(s <= 0 for s in v):
+            raise ValueError("All sizes_m values must be > 0")
+        return v
+
+    @model_validator(mode="after")
+    def _validate_sizes_m_len(self) -> ClassSpec:
+        keys = split_class_keys(self.text_prompt)
+        if len(self.sizes_m) != len(keys):
+            raise ValueError(
+                f"sizes_m has {len(self.sizes_m)} entries but text_prompt has {len(keys)} class token(s): {keys}"
+            )
+        return self
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# MultiZoomConfig — per-class adaptive multi-zoom sub-block (MZ-01/06/10)
+# ─────────────────────────────────────────────────────────────────────────────
+class MultiZoomConfig(BaseModel):
+    """Per-class adaptive multi-zoom inference sub-block (MZ-01 / D-CFG-01..04).
+
+    ``mode: multi-zoom`` (default) resolves inference passes automatically via
+    ``MultiZoomPlanEngine``. ``mode: single-zoom`` falls back to the existing
+    single manually-tuned zoom (loud once-per-run warning, MZ-10).
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    # tag: primary
+    mode: Literal["multi-zoom", "single-zoom"] = Field(
+        "multi-zoom",
+        json_schema_extra={"tag": "primary"},
+        description=(
+            "Zoom operating mode. 'multi-zoom' = per-class adaptive (default); "
+            "'single-zoom' = single manually-tuned zoom (MZ-10 fallback, fires a warning)."
+        ),
+    )
+    # tag: primary
+    classes: ClassSpec | None = Field(
+        None,
+        json_schema_extra={"tag": "primary"},
+        description=("Per-class size spec (text_prompt + sizes_m). None = single-zoom fallback (MZ-10)."),
+    )
+    # tag: tuning
+    footprint_band_frac: tuple[float, float] = Field(
+        (0.075, 0.225),
+        json_schema_extra={"tag": "tuning"},
+        description=(
+            "Target footprint band as fraction of DINO short-side (800 px). "
+            "p_min = detection-quality floor; p_max = containment ceiling (D-A-05). "
+            "Must satisfy 0 < p_min < p_max < 1."
+        ),
+    )
+    # tag: tuning
+    range_percentiles: tuple[float, float] = Field(
+        (10.0, 90.0),
+        json_schema_extra={"tag": "tuning"},
+        description=(
+            "Robust per-scan range bounds as percentiles (D-A-02). Used when preprocessing.range_limits_m is not set."
+        ),
+    )
+    # tag: tuning
+    cross_class_iou_threshold: float = Field(
+        0.7,
+        json_schema_extra={"tag": "tuning"},
+        ge=0.0,
+        le=1.0,
+        description=(
+            "IoU threshold for cross-class deduplication (MZ-06 / D-D-04). "
+            "Overlapping detections of different classes above this threshold "
+            "→ keep higher-confidence one."
+        ),
+    )
+    # tag: tuning
+    area_filter_px: tuple[int, int] | None = Field(
+        None,
+        json_schema_extra={"tag": "tuning"},
+        description=("(min_px, max_px) area filter applied to detections. None = no area filter (D-CFG-03)."),
+    )
+    # tag: tuning
+    ios_enabled: bool = Field(
+        False,
+        json_schema_extra={"tag": "tuning"},
+        description=(
+            "Enable intersection-over-smaller (IoS) for same-class cross-scale dedup "
+            "(D-D-03). IoS is restricted to same class to avoid killing nested objects."
+        ),
+    )
+
+    @field_validator("footprint_band_frac", mode="after")
+    @classmethod
+    def _validate_footprint_band(cls, v: tuple[float, float]) -> tuple[float, float]:
+        p_min, p_max = v
+        if not (0 < p_min < p_max < 1):
+            raise ValueError(f"footprint_band_frac must satisfy 0 < p_min < p_max < 1. Got: {v}")
+        return v
 
 
 # ─────────────────────────────────────────────────────────────────────────────
