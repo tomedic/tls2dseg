@@ -105,18 +105,12 @@ def test_runcontext_has_d_a2_03_fields() -> None:
 
 
 @pytest.mark.tier_a
-def test_per_class_metadata_annotation_is_dict_str_any() -> None:
-    """per_class_metadata is dict[str, Any], NOT bare dict.
-
-    Phase 1 D-06 + Phase 3 03-01 ratchet the tls2dseg.runtime.* package to
-    mypy strict — bare ``dict`` would trip ``disallow_any_generics``-style
-    warnings. The parametrized annotation also documents the Phase 6 MZ-05
-    swap point (Any → ClassMetadata).
-    """
+def test_per_class_metadata_annotation_is_dict_str_class_metadata() -> None:
+    """per_class_metadata is dict[str, ClassMetadata], not bare dict or dict[str, Any]."""
     pcm_field = next(f for f in dataclasses.fields(RunContext) if f.name == "per_class_metadata")
     type_str = str(pcm_field.type)
     assert "dict" in type_str
-    assert "Any" in type_str
+    assert "ClassMetadata" in type_str
 
 
 # ─────────────────────────────────────────────────────────────────────────────

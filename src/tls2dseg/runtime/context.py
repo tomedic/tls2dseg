@@ -28,11 +28,12 @@ import logging
 import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Literal
 
 from tls2dseg.config.text import split_class_keys
 from tls2dseg.runtime.capability import Runtime
 from tls2dseg.runtime.output_layout import create_run_dirs, make_run_id
+from tls2dseg.types import ClassMetadata
 
 if TYPE_CHECKING:
     from tls2dseg.config.models import RunConfig
@@ -75,11 +76,7 @@ class RunContext:
     git_sha: str | None
     git_dirty: bool
     # ── Phase 6 multi-zoom slot per D-A2-04 ────────────────────────────────
-    # Phase 6 MZ-05 replaces Any with ClassMetadata (typed shape lands then).
-    # Annotation MUST be parametrized (dict[str, Any], not bare dict) — this
-    # module is under the tls2dseg.runtime.* strict mypy override (Phase 1
-    # D-06 + pyproject.toml 03-01).
-    per_class_metadata: dict[str, Any] = dataclasses.field(default_factory=dict)
+    per_class_metadata: dict[str, ClassMetadata] = dataclasses.field(default_factory=dict)
 
 
 def resolve_device(cfg_device: str, runtime: Runtime) -> Literal["cpu", "cuda"]:

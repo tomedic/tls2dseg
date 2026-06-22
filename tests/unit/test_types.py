@@ -125,6 +125,9 @@ def test_inference_request_field_set() -> None:
         "partial_detection_edge_touching_threshold",
         "thread_workers",
         "empty_slice_removal_threshold",
+        "resize_factor",
+        "is_full_image_pass",
+        "pass_class_names",
     }
     actual_fields = {f.name for f in dataclasses.fields(InferenceRequest)}
     assert actual_fields == expected_fields, (
