@@ -47,6 +47,7 @@ class FakeProjectionEngine:
         *,
         features: list[str],
         resolution: tuple[int, int],
+        skip_image_reduction: bool = False,
     ) -> list:
         """Return one ProjectionResult per requested feature (all-zeros image)."""
         from tls2dseg.types import ProjectionResult
@@ -57,6 +58,7 @@ class FakeProjectionEngine:
                 feature_name=feature,
                 image=np.zeros((h, w), dtype=np.float32),
                 path=Path("fake"),
+                d_azim_rad=1e-3,
             )
             for feature in features
         ]

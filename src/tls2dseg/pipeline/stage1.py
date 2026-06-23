@@ -56,7 +56,10 @@ def run_stage1(
     from pchandler.geometry import PointCloudData  # noqa: F401
     from pchandler.geometry.transforms import toggle_socs2prcs
 
+    from tls2dseg.config.text import split_class_keys
     from tls2dseg.detections_3d import clean_pcd_instances_and_get_detections3d
+    from tls2dseg.engines.inference.multi_zoom_dispatch import is_multi_zoom_active, run_multi_zoom
+    from tls2dseg.engines.inference.multi_zoom_plan import compute_zoom_passes
     from tls2dseg.engines.inference.shared import (
         get_instance_and_semantic_mask_with_confidence,
         get_per_mask_depth_parallel,
@@ -77,6 +80,16 @@ def run_stage1(
         id_from_path,
         load_previously_saved_inference_results_if_any,
     )
+
+    mz_cfg = cfg.inference.multi_zoom
+    _mz_active = is_multi_zoom_active(mz_cfg)
+
+    # Build class_sizes dict from ClassSpec for compute_zoom_passes
+    if _mz_active and mz_cfg.classes is not None:
+        _class_keys = split_class_keys(mz_cfg.classes.text_prompt)
+        _class_sizes: dict[str, float] = dict(zip(_class_keys, mz_cfg.classes.sizes_m, strict=True))
+    else:
+        _class_sizes = {}
 
     # --- checkpoint discovery ---
     stage1_odir_partial = ctx.stage1_dir
@@ -201,7 +214,19 @@ def run_stage1(
             pcd_i,
             features=features,
             resolution=(0, 0),
+            skip_image_reduction=_mz_active,
         )
+
+        # Per-scan robust range bounds for zoom-pass planning
+        if _mz_active:
+            _ranges = pcd_i.spherical_coordinates[:, 0]
+            if pcp_parameters["range_limits"] is not None:
+                _range_near_m = float(pcp_parameters["range_limits"][0])
+                _range_far_m = float(pcp_parameters["range_limits"][1])
+            else:
+                _pctile_lo, _pctile_hi = mz_cfg.range_percentiles
+                _range_near_m = float(np.nanpercentile(_ranges, _pctile_lo))
+                _range_far_m = float(np.nanpercentile(_ranges, _pctile_hi))
 
         # subsample + global-shift after projection (project() may mutate pcd_i in-place).
         # Safe ordering: lift_masks_to_pcd re-derives pixel↔point correspondence from
@@ -231,7 +256,26 @@ def run_stage1(
                 n_scans,
                 projection_result.feature_name,
             )
-            detections_2d = inference_engine.detect(image_j_numpy, request=inference_request)
+            if _mz_active:
+                zoom_passes = compute_zoom_passes(
+                    class_sizes=_class_sizes,
+                    d_azim_rad=projection_result.d_azim_rad,
+                    range_near_m=_range_near_m,
+                    range_far_m=_range_far_m,
+                    p_min_frac=mz_cfg.footprint_band_frac[0],
+                    p_max_frac=mz_cfg.footprint_band_frac[1],
+                    max_zoom_passes=mz_cfg.max_zoom_passes,
+                )
+                detections_2d = run_multi_zoom(
+                    image_j_numpy,
+                    inference_engine,
+                    inference_request,
+                    zoom_passes,
+                    ctx,
+                    mz_cfg=mz_cfg,
+                )
+            else:
+                detections_2d = inference_engine.detect(image_j_numpy, request=inference_request)
 
             # dict adapter for dict-consuming helpers
             results: dict = {
