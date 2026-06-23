@@ -8,6 +8,8 @@ Tests:
   4. test_single_zoom_fallback — is_multi_zoom_active returns False for mode=single-zoom
                                  and for absent classes.
   5. test_warn_once    — _warn_single_zoom_once fires WARNING exactly once across two calls.
+  6. test_on_pass      — on_pass fires once per zoom pass with monotonically increasing
+                         indices; callback exception does not break run_multi_zoom.
 
 No real models — FakeEngine only. No torch/pyvips/sam2 at module level.
 """
@@ -350,3 +352,61 @@ def test_warn_once(
     assert "single-zoom" in warning_records[0].message.lower() or "multi-zoom" in warning_records[0].message.lower()
     # Verify the flag was set
     assert mzd_mod._warned_single_zoom is True
+
+
+# ---------------------------------------------------------------------------
+# Test 6: on_pass observer — fires once per pass, index monotonic, exception-safe
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.tier_a
+def test_on_pass(monkeypatch: pytest.MonkeyPatch) -> None:
+    """on_pass fires exactly once per zoom pass with monotonically increasing indices.
+
+    The observer receives the per-pass image (np.ndarray) and a Detections2D.
+    An exception raised inside on_pass must NOT break run_multi_zoom — the
+    combined result is still returned and has at least 1 detection.
+    """
+    monkeypatch.setattr(mzd_mod, "_lanczos3_resize", _numpy_resize)
+
+    class_id_map = {"chair": 1, "table": 2, "door": 3, "background": 0}
+    ctx = _FakeCtx(class_id_map=class_id_map)
+    mz_cfg = _FakeMzCfg()
+
+    det_p0 = _make_detections([[0.0, 0.0, 5.0, 5.0]], ["chair"], [1])
+    det_p1 = _make_detections([[10.0, 10.0, 20.0, 20.0]], ["table"], [2])
+    det_p2 = _make_detections([[30.0, 30.0, 40.0, 40.0]], ["door"], [3])
+
+    engine = _PerPassFakeEngine([det_p0, det_p1, det_p2])
+    passes = [
+        _full_image_pass(("chair",)),
+        _tiled_pass(("table",), resize_factor=0.5),
+        _tiled_pass(("door",), resize_factor=0.25),
+    ]
+    base_request = _make_request()
+    image_native = np.zeros((100, 200), dtype=np.float32)
+
+    observed: list[tuple[int, object, object, object]] = []
+
+    def _observer(idx: int, zoom_pass: object, image: object, det: object) -> None:
+        observed.append((idx, zoom_pass, image, det))
+        if idx == 1:
+            raise RuntimeError("intentional observer error")
+
+    result = run_multi_zoom(image_native, engine, base_request, passes, ctx, mz_cfg=mz_cfg, on_pass=_observer)
+
+    # Fired exactly once per pass
+    assert len(observed) == len(passes), f"Expected {len(passes)} on_pass calls, got {len(observed)}"
+
+    # Indices are monotonically increasing (0, 1, 2, ...)
+    indices = [entry[0] for entry in observed]
+    assert indices == list(range(len(passes))), f"Indices not monotonic: {indices}"
+
+    # Each call received an np.ndarray image and a Detections2D
+    for idx, _zoom_pass, image, det in observed:
+        assert isinstance(image, np.ndarray), f"Pass {idx}: image is not np.ndarray"
+        assert isinstance(det, Detections2D), f"Pass {idx}: det is not Detections2D"
+
+    # Exception in pass 1 did NOT break run_multi_zoom — combined result returned
+    assert result is not None
+    assert len(result.input_boxes) >= 1

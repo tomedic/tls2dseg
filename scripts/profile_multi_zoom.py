@@ -1,7 +1,8 @@
 """Standalone profiling harness for the multi-zoom dispatcher.
 
-Measures per-pass peak VRAM, total runtime (multi-zoom vs single-zoom baseline),
-and confirms the DINO/SAM2 internal resize assumptions (A1/A2) on a real scan.
+Measures per-pass peak VRAM, total runtime (multi-zoom vs optional single-zoom
+baseline), confirms DINO/SAM2 internal resize assumptions (A1/A2), and saves
+per-pass input images + detection overlays for visual inspection.
 
 Run (from the tls2dseg/ repo root, GPU stack active):
 
@@ -10,15 +11,19 @@ Run (from the tls2dseg/ repo root, GPU stack active):
         --scan /path/to/scan.e57 \\
         [--classes "tree:5,pole:0.1"] \\
         [--feature intensity] \\
-        [--passes N]
+        [--passes N] \\
+        [--overlay-dir ./profile_out/myscan] \\
+        [--baseline]
 
-Outputs a summary table to stdout (and logging) covering:
-  - DINO processor.image_processor.size / max_size (A1)
-  - SAM2 set_image input dimensions (A2)
-  - Per-pass peak VRAM after each run_multi_zoom pass
-  - Total runtime multi-zoom-on vs single-zoom-off
+Outputs:
+  - Summary table to stdout (DINO/SAM2 sizes, per-pass VRAM, runtime).
+  - Per-pass PNG images under --overlay-dir:
+      pass{i}_input_resize{r}_tile{t}.png  — normalized input feature image
+      pass{i}_overlay_resize{r}_tile{t}.png — same with detection boxes/labels
+  - final_combined_overlay.png  — combined detections on a downscaled native image
+  - plan_dump.txt               — zoom-pass plan parameters
 
-No results are written automatically — copy the printed table into
+No results are written automatically to .md — copy the printed table into
 06-PROFILE.md after inspecting the values.
 """
 
@@ -60,7 +65,6 @@ def _confirm_dino_sizes(inference_engine: object) -> dict[str, object]:
     try:
         processor = getattr(inference_engine, "_processor", None)
         if processor is None:
-            # grounded_sam2_hf path
             processor = getattr(inference_engine, "processor", None)
         if processor is None:
             logger.warning("Could not locate DINO processor on inference_engine — skipping A1 check")
@@ -144,33 +148,23 @@ def _run_multi_zoom_profiled(
     zoom_passes: list,
     ctx: object,
     mz_cfg: object,
+    on_pass_cb: object = None,
 ) -> tuple[float, list[float], "Detections2D"]:
     """Run run_multi_zoom with per-pass VRAM recording.
 
-    Monkey-patches the dispatcher's inner loop to record
-    max_memory_allocated after each pass, then restores normal dispatch.
+    Wraps run_multi_zoom's loop manually to record max_memory_allocated after
+    each pass.  on_pass_cb is forwarded directly to run_multi_zoom's on_pass
+    parameter so overlays are written from inside the official hook.
 
     Returns (total_elapsed_s, per_pass_vram_gb_list, combined_detections).
     """
+    import dataclasses
+    import gc
     import time
 
     import torch
 
     from tls2dseg.engines.inference import multi_zoom_dispatch as _mzd
-
-    per_pass_vram: list[float] = []
-    original_detect = inference_engine.detect.__func__ if hasattr(
-        inference_engine.detect, "__func__"
-    ) else None
-
-    # Wrap detect() to record VRAM after each call.
-    # We patch at the dispatcher level by wrapping run_multi_zoom's loop
-    # instead, since patching the engine method would require more invasive
-    # changes. Strategy: call run_multi_zoom pass-by-pass manually.
-
-    import gc
-    import dataclasses
-
     from tls2dseg.engines.inference.dedup import (
         _concat_detections,
         dedup_cross_class,
@@ -183,18 +177,18 @@ def _run_multi_zoom_profiled(
     per_class_metadata: dict[str, object] = getattr(ctx, "per_class_metadata", {})
 
     all_detections: list[Detections2D] = []
+    per_pass_vram: list[float] = []
 
     torch.cuda.reset_peak_memory_stats()
     t0 = time.perf_counter()
 
     for pass_idx, zoom_pass in enumerate(zoom_passes):
-        # Reset peak stats at the START of each pass so we measure per-pass peak.
         torch.cuda.reset_peak_memory_stats()
 
         if zoom_pass.resize_factor < 1.0:
             image_input = _mzd._lanczos3_resize(image, zoom_pass.resize_factor)
             logger.info(
-                "Pass %d: Lanczos3 resize %.3f → shape %s",
+                "Pass %d: Lanczos3 resize %.3f -> shape %s",
                 pass_idx,
                 zoom_pass.resize_factor,
                 image_input.shape,
@@ -222,7 +216,13 @@ def _run_multi_zoom_profiled(
 
         det_i: Detections2D = inference_engine.detect(image_input, request=per_pass_request)
 
-        # Record peak VRAM for this pass.
+        # Fire on_pass before remap (same contract as run_multi_zoom's hook)
+        if on_pass_cb is not None:
+            try:
+                on_pass_cb(pass_idx, zoom_pass, image_input, det_i)
+            except Exception:
+                logger.debug("on_pass_cb raised; ignoring", exc_info=True)
+
         pass_peak_gb = torch.cuda.max_memory_allocated() / 1e9
         per_pass_vram.append(pass_peak_gb)
         logger.info(
@@ -278,7 +278,7 @@ def _print_summary(
     zoom_passes: list,
     per_pass_vram: list[float],
     mz_elapsed_s: float,
-    sz_elapsed_s: float,
+    sz_elapsed_s: float | None,
     sz_n_detections: int,
     mz_n_detections: int,
 ) -> None:
@@ -316,12 +316,191 @@ def _print_summary(
     print()
 
     print("--- Runtime Comparison ---")
-    print(f"  Single-zoom baseline:  {sz_elapsed_s:.2f} s  ({sz_n_detections} detections)")
+    if sz_elapsed_s is not None:
+        print(f"  Single-zoom baseline:  {sz_elapsed_s:.2f} s  ({sz_n_detections} detections)")
+    else:
+        print("  Single-zoom baseline:  skipped (run with --baseline to enable)")
     print(f"  Multi-zoom total:      {mz_elapsed_s:.2f} s  ({mz_n_detections} detections)")
-    ratio = mz_elapsed_s / sz_elapsed_s if sz_elapsed_s > 0 else float("nan")
-    print(f"  Overhead factor:       {ratio:.2f}x")
+    if sz_elapsed_s is not None and sz_elapsed_s > 0:
+        ratio = mz_elapsed_s / sz_elapsed_s
+        print(f"  Overhead factor:       {ratio:.2f}x")
     print()
     print(sep)
+
+
+# ---------------------------------------------------------------------------
+# Overlay helpers (heavy deps; only called from main() after imports)
+# ---------------------------------------------------------------------------
+
+
+def _feature_image_to_bgr_uint8(image: "np.ndarray") -> "np.ndarray":
+    """Convert a 2-D float feature image to a 3-channel BGR uint8 for cv2.
+
+    Handles float images that exceed [0, 1] via min-max normalisation.
+    NaN values are zeroed before normalisation.
+    """
+    import numpy as np
+
+    img = image.astype(np.float32)
+    img = np.nan_to_num(img, nan=0.0)
+    lo, hi = img.min(), img.max()
+    if hi > lo:
+        img = (img - lo) / (hi - lo) * 255.0
+    else:
+        img = np.zeros_like(img)
+    img_u8 = img.astype("uint8")
+    # Convert single-channel to BGR
+    import cv2
+    return cv2.cvtColor(img_u8, cv2.COLOR_GRAY2BGR)
+
+
+def _build_on_pass_callback(
+    overlay_dir: "Path",
+) -> object:
+    """Return an on_pass callback that writes per-pass input + overlay PNGs.
+
+    Filenames: pass{idx}_input_resize{r}_tile{t}.png
+               pass{idx}_overlay_resize{r}_tile{t}.png
+
+    The callback captures pass-count per resize band for unique naming.
+    Heavy imports (cv2, supervision) happen inside the returned closure.
+    """
+
+    per_resize_tile_count: dict[float, int] = {}
+
+    def _on_pass(
+        idx: int,
+        zoom_pass: object,
+        image_input: "np.ndarray",
+        det: "Detections2D",
+    ) -> None:
+        import cv2
+        import numpy as np
+        import supervision as sv
+        from supervision.draw.color import ColorPalette
+
+        from tls2dseg.supervision_utils import CUSTOM_COLOR_MAP
+
+        resize_factor = getattr(zoom_pass, "resize_factor", 1.0)
+        tile_size = getattr(zoom_pass, "tile_size_px", None)
+
+        r_str = f"{resize_factor:.3f}".replace(".", "p")
+        t_str = str(tile_size) if tile_size is not None else "none"
+        stem = f"pass{idx}_resize{r_str}_tile{t_str}"
+
+        # --- input image ---
+        bgr = _feature_image_to_bgr_uint8(image_input)
+        input_path = overlay_dir / f"{stem}_input.png"
+        cv2.imwrite(str(input_path), bgr)
+        logger.info("Saved input image: %s", input_path)
+
+        # --- overlay image ---
+        n = len(det.input_boxes) if hasattr(det, "input_boxes") else 0
+        if n > 0:
+            xyxy = np.asarray(det.input_boxes, dtype=np.float32)
+            class_ids = np.asarray(det.class_ids, dtype=np.int32)
+            confs = np.asarray(det.confidences, dtype=np.float32)
+            sv_det = sv.Detections(xyxy=xyxy, class_id=class_ids, confidence=confs)
+            labels = [
+                f"{name} {conf:.2f}"
+                for name, conf in zip(det.class_names, confs, strict=False)
+            ]
+            palette = ColorPalette.from_hex(CUSTOM_COLOR_MAP)
+            annotated = bgr.copy()
+            annotated = sv.BoxAnnotator(color=palette).annotate(annotated, sv_det)
+            annotated = sv.LabelAnnotator(color=palette).annotate(annotated, sv_det, labels=labels)
+        else:
+            annotated = bgr.copy()
+
+        overlay_path = overlay_dir / f"{stem}_overlay.png"
+        cv2.imwrite(str(overlay_path), annotated)
+        logger.info(
+            "Saved overlay (pass %d, %d detections): %s",
+            idx,
+            n,
+            overlay_path,
+        )
+
+    return _on_pass
+
+
+def _save_final_combined_overlay(
+    image_native: "np.ndarray",
+    combined: "Detections2D",
+    overlay_dir: "Path",
+    max_dim: int = 4000,
+) -> None:
+    """Save final_combined_overlay.png on a downscaled native image.
+
+    The native panorama can be ~8k x 43k pixels; cap the longest dimension at
+    max_dim and scale the combined bounding boxes by the same factor.
+    """
+    import cv2
+    import numpy as np
+    import supervision as sv
+    from supervision.draw.color import ColorPalette
+
+    from tls2dseg.supervision_utils import CUSTOM_COLOR_MAP
+
+    h, w = image_native.shape[:2]
+    scale = min(1.0, max_dim / max(h, w))
+    if scale < 1.0:
+        new_h = max(1, int(h * scale))
+        new_w = max(1, int(w * scale))
+        logger.info(
+            "Downscaling native image %.3f -> (%d x %d) for final overlay",
+            scale,
+            new_w,
+            new_h,
+        )
+        bgr_full = _feature_image_to_bgr_uint8(image_native)
+        bgr = cv2.resize(bgr_full, (new_w, new_h), interpolation=cv2.INTER_AREA)
+    else:
+        scale = 1.0
+        bgr = _feature_image_to_bgr_uint8(image_native)
+
+    n = len(combined.input_boxes) if hasattr(combined, "input_boxes") else 0
+    if n > 0:
+        xyxy = np.asarray(combined.input_boxes, dtype=np.float32) * scale
+        class_ids = np.asarray(combined.class_ids, dtype=np.int32)
+        confs = np.asarray(combined.confidences, dtype=np.float32)
+        sv_det = sv.Detections(xyxy=xyxy, class_id=class_ids, confidence=confs)
+        labels = [
+            f"{name} {conf:.2f}"
+            for name, conf in zip(combined.class_names, confs, strict=False)
+        ]
+        palette = ColorPalette.from_hex(CUSTOM_COLOR_MAP)
+        annotated = bgr.copy()
+        annotated = sv.BoxAnnotator(color=palette).annotate(annotated, sv_det)
+        annotated = sv.LabelAnnotator(color=palette).annotate(annotated, sv_det, labels=labels)
+    else:
+        annotated = bgr.copy()
+
+    out_path = overlay_dir / "final_combined_overlay.png"
+    cv2.imwrite(str(out_path), annotated)
+    logger.info(
+        "Saved final combined overlay (%d detections, scale=%.3f): %s",
+        n,
+        scale,
+        out_path,
+    )
+
+
+def _write_plan_dump(zoom_passes: list, overlay_dir: "Path") -> None:
+    """Write zoom-pass plan parameters to plan_dump.txt in overlay_dir."""
+    lines = ["# Multi-zoom plan dump\n"]
+    for i, zp in enumerate(zoom_passes):
+        lines.append(f"pass {i}:")
+        lines.append(f"  class_names: {list(zp.class_names)}")
+        lines.append(f"  resize_factor: {zp.resize_factor}")
+        lines.append(f"  needs_tiling: {zp.needs_tiling}")
+        lines.append(f"  tile_size_px: {zp.tile_size_px}")
+        lines.append(f"  overlap_px: {zp.overlap_px}")
+        lines.append(f"  text_prompt: {zp.text_prompt!r}")
+        lines.append("")
+    dump_path = overlay_dir / "plan_dump.txt"
+    dump_path.write_text("\n".join(lines))
+    logger.info("Saved plan dump: %s", dump_path)
 
 
 def main() -> None:
@@ -349,6 +528,26 @@ def main() -> None:
         default=0,
         help="Override number of tiled passes (0 = compute from footprint math)",
     )
+    parser.add_argument(
+        "--overlay-dir",
+        default=None,
+        help=(
+            "Directory for per-pass input/overlay PNGs and plan_dump.txt. "
+            "Defaults to ./profile_out/<scan_stem>/"
+        ),
+    )
+    parser.add_argument(
+        "--baseline",
+        action="store_true",
+        default=False,
+        help="Run single-zoom baseline (expensive — skipped by default for fast re-runs).",
+    )
+    parser.add_argument(
+        "--no-baseline",
+        dest="baseline",
+        action="store_false",
+        help="Skip single-zoom baseline (default).",
+    )
     args = parser.parse_args()
 
     # --- heavy imports inside main() ---
@@ -367,6 +566,14 @@ def main() -> None:
     config_path = Path(args.config).resolve()
     scan_path = Path(args.scan).resolve()
     class_sizes = _parse_classes(args.classes)
+
+    # --- resolve overlay-dir ---
+    if args.overlay_dir is not None:
+        overlay_dir = Path(args.overlay_dir).resolve()
+    else:
+        overlay_dir = Path("profile_out") / scan_path.stem
+    overlay_dir.mkdir(parents=True, exist_ok=True)
+    logger.info("Overlay directory: %s", overlay_dir)
 
     logger.info("Loading config from %s", config_path)
     cfg = load_config(config_path)
@@ -444,6 +651,9 @@ def main() -> None:
             zp.tile_size_px,
         )
 
+    # --- write plan dump ---
+    _write_plan_dump(zoom_passes, overlay_dir)
+
     # --- build base InferenceRequest ---
     text_prompt = ". ".join(sorted(class_sizes.keys(), key=len, reverse=True)) + "."
     base_request = InferenceRequest(
@@ -489,20 +699,51 @@ def main() -> None:
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
 
-    # --- single-zoom baseline ---
-    logger.info("Running single-zoom baseline...")
-    sz_elapsed_s, sz_detections = _run_single_zoom_baseline(image_native, inference_engine, base_request)
-    logger.info("Single-zoom baseline: %.2f s, %d detections", sz_elapsed_s, len(sz_detections.input_boxes))
-    gc.collect()
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
+    # --- optional single-zoom baseline ---
+    sz_elapsed_s: float | None = None
+    sz_n_detections = 0
+    if args.baseline:
+        logger.info("Running single-zoom baseline...")
+        sz_elapsed_s, sz_detections = _run_single_zoom_baseline(
+            image_native, inference_engine, base_request
+        )
+        sz_n_detections = len(sz_detections.input_boxes)
+        logger.info(
+            "Single-zoom baseline: %.2f s, %d detections", sz_elapsed_s, sz_n_detections
+        )
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    else:
+        logger.info("Skipping single-zoom baseline (use --baseline to enable).")
+
+    # --- build the per-pass overlay callback ---
+    on_pass_cb = _build_on_pass_callback(overlay_dir)
 
     # --- multi-zoom profiled run ---
     logger.info("Running multi-zoom (profiled)...")
     mz_elapsed_s, per_pass_vram, mz_detections = _run_multi_zoom_profiled(
-        image_native, inference_engine, base_request, zoom_passes, ctx, mz_cfg
+        image_native,
+        inference_engine,
+        base_request,
+        zoom_passes,
+        ctx,
+        mz_cfg,
+        on_pass_cb=on_pass_cb,
     )
-    logger.info("Multi-zoom: %.2f s, %d detections", mz_elapsed_s, len(mz_detections.input_boxes))
+
+    mz_n_detections = len(mz_detections.input_boxes)
+    logger.info("Multi-zoom: %.2f s, %d detections", mz_elapsed_s, mz_n_detections)
+
+    # Per-pass count summary
+    logger.info(
+        "Count summary: total combined=%d (after dedup); check per-pass overlays in %s",
+        mz_n_detections,
+        overlay_dir,
+    )
+
+    # --- save final combined overlay ---
+    _save_final_combined_overlay(image_native, mz_detections, overlay_dir)
 
     # --- print summary ---
     _print_summary(
@@ -515,8 +756,8 @@ def main() -> None:
         per_pass_vram=per_pass_vram,
         mz_elapsed_s=mz_elapsed_s,
         sz_elapsed_s=sz_elapsed_s,
-        sz_n_detections=len(sz_detections.input_boxes),
-        mz_n_detections=len(mz_detections.input_boxes),
+        sz_n_detections=sz_n_detections,
+        mz_n_detections=mz_n_detections,
     )
 
 

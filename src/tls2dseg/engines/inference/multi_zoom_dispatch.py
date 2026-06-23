@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import dataclasses
 import logging
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -162,6 +163,7 @@ def run_multi_zoom(
     ctx: object,
     *,
     mz_cfg: object,
+    on_pass: Callable[[int, ZoomPass, np.ndarray, Detections2D], None] | None = None,
 ) -> Detections2D:
     """Run N+1 detect() passes, dedup, populate metadata, return Detections2D.
 
@@ -182,6 +184,13 @@ def run_multi_zoom(
         RunContext supplying class_id_map and per_class_metadata (mutable dict).
     mz_cfg :
         MultiZoomConfig sub-block for IoS/threshold parameters.
+    on_pass :
+        Optional observer called after each detect() and BEFORE coordinate
+        remap. Receives (pass_index, zoom_pass, image_input, det_i) where
+        image_input is the resized image fed to the model and det_i contains
+        detections in that resized coordinate space. Exceptions inside the
+        callback are caught and logged at DEBUG level so they never affect
+        inference results.
     """
     import gc
 
@@ -197,7 +206,7 @@ def run_multi_zoom(
 
     all_detections: list[Detections2D] = []
 
-    for zoom_pass in zoom_passes:
+    for pass_index, zoom_pass in enumerate(zoom_passes):
         # Resize: only when resize_factor < 1.0 (full-image pass stays native)
         if zoom_pass.resize_factor < 1.0:
             image_input = _lanczos3_resize(image_native, zoom_pass.resize_factor)
@@ -237,6 +246,12 @@ def run_multi_zoom(
             zoom_pass.class_names,
             len(det_i.input_boxes),
         )
+
+        if on_pass is not None:
+            try:
+                on_pass(pass_index, zoom_pass, image_input, det_i)
+            except Exception:
+                logger.debug("on_pass observer raised; ignoring", exc_info=True)
 
         # Remap 1: resized→native coordinates
         if zoom_pass.resize_factor < 1.0:
