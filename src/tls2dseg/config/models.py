@@ -544,6 +544,17 @@ class MultiZoomConfig(BaseModel):
             "(D-D-03). IoS is restricted to same class to avoid killing nested objects."
         ),
     )
+    # tag: tuning
+    max_zoom_passes: int = Field(
+        6,
+        gt=0,
+        json_schema_extra={"tag": "tuning"},
+        description=(
+            "Maximum number of tiled zoom bands. Caps the greedy interval-cover when the "
+            "footprint span would require more bands; a warning is emitted and coarsest "
+            "instances rely on the always-on overview pass."
+        ),
+    )
 
     @field_validator("footprint_band_frac", mode="after")
     @classmethod

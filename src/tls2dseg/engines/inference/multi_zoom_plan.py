@@ -56,6 +56,7 @@ def compute_zoom_passes(
     p_min_frac: float = 0.075,
     p_max_frac: float = 0.225,
     model_short_side: int = 800,
+    max_zoom_passes: int = 6,
 ) -> list[ZoomPass]:
     """Compute the minimal ZoomPass list covering all class footprints.
 
@@ -73,21 +74,20 @@ def compute_zoom_passes(
         Target footprint band as fractions of model_short_side (D-A-05).
     model_short_side :
         DINO short-side input size in pixels (default 800).
+    max_zoom_passes :
+        Maximum number of tiled bands. Caps n_s when the footprint span would
+        require more; a warning is emitted when the cap is applied.
 
     Returns
     -------
     list[ZoomPass]
         Always starts with exactly one full-image pass (D-B-05), followed by
-        the greedy-cover tiled passes.
+        the greedy-cover tiled passes ordered fine->coarse (band 0 first).
     """
     all_names = list(class_sizes.keys())
 
-    # Always-on full-image pass (D-B-05): Lanczos3-downscale to model short-side.
-    # resize_factor = min(model_short_side / max(native_h, native_w), 1.0)
-    # We don't know the image dimensions here, so use 1.0 as the safe default;
-    # the dispatcher will apply the actual resize. The important invariant is
-    # needs_tiling=False and covering all classes.
-    full_image_pass = ZoomPass(
+    # Always-on full-image overview pass (D-B-05).
+    overview_pass = ZoomPass(
         resize_factor=1.0,
         tile_size_px=None,
         overlap_px=None,
@@ -97,75 +97,62 @@ def compute_zoom_passes(
     )
 
     if not class_sizes or d_azim_rad <= 0.0 or range_near_m <= 0.0:
-        logger.debug("Degenerate inputs: returning full-image pass only")
-        return [full_image_pass]
+        logger.debug("Degenerate inputs: returning overview pass only")
+        return [overview_pass]
 
     p_min = p_min_frac * model_short_side
     p_max = p_max_frac * model_short_side
-    ov_frac = p_max_frac  # overlap fraction per D-B-02
+    K = p_max / p_min  # band ratio
+    ov_frac = p_max_frac  # overlap fraction (D-B-02)
+    target_effective = math.sqrt(p_min * p_max)  # sweet-spot center
 
-    # Compute native footprint p0 = size_m / (range_m * d_azim_rad) for each class.
-    # Use range_near for near-side (biggest footprint) and range_far for far-side
-    # (smallest footprint) to bracket the full span seen in a scan.
-    footprints_near: dict[str, float] = {}
-    footprints_far: dict[str, float] = {}
+    # Per-class native footprints in image pixels.
+    # fp_near = biggest footprint (object at near range).
+    # fp_far  = smallest footprint (object at far range, clamped to near if far < near).
+    fp_near: dict[str, float] = {}
+    fp_far: dict[str, float] = {}
     for name, size_m in class_sizes.items():
-        footprints_near[name] = size_m / (range_near_m * d_azim_rad)
-        footprints_far[name] = size_m / (max(range_far_m, range_near_m) * d_azim_rad)
+        fp_near[name] = size_m / (range_near_m * d_azim_rad)
+        fp_far[name] = size_m / (max(range_far_m, range_near_m) * d_azim_rad)
 
-    # Clamp footprints for the log-space cover computation.
-    # Footprints outside [p_min, p_max] are mapped to the band edge (they'll still
-    # be bucketed to the nearest band; clamping only affects n_s calculation).
-    all_far_fps = [max(fp, p_min) for fp in footprints_far.values()]
-    all_near_fps = [min(fp, p_max) for fp in footprints_near.values()]
+    # Total span across ALL classes — unclamped (this is the core fix).
+    F_lo = min(fp_far.values())  # smallest-object-at-far
+    F_hi = max(fp_near.values())  # largest-object-at-near
 
-    log_far = math.log(min(all_far_fps))
-    log_near = math.log(max(all_near_fps))
-    log_K = math.log(p_max / p_min)
+    n_s = 1 if F_hi <= F_lo else math.ceil(math.log(F_hi / F_lo) / math.log(K))
 
-    n_s = 1 if log_near <= log_far else math.ceil((log_near - log_far) / log_K)
+    if n_s > max_zoom_passes:
+        logger.warning(
+            "Footprint span %.1f (F_lo=%.1f, F_hi=%.1f) requires %d bands but "
+            "max_zoom_passes=%d caps it. Coarsest instances rely on the overview pass.",
+            F_hi / F_lo,
+            F_lo,
+            F_hi,
+            n_s,
+            max_zoom_passes,
+        )
+        n_s = max_zoom_passes
 
-    # Band boundaries: greedy sweep from far end in log space.
-    # Band s covers [log_far + s*log_K, log_far + (s+1)*log_K].
-    def _band_index(log_fp: float) -> int:
-        idx = int((log_fp - log_far) / log_K)
-        return max(0, min(idx, n_s - 1))
-
-    # Bucket each class by its representative footprint (use near = near_m → biggest footprint,
-    # which determines what band it needs most aggressive scaling for).
-    band_to_classes: dict[int, list[str]] = {i: [] for i in range(n_s)}
-    for name in all_names:
-        # Use near-side footprint for band assignment (determines downscale needed).
-        fp_near = footprints_near[name]
-        log_fp = math.log(max(fp_near, p_min))
-        log_fp = min(log_fp, log_near)  # clamp to cover range
-        band_idx = _band_index(log_fp)
-        band_to_classes[band_idx].append(name)
-
+    # Build tiled passes, one per non-empty band.
     tiled_passes: list[ZoomPass] = []
-    for band_idx in range(n_s):
-        names_in_band = band_to_classes[band_idx]
-        if not names_in_band:
+    for b in range(n_s):
+        band_lo = F_lo * (K**b)
+        band_hi = F_lo * (K ** (b + 1))
+        fc_b = F_lo * (K ** (b + 0.5))  # geometric center
+
+        # Class membership: interval overlap (D-B-06, DECISION 1).
+        # fp_far < band_hi: object has instances smaller than band top.
+        # fp_near >= band_lo: object has instances at least as large as band bottom.
+        members = [name for name in all_names if fp_far[name] < band_hi and fp_near[name] >= band_lo]
+        if not members:
             continue
 
-        # Band center in log space; derive target footprint (geometric mean of band edges).
-        log_lo = log_far + band_idx * log_K
-        log_hi = log_lo + log_K
-        log_center = (log_lo + log_hi) / 2.0
-        target_fp = math.exp(log_center)
-
-        # Representative class footprint for resize math: use near-side (largest).
-        # For the band's resize factor we pick the largest footprint in the band.
-        max_fp_near = max(footprints_near[n] for n in names_in_band)
-
         resize_factor, tile_size_px = _compute_pass_geometry(
-            p0=max_fp_near,
-            target_fp=target_fp,
-            p_min=p_min,
-            p_max=p_max,
+            fc_b=fc_b,
+            target_effective=target_effective,
             model_short_side=model_short_side,
         )
-        overlap_px = int(ov_frac * tile_size_px)
+        overlap_px = round(ov_frac * tile_size_px)
 
         tiled_passes.append(
             ZoomPass(
@@ -173,46 +160,75 @@ def compute_zoom_passes(
                 tile_size_px=tile_size_px,
                 overlap_px=overlap_px,
                 needs_tiling=True,
-                class_names=tuple(names_in_band),
-                text_prompt=_build_prompt(names_in_band),
+                class_names=tuple(members),
+                text_prompt=_build_prompt(members),
             )
         )
 
-    return [full_image_pass, *tiled_passes]
+    # Emit structured debug dump so the operator is never blind.
+    logger.info(
+        "multi-zoom plan: %s",
+        {
+            "p_min": round(p_min, 1),
+            "p_max": round(p_max, 1),
+            "K": round(K, 2),
+            "target_effective": round(target_effective, 1),
+            "F_lo": round(F_lo, 2),
+            "F_hi": round(F_hi, 2),
+            "n_s": n_s,
+            "per_class": {
+                name: {
+                    "fp_near": round(fp_near[name], 1),
+                    "fp_far": round(fp_far[name], 1),
+                }
+                for name in all_names
+            },
+            "bands": [
+                {
+                    "idx": b,
+                    "native_lo": round(F_lo * (K**b), 2),
+                    "native_hi": round(F_lo * (K ** (b + 1)), 2),
+                    "center": round(F_lo * (K ** (b + 0.5)), 2),
+                    "resize_factor": round(p.resize_factor, 3),
+                    "tile_size_px": p.tile_size_px,
+                    "overlap_px": p.overlap_px,
+                    "classes": list(p.class_names),
+                }
+                for b, p in enumerate(tiled_passes)
+            ],
+        },
+    )
+
+    return [overview_pass, *tiled_passes]
 
 
 def _compute_pass_geometry(
-    p0: float,
-    target_fp: float,
-    p_min: float,
-    p_max: float,
+    fc_b: float,
+    target_effective: float,
     model_short_side: int,
 ) -> tuple[float, int]:
     """Compute (resize_factor, tile_size_px) for one band.
 
-    Two strategies (D-A-06):
-    - Big object (p0 >= p_max): Lanczos3 downscale to bring footprint in-band.
-      resize_factor = clamp(p_max / p0, 0 < z <= 1.0).
-      tile_size_px = model_short_side (one tile = model input, no tiling overhead).
-    - Small object (p0 < p_min): keep native (resize_factor=1.0), shrink tile so
-      model upscales the crop to see sub-pixel objects.
-      tile_size_px derived so model_short_side / tile_size_px brings p0 in-band.
+    Z_b = target_effective / fc_b is the effective scale needed to bring
+    the band center to the sweet-spot footprint (D-A-06).
+
+    Two strategies:
+    - Z_b <= 1.0 (band center bigger than target): DOWNSCALE image.
+      resize_factor = Z_b  (< 1); tile_size_px = model_short_side.
+    - Z_b > 1.0 (band center smaller than target): keep native, SHRINK tile
+      so the model upscales the crop.
+      resize_factor = 1.0; tile_size_px = round(model_short_side / Z_b).
+      tile_size_px clamped to [model_short_side // 4, model_short_side].
     """
-    if p0 >= p_max:
-        # Big-object path: downscale image.
-        resize_factor = min(p_max / p0, 1.0)
+    Z_b = target_effective / fc_b
+
+    if Z_b <= 1.0:
+        resize_factor = Z_b
         tile_size_px = model_short_side
-    elif p0 < p_min:
-        # Small-object path: shrink tile so DINO upscales the crop.
-        # effective_fp = p0 * (model_short_side / tile_size_px) = p_min
-        # → tile_size_px = p0 * model_short_side / p_min
-        tile_size_px = max(1, int(p0 * model_short_side / p_min))
-        tile_size_px = min(tile_size_px, _SAM2_TILE_CAP_PX)
-        resize_factor = 1.0
     else:
-        # In-band: use native resolution, tile at model_short_side.
         resize_factor = 1.0
-        tile_size_px = model_short_side
+        tile_size_px = round(model_short_side / Z_b)
+        tile_size_px = max(model_short_side // 4, min(tile_size_px, model_short_side))
 
     return resize_factor, tile_size_px
 
