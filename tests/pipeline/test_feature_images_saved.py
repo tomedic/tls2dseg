@@ -87,7 +87,14 @@ class _SpyProjectionEngine:
     def set_output_dir_images(self, path: Path) -> None:
         self.received_path = path
 
-    def project(self, pcd: object, *, features: list[str], resolution: tuple[int, int]) -> list:
+    def project(
+        self,
+        pcd: object,
+        *,
+        features: list[str],
+        resolution: tuple[int, int],
+        skip_image_reduction: bool = False,
+    ) -> list:
         return []
 
 

@@ -294,8 +294,17 @@ class _SpyProjectionEngine:
         self._inner = FakeProjectionEngine(image_size=(4, 4))
         self.pcd_paths_seen: list[Path] = []
 
-    def project(self, pcd: object, *, features: list[str], resolution: tuple[int, int]) -> list:
-        return self._inner.project(pcd, features=features, resolution=resolution)
+    def project(
+        self,
+        pcd: object,
+        *,
+        features: list[str],
+        resolution: tuple[int, int],
+        skip_image_reduction: bool = False,
+    ) -> list:
+        return self._inner.project(
+            pcd, features=features, resolution=resolution, skip_image_reduction=skip_image_reduction
+        )
 
     def set_output_dir_images(self, path: Path) -> None:
         self._inner.set_output_dir_images(path)

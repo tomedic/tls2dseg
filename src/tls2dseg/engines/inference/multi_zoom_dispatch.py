@@ -9,13 +9,14 @@ Orchestrates per-class adaptive multi-zoom inference (MZ-03/04/05):
   6. Populate ctx.per_class_metadata in-place (MZ-05).
 
 Tier-A import contract: only stdlib + numpy + tls2dseg.types at module level.
-All heavy deps (pyvips, gc, torch) are imported inside function bodies (D-A-05).
+Heavy deps (pyvips) are imported inside function bodies (D-A-05).
 """
 
 from __future__ import annotations
 
 import dataclasses
 import logging
+import sys
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
@@ -264,13 +265,9 @@ def run_multi_zoom(
 
         # VRAM hygiene between passes (T-06-10 / RESEARCH Pitfall 4)
         gc.collect()
-        try:
-            import torch
-
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-        except ImportError:
-            pass
+        _torch = sys.modules.get("torch")
+        if _torch is not None and _torch.cuda.is_available():
+            _torch.cuda.empty_cache()
 
     # Concatenate all passes
     combined = _concat_detections(all_detections)
