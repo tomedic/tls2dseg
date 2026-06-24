@@ -81,6 +81,7 @@ class Pipeline:
             "rotate_pcd": cfg.projection.rotate_pcd,
             "rasterization_method": cfg.projection.rasterization_method,
             "features": list(cfg.projection.features),
+            "output_resolution": cfg.preprocessing.output_resolution_m,
         }
         self._projection_engine: ProjectionEngine = build_projection_engine(
             "spherical",
