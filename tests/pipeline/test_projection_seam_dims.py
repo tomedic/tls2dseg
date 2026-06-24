@@ -19,20 +19,22 @@ import pytest
 def _make_seam_pcd() -> object:
     """Return a PointCloudData whose azimuths straddle the ±180° seam.
 
-    Geometry: bulk of points near azimuth +175° to +180°, a small tail near
-    -175° to -180°.  The real arc is ~10° wide; the naive horizontal_max -
+    Geometry: bulk of points near azimuth +175° to +180°, a tail near
+    -180° to -175°.  The real arc is ~10° wide; the naive horizontal_max -
     horizontal_min reads ~350° (≈ 2π rad) because the seam inflates the span.
     A clear gap covers roughly -170° to +170° (≈ 340°) so rotate_pcd='auto'
     finds it and collapses the span to the tight ~10° arc.
 
     Realistic ranges (2-5 m) and a modest elevation span (±5°) are used so
-    PointCloudData can compute its FOV from xyz.
+    PointCloudData can compute its FOV from xyz.  Large point count (5500)
+    ensures rotate_pcd_to_azimuth_gap finds edge-zone points even at the
+    0.01 subsampling fraction applied internally by resolve_rotate_pcd_parameter.
     """
     from pchandler.geometry import PointCloudData
 
     rng = np.random.default_rng(42)
-    n_bulk = 200
-    n_tail = 20
+    n_bulk = 5000
+    n_tail = 500
 
     # --- bulk points near azimuth +175° to +180° ---
     az_bulk = rng.uniform(np.deg2rad(175.0), np.deg2rad(180.0), n_bulk)
