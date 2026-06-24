@@ -169,11 +169,12 @@ class SphericalProjectionEngine:
 
         Bundles the full D-B-03 projection pipeline:
         1. Resolve scan resolution (``resolve_scanning_resolution_parameter``)
-        2. Compute image dimensions (``compute_image_dimensions``)
-        3. Optional up-side-down flip (``check_was_scanner_upsidedown`` +
+        2. Optional up-side-down flip (``check_was_scanner_upsidedown`` +
            ``rotate_pcd_around_x``)
-        4. Rotate to azimuth gap (``resolve_rotate_pcd_parameter`` +
+        3. Rotate to azimuth gap (``resolve_rotate_pcd_parameter`` +
            ``rotate_pcd_to_azimuth_gap`` internally)
+        4. Compute image dimensions (``compute_image_dimensions``) — reads the
+           post-rotation FoV so seam-straddling scans get the tight span.
         5. Rasterise with pc2img (``pc2img_run``)
         6. Optional resolution reduction (``resolve_necessary_image_resolution``
            + ``reduce_image_resolution``)
@@ -228,9 +229,8 @@ class SphericalProjectionEngine:
 
         pcd_path = self._pcd_path if self._pcd_path is not None else Path("unknown.e57")
 
-        # --- Step 1: scan-resolution + image-dimension math ---
+        # --- Step 1: scan resolution (orientation-invariant) ---
         d_azim_rad, d_elev_rad = resolve_scanning_resolution_parameter(pcd, params)
-        image_width, image_height = compute_image_dimensions(pcd, params, d_azim_rad, d_elev_rad)
 
         # --- Step 2: optional upside-down flip ---
         if check_was_scanner_upsidedown(pcd):
@@ -240,16 +240,19 @@ class SphericalProjectionEngine:
         # --- Step 3: rotate to azimuth gap ---
         resolve_rotate_pcd_parameter(pcd, params)
 
-        # --- Step 4: rasterise ---
+        # --- Step 4: image dimensions from post-rotation FoV ---
+        image_width, image_height = compute_image_dimensions(pcd, params, d_azim_rad, d_elev_rad)
+
+        # --- Step 5: rasterise ---
         images_raw = pc2img_run(pcd, pcd_path, params, image_width=image_width, image_height=image_height)
 
-        # --- Step 5: optional resolution reduction ---
+        # --- Step 6: optional resolution reduction ---
         if not skip_image_reduction and "output_resolution" in params and params.get("output_resolution") is not None:
             reduction_coeff = resolve_necessary_image_resolution(pcd, params, d_azim_rad)
             if reduction_coeff < 1.0:
                 images_raw = reduce_image_resolution(images_raw, reduction_coeff, params, pcd_path)
 
-        # --- Step 6: wrap as ProjectionResult ---
+        # --- Step 7: wrap as ProjectionResult ---
         results: list[ProjectionResult] = []
         for feature_name, image, path in images_raw:
             path_obj = Path(path) if isinstance(path, str) else path
