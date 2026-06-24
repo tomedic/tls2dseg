@@ -39,10 +39,8 @@ _warned_single_zoom: bool = False
 
 
 def is_multi_zoom_active(mz_cfg: object) -> bool:
-    """Return False when multi-zoom is not configured; warn once (MZ-10)."""
-    mode = getattr(mz_cfg, "mode", None)
-    classes = getattr(mz_cfg, "classes", None)
-    if mode == "single-zoom" or classes is None:
+    """Return False when multi-zoom is inactive; warn once (MZ-10)."""
+    if not getattr(mz_cfg, "active", False):
         _warn_single_zoom_once()
         return False
     return True
@@ -58,9 +56,8 @@ def _warn_single_zoom_once() -> None:
     global _warned_single_zoom
     if not _warned_single_zoom:
         logger.warning(
-            "multi-zoom mode not configured (no classes block or mode=single-zoom). "
-            "Using single-zoom fallback. Set mode: multi-zoom and classes: [...] "
-            "for per-class adaptive inference."
+            "Running single-zoom mode (inference.multi_zoom.active=false). "
+            "Enable per-class adaptive multi-zoom via inference.multi_zoom.active: true."
         )
         _warned_single_zoom = True
 

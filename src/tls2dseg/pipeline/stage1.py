@@ -84,10 +84,11 @@ def run_stage1(
     mz_cfg = cfg.inference.multi_zoom
     _mz_active = is_multi_zoom_active(mz_cfg)
 
-    # Build class_sizes dict from ClassSpec for compute_zoom_passes
-    if _mz_active and mz_cfg.classes is not None:
-        _class_keys = split_class_keys(mz_cfg.classes.text_prompt)
-        _class_sizes: dict[str, float] = dict(zip(_class_keys, mz_cfg.classes.sizes_m, strict=True))
+    # Build class_sizes dict from prompt.sizes_m for compute_zoom_passes.
+    # RunConfig validator guarantees sizes_m is present and length-matched when active.
+    if _mz_active:
+        _class_keys = split_class_keys(cfg.prompt.text)
+        _class_sizes: dict[str, float] = dict(zip(_class_keys, cfg.prompt.sizes_m, strict=True))
     else:
         _class_sizes = {}
 

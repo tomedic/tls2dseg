@@ -133,11 +133,7 @@ class RuntimeConfig(BaseModel):
 # PromptConfig — text prompt for Grounded-DINO
 # ─────────────────────────────────────────────────────────────────────────────
 class PromptConfig(BaseModel):
-    """Text prompt for Grounded-DINO (D-A1-09).
-
-    Phase 6 MZ-01 will add a sibling ``classes: list[ClassSpec]`` field; Phase
-    3 intentionally does NOT pre-allocate it (CONTEXT.md scope guard).
-    """
+    """Text prompt for Grounded-DINO (D-A1-09)."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -150,6 +146,15 @@ class PromptConfig(BaseModel):
             "Auto-lowercased + trailing period appended (closes pipeline/run.py:170 TODO)."
         ),
     )
+    # tag: primary
+    sizes_m: list[float] | None = Field(
+        None,
+        json_schema_extra={"tag": "primary"},
+        description=(
+            "Representative physical size (m) per class token in `text`, in order. "
+            "Required when multi-zoom is active; otherwise optional."
+        ),
+    )
 
     @field_validator("text", mode="after")
     @classmethod
@@ -159,6 +164,19 @@ class PromptConfig(BaseModel):
         if not keys:
             raise ValueError("prompt.text must be non-empty")
         return ". ".join(keys) + "."
+
+    @model_validator(mode="after")
+    def _validate_sizes_m(self) -> PromptConfig:
+        if self.sizes_m is None:
+            return self
+        if any(s <= 0 for s in self.sizes_m):
+            raise ValueError("All sizes_m values must be > 0")
+        keys = split_class_keys(self.text)
+        if len(self.sizes_m) != len(keys):
+            raise ValueError(
+                f"sizes_m has {len(self.sizes_m)} entries but prompt.text has {len(keys)} class token(s): {keys}"
+            )
+        return self
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -430,74 +448,18 @@ class SlicingConfig(BaseModel):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# ClassSpec — per-class size spec for multi-zoom inference (MZ-01 / D-CFG-01)
-# ─────────────────────────────────────────────────────────────────────────────
-class ClassSpec(BaseModel):
-    """Per-class size spec for multi-zoom inference (D-CFG-01).
-
-    ``text_prompt`` uses the same dot-separated format as ``PromptConfig.text``.
-    ``sizes_m`` must have exactly one entry per class token.
-    """
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    # tag: primary
-    text_prompt: str = Field(
-        ...,
-        json_schema_extra={"tag": "primary"},
-        description="Dot-separated class prompt (same format as prompt.text). One size per token.",
-    )
-    # tag: primary
-    sizes_m: list[float] = Field(
-        ...,
-        json_schema_extra={"tag": "primary"},
-        description="Representative physical size (meters) for each class token, in order. All values must be > 0.",
-    )
-
-    @field_validator("sizes_m", mode="after")
-    @classmethod
-    def _validate_sizes_positive(cls, v: list[float]) -> list[float]:
-        if any(s <= 0 for s in v):
-            raise ValueError("All sizes_m values must be > 0")
-        return v
-
-    @model_validator(mode="after")
-    def _validate_sizes_m_len(self) -> ClassSpec:
-        keys = split_class_keys(self.text_prompt)
-        if len(self.sizes_m) != len(keys):
-            raise ValueError(
-                f"sizes_m has {len(self.sizes_m)} entries but text_prompt has {len(keys)} class token(s): {keys}"
-            )
-        return self
-
-
-# ─────────────────────────────────────────────────────────────────────────────
 # MultiZoomConfig — per-class adaptive multi-zoom sub-block (MZ-01/06/10)
 # ─────────────────────────────────────────────────────────────────────────────
 class MultiZoomConfig(BaseModel):
-    """Per-class adaptive multi-zoom inference sub-block (MZ-01 / D-CFG-01..04).
-
-    ``mode: multi-zoom`` (default) resolves inference passes automatically via
-    ``MultiZoomPlanEngine``. ``mode: single-zoom`` falls back to the existing
-    single manually-tuned zoom (loud once-per-run warning, MZ-10).
-    """
+    """Per-class adaptive multi-zoom inference sub-block (MZ-01 / D-CFG-01..04)."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     # tag: primary
-    mode: Literal["multi-zoom", "single-zoom"] = Field(
-        "multi-zoom",
+    active: bool = Field(
+        False,
         json_schema_extra={"tag": "primary"},
-        description=(
-            "Zoom operating mode. 'multi-zoom' = per-class adaptive (default); "
-            "'single-zoom' = single manually-tuned zoom (MZ-10 fallback, fires a warning)."
-        ),
-    )
-    # tag: primary
-    classes: ClassSpec | None = Field(
-        None,
-        json_schema_extra={"tag": "primary"},
-        description=("Per-class size spec (text_prompt + sizes_m). None = single-zoom fallback (MZ-10)."),
+        description=("Enable per-class adaptive multi-zoom. False (default) = single-zoom."),
     )
     # tag: tuning
     footprint_band_frac: tuple[float, float] = Field(
@@ -948,3 +910,20 @@ class RunConfig(BaseSettings):
         json_schema_extra={"tag": "other"},
         description="Log levels (default + per-package overrides).",
     )
+
+    @model_validator(mode="after")
+    def _validate_multi_zoom_requires_sizes_m(self) -> RunConfig:
+        if not self.inference.multi_zoom.active:
+            return self
+        if self.prompt.sizes_m is None:
+            raise ValueError(
+                "inference.multi_zoom.active=true requires prompt.sizes_m with one size per class token in prompt.text"
+            )
+        keys = split_class_keys(self.prompt.text)
+        if len(self.prompt.sizes_m) != len(keys):
+            raise ValueError(
+                f"inference.multi_zoom.active=true requires prompt.sizes_m with "
+                f"one size per class token in prompt.text — "
+                f"got {len(self.prompt.sizes_m)} sizes_m but {len(keys)} tokens: {keys}"
+            )
+        return self
