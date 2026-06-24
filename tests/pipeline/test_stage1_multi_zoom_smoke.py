@@ -114,12 +114,10 @@ def _make_cfg_ctx(tmp_path: Path, *, multi_zoom: bool) -> tuple:
         "runtime": {"device": "cpu"},
     }
     if multi_zoom:
-        base_cfg["inference"]["multi_zoom"] = {
-            "mode": "multi-zoom",
-            "classes": {"text_prompt": "tree. pole.", "sizes_m": [5.0, 0.1]},
-        }
+        base_cfg["prompt"]["sizes_m"] = [5.0, 0.1]
+        base_cfg["inference"]["multi_zoom"] = {"active": True}
     else:
-        base_cfg["inference"]["multi_zoom"] = {"mode": "single-zoom"}
+        base_cfg["inference"]["multi_zoom"] = {"active": False}
 
     cfg_dict = base_cfg
     cfg = RunConfig(**cfg_dict)
@@ -358,7 +356,7 @@ def test_run_stage1_single_zoom_fallback_and_warn_once(
     assert len(result.d3d_collection) >= 1, "single-zoom run must produce at least one d3d entry"
     assert len(ctx.per_class_metadata) == 0, "single-zoom fallback must NOT populate ctx.per_class_metadata"
 
-    warn_records = [r for r in caplog.records if "single-zoom fallback" in r.message and r.levelno == logging.WARNING]
+    warn_records = [r for r in caplog.records if "single-zoom" in r.message and r.levelno == logging.WARNING]
     assert len(warn_records) == 1, (
         f"warn-once must fire exactly one WARNING; got {len(warn_records)}: {[r.message for r in warn_records]}"
     )

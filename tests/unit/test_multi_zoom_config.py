@@ -1,14 +1,15 @@
-"""Wave-0 tier_a tests for ClassSpec + MultiZoomConfig (MZ-01 / MZ-06 / MZ-10).
+"""Tier-A tests for PromptConfig.sizes_m + MultiZoomConfig + RunConfig cross-validation.
 
 Covers:
-- ClassSpec and MultiZoomConfig are frozen + extra=forbid.
-- len(sizes_m) cross-validation raises ValidationError on mismatch;
-  accepts a correctly-sized pair.
-- sizes_m rejects non-positive values.
+- MultiZoomConfig is frozen + extra=forbid.
+- MultiZoomConfig.active defaults False; toggles to True.
+- PromptConfig.sizes_m length/positivity validation.
+- RunConfig cross-validation: active=true + no sizes -> ValueError;
+  active=true + length mismatch -> ValueError; active=true + valid -> ok;
+  active=false + no sizes -> ok.
 - footprint_band_frac rejects p_min >= p_max and out-of-(0,1) values.
 - cross_class_iou_threshold rejects values outside [0, 1].
-- YAML round-trip with a multi_zoom block preserves mode, classes, and
-  tuning fields.
+- YAML round-trip with a multi_zoom block preserves active and tuning fields.
 - Typo'd key under multi_zoom raises ValidationError (extra=forbid).
 
 No torch / pchandler / pc2img imports.
@@ -22,18 +23,11 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from tls2dseg.config.models import ClassSpec, MultiZoomConfig
+from tls2dseg.config.models import MultiZoomConfig, PromptConfig
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Frozen + extra=forbid invariants
 # ─────────────────────────────────────────────────────────────────────────────
-
-
-@pytest.mark.tier_a
-def test_class_spec_frozen_and_extra_forbid() -> None:
-    """ClassSpec advertises frozen=True + extra=forbid."""
-    assert ClassSpec.model_config.get("frozen") is True
-    assert ClassSpec.model_config.get("extra") == "forbid"
 
 
 @pytest.mark.tier_a
@@ -44,49 +38,144 @@ def test_multi_zoom_config_frozen_and_extra_forbid() -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# ClassSpec — len(sizes_m) cross-validation (D-CFG-01)
+# MultiZoomConfig.active — default + toggle
 # ─────────────────────────────────────────────────────────────────────────────
 
 
 @pytest.mark.tier_a
-def test_class_spec_len_cross_validation() -> None:
-    """len(sizes_m) must equal number of class tokens in text_prompt."""
-    with pytest.raises(ValidationError, match="sizes_m has 1 entries but text_prompt has 2"):
-        ClassSpec(text_prompt="chair . table .", sizes_m=[1.0])
+def test_multi_zoom_active_default_false() -> None:
+    """MultiZoomConfig.active defaults to False (single-zoom by default)."""
+    mz = MultiZoomConfig()
+    assert mz.active is False
 
 
 @pytest.mark.tier_a
-def test_class_spec_len_cross_validation_accepts_matching_pair() -> None:
-    """A correctly-matched text_prompt + sizes_m constructs without error."""
-    cs = ClassSpec(text_prompt="chair . table .", sizes_m=[0.9, 1.2])
-    assert cs.text_prompt == "chair . table ."
-    assert cs.sizes_m == [0.9, 1.2]
-
-
-@pytest.mark.tier_a
-def test_class_spec_len_cross_validation_single_class() -> None:
-    """Single class: one token, one size — valid."""
-    cs = ClassSpec(text_prompt="tree .", sizes_m=[3.0])
-    assert cs.sizes_m == [3.0]
+def test_multi_zoom_active_toggle_true() -> None:
+    """MultiZoomConfig.active can be set to True."""
+    mz = MultiZoomConfig(active=True)
+    assert mz.active is True
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# ClassSpec — sizes_m non-positive rejection
+# PromptConfig.sizes_m — length / positivity validation
 # ─────────────────────────────────────────────────────────────────────────────
 
 
 @pytest.mark.tier_a
-def test_class_spec_sizes_m_rejects_zero() -> None:
-    """sizes_m rejects zero values (gt=0 contract)."""
+def test_prompt_sizes_m_accepts_none() -> None:
+    """sizes_m=None (default) constructs PromptConfig without error."""
+    p = PromptConfig(text="chair . table")
+    assert p.sizes_m is None
+
+
+@pytest.mark.tier_a
+def test_prompt_sizes_m_accepts_matching_pair() -> None:
+    """sizes_m with correct length constructs PromptConfig without error."""
+    p = PromptConfig(text="chair . table", sizes_m=[0.9, 1.2])
+    assert p.sizes_m == [0.9, 1.2]
+
+
+@pytest.mark.tier_a
+def test_prompt_sizes_m_accepts_single_class() -> None:
+    """Single class token: one size — valid."""
+    p = PromptConfig(text="tree", sizes_m=[3.0])
+    assert p.sizes_m == [3.0]
+
+
+@pytest.mark.tier_a
+def test_prompt_sizes_m_rejects_length_mismatch() -> None:
+    """sizes_m with wrong length raises ValidationError."""
+    with pytest.raises(ValidationError, match="sizes_m"):
+        PromptConfig(text="chair . table", sizes_m=[1.0])
+
+
+@pytest.mark.tier_a
+def test_prompt_sizes_m_rejects_zero() -> None:
+    """sizes_m rejects zero values (all values must be > 0)."""
     with pytest.raises(ValidationError):
-        ClassSpec(text_prompt="chair .", sizes_m=[0.0])
+        PromptConfig(text="chair", sizes_m=[0.0])
 
 
 @pytest.mark.tier_a
-def test_class_spec_sizes_m_rejects_negative() -> None:
+def test_prompt_sizes_m_rejects_negative() -> None:
     """sizes_m rejects negative values."""
     with pytest.raises(ValidationError):
-        ClassSpec(text_prompt="chair . table .", sizes_m=[-1.0, 1.2])
+        PromptConfig(text="chair . table", sizes_m=[-1.0, 1.2])
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# RunConfig cross-validation (active=true requires sizes_m)
+# ─────────────────────────────────────────────────────────────────────────────
+
+_BASE_CFG: dict = {
+    "mode": "single-view",
+    "io": {
+        "input_path": "/tmp/tls2dseg_test_input",
+        "output_dir": "/tmp/tls2dseg_test_output",
+    },
+    "preprocessing": {"output_resolution_m": 0.05},
+    "projection": {"features": ["intensity"]},
+    "d3d_extraction": {},
+    "fusion": {},
+}
+
+
+def _make_cfg_dict(**prompt_overrides: object) -> dict:
+    import copy
+
+    cfg = copy.deepcopy(_BASE_CFG)
+    cfg["inference"] = {
+        "type": "grounded_sam2_hf",
+        "sam2_hf_model_id": "facebook/sam2.1-hiera-large",
+    }
+    cfg["prompt"] = {"text": "tree. pole.", **prompt_overrides}
+    return cfg
+
+
+@pytest.mark.tier_a
+def test_run_config_active_false_no_sizes_ok() -> None:
+    """active=false + no sizes_m -> valid config."""
+    from tls2dseg.config.models import RunConfig
+
+    cfg_dict = _make_cfg_dict()
+    cfg_dict["inference"]["multi_zoom"] = {"active": False}
+    cfg = RunConfig(**cfg_dict)
+    assert cfg.inference.multi_zoom.active is False
+    assert cfg.prompt.sizes_m is None
+
+
+@pytest.mark.tier_a
+def test_run_config_active_true_no_sizes_raises() -> None:
+    """active=true + no sizes_m -> ValueError (fail-fast)."""
+    from tls2dseg.config.models import RunConfig
+
+    cfg_dict = _make_cfg_dict()
+    cfg_dict["inference"]["multi_zoom"] = {"active": True}
+    with pytest.raises(ValidationError, match="sizes_m"):
+        RunConfig(**cfg_dict)
+
+
+@pytest.mark.tier_a
+def test_run_config_active_true_length_mismatch_raises() -> None:
+    """active=true + sizes_m length != class tokens -> ValueError."""
+    from tls2dseg.config.models import RunConfig
+
+    cfg_dict = _make_cfg_dict(sizes_m=[5.0])  # "tree. pole." has 2 tokens; 1 size given
+    cfg_dict["inference"]["multi_zoom"] = {"active": True}
+    with pytest.raises(ValidationError, match="sizes_m"):
+        RunConfig(**cfg_dict)
+
+
+@pytest.mark.tier_a
+def test_run_config_active_true_valid_sizes_ok() -> None:
+    """active=true + sizes_m matching class tokens -> valid config."""
+    from tls2dseg.config.models import RunConfig
+
+    cfg_dict = _make_cfg_dict(sizes_m=[5.0, 0.1])  # "tree. pole." has 2 tokens
+    cfg_dict["inference"]["multi_zoom"] = {"active": True}
+    cfg = RunConfig(**cfg_dict)
+    assert cfg.inference.multi_zoom.active is True
+    assert cfg.prompt.sizes_m == [5.0, 0.1]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -156,6 +245,7 @@ _MULTI_ZOOM_YAML = textwrap.dedent("""\
       output_dir: /tmp/tls2dseg_test_output
     prompt:
       text: chair . table
+      sizes_m: [0.5, 1.2]
     preprocessing:
       output_resolution_m: 0.05
     projection:
@@ -164,10 +254,7 @@ _MULTI_ZOOM_YAML = textwrap.dedent("""\
       type: grounded_sam2_hf
       sam2_hf_model_id: facebook/sam2.1-hiera-large
       multi_zoom:
-        mode: single-zoom
-        classes:
-          text_prompt: "chair . table ."
-          sizes_m: [0.5, 1.2]
+        active: true
         cross_class_iou_threshold: 0.65
         footprint_band_frac: [0.08, 0.20]
         range_percentiles: [5.0, 95.0]
@@ -179,7 +266,7 @@ _MULTI_ZOOM_YAML = textwrap.dedent("""\
 
 @pytest.mark.tier_a
 def test_yaml_round_trip_multi_zoom_block(tmp_path: Path) -> None:
-    """YAML with a multi_zoom block round-trips: mode, classes, tuning fields preserved."""
+    """YAML with a multi_zoom block round-trips: active and tuning fields preserved."""
     from tls2dseg.config.loader import load_config
 
     yaml_path = tmp_path / "test_multi_zoom.yaml"
@@ -188,14 +275,12 @@ def test_yaml_round_trip_multi_zoom_block(tmp_path: Path) -> None:
     cfg = load_config(yaml_path)
 
     mz = cfg.inference.multi_zoom
-    assert mz.mode == "single-zoom"
-    assert mz.classes is not None
-    assert mz.classes.text_prompt == "chair . table ."
-    assert mz.classes.sizes_m == [0.5, 1.2]
+    assert mz.active is True
     assert mz.cross_class_iou_threshold == pytest.approx(0.65)
     assert mz.footprint_band_frac == pytest.approx((0.08, 0.20))
     assert mz.range_percentiles == pytest.approx((5.0, 95.0))
     assert mz.ios_enabled is True
+    assert cfg.prompt.sizes_m == [0.5, 1.2]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -217,7 +302,7 @@ _TYPO_KEY_YAML = textwrap.dedent("""\
       type: grounded_sam2_hf
       sam2_hf_model_id: facebook/sam2.1-hiera-large
       multi_zoom:
-        mod: multi-zoom
+        actve: true
     d3d_extraction: {}
     fusion: {}
 """)

@@ -297,29 +297,19 @@ def test_class_ids() -> None:
 
 @pytest.mark.tier_a
 def test_single_zoom_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
-    """MZ-10: is_multi_zoom_active returns False for mode=single-zoom or absent classes."""
+    """MZ-10: is_multi_zoom_active returns False when active=False; True when active=True."""
 
     @dataclasses.dataclass
-    class _MzCfgSingleZoom:
-        mode: str = "single-zoom"
-        classes: Any = None
-
-    @dataclasses.dataclass
-    class _MzCfgNoClasses:
-        mode: str = "multi-zoom"
-        classes: Any = None
+    class _MzCfgInactive:
+        active: bool = False
 
     @dataclasses.dataclass
     class _MzCfgActive:
-        mode: str = "multi-zoom"
-        classes: object = object()  # not None
+        active: bool = True
 
     # Reset flag before each check
     monkeypatch.setattr(mzd_mod, "_warned_single_zoom", False)
-    assert is_multi_zoom_active(_MzCfgSingleZoom()) is False
-
-    monkeypatch.setattr(mzd_mod, "_warned_single_zoom", False)
-    assert is_multi_zoom_active(_MzCfgNoClasses()) is False
+    assert is_multi_zoom_active(_MzCfgInactive()) is False
 
     monkeypatch.setattr(mzd_mod, "_warned_single_zoom", False)
     assert is_multi_zoom_active(_MzCfgActive()) is True
