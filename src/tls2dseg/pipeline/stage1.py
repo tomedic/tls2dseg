@@ -89,6 +89,7 @@ def run_stage1(
     # RunConfig validator guarantees sizes_m is present and length-matched when active.
     if _mz_active:
         _class_keys = split_class_keys(cfg.prompt.text)
+        assert cfg.prompt.sizes_m is not None
         _class_sizes: dict[str, float] = dict(zip(_class_keys, cfg.prompt.sizes_m, strict=True))
     else:
         _class_sizes = {}

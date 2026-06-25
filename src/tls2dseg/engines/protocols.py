@@ -49,6 +49,7 @@ class ProjectionEngine(Protocol):
         *,
         features: list[str],
         resolution: tuple[int, int],
+        skip_image_reduction: bool = False,
     ) -> list[ProjectionResult]:
         """Project a single scan point cloud to a list of per-feature images.
 

@@ -26,6 +26,8 @@ from tls2dseg.types import Detections2D, InferenceRequest
 
 if TYPE_CHECKING:
     from tls2dseg.engines.inference.multi_zoom_plan import ZoomPass
+    from tls2dseg.engines.protocols import InferenceEngine
+    from tls2dseg.types import ClassMetadata
 
 logger = logging.getLogger("tls2dseg.engines.inference.multi_zoom_dispatch")
 
@@ -155,7 +157,7 @@ def _remap_class_ids(det: Detections2D, class_id_map: dict[str, int]) -> Detecti
 
 def run_multi_zoom(
     image_native: np.ndarray,
-    inference_engine: object,
+    inference_engine: InferenceEngine,
     base_request: InferenceRequest,
     zoom_passes: list[ZoomPass],
     ctx: object,
@@ -200,7 +202,7 @@ def run_multi_zoom(
     )
 
     class_id_map: dict[str, int] = getattr(ctx, "class_id_map", {})
-    per_class_metadata: dict[str, object] = getattr(ctx, "per_class_metadata", {})
+    per_class_metadata: dict[str, ClassMetadata] = getattr(ctx, "per_class_metadata", {})
 
     all_detections: list[Detections2D] = []
 
@@ -219,6 +221,8 @@ def run_multi_zoom(
 
         # Build per-pass InferenceRequest (add-only fields per D-C-02)
         if zoom_pass.needs_tiling:
+            assert zoom_pass.tile_size_px is not None
+            assert zoom_pass.overlap_px is not None
             tile_wh = (zoom_pass.tile_size_px, zoom_pass.tile_size_px)
             overlap_wh = (zoom_pass.overlap_px, zoom_pass.overlap_px)
         else:
@@ -289,7 +293,7 @@ def run_multi_zoom(
 
 def _populate_per_class_metadata(
     zoom_passes: list[ZoomPass],
-    per_class_metadata: dict[str, object],
+    per_class_metadata: dict[str, ClassMetadata],
 ) -> None:
     """Fill per_class_metadata in-place from the resolved zoom passes.
 
