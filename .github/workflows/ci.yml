@@ -93,7 +93,7 @@ jobs:
       - name: HYGN-09 — tls2dseg --help works (entry-point smoke)
         run: tls2dseg --help
       - name: HYGN-10 — from tls2dseg import types
-        run: python -c "from tls2dseg import types; assert set(types.__all__) == {'Detections2D', 'Detections3D', 'FusionInput', 'FusionResult', 'InferenceRequest', 'ProjectionResult'}"
+        run: python -c "from tls2dseg import types; assert set(types.__all__) == {'ClassMetadata', 'Detections2D', 'Detections3D', 'FusionInput', 'FusionResult', 'InferenceRequest', 'ProjectionResult'}"
       - name: pipeline subpackage importable
         run: python -c "from tls2dseg import pipeline; assert pipeline.__all__ == []"
 
