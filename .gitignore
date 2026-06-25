@@ -1,11 +1,14 @@
 # Local folders
-.idea/
 data/
 results/
+tmp/
 temp/
 outputs/
 resources/
-__pycache__/
+profile_out/
+examples/data/
+examples/results/
+docs/
 
 # Datasets and large files
 *.ply
@@ -13,12 +16,17 @@ __pycache__/
 *.jpeg
 *.jpg
 
+
 # Tool caches
 .mypy_cache/
 .pytest_cache/
 .ruff_cache/
+.idea/
+.nox/
+__pycache__/
 
 # Build artifacts (setuptools + hatchling)
 src/*.egg-info/
 dist/
 build/
+src/tls2dseg/_version.py
