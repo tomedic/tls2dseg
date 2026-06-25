@@ -21,7 +21,11 @@ import math
 
 import pytest
 
-from tls2dseg.engines.inference.multi_zoom_plan import ZoomPass, compute_zoom_passes
+from tls2dseg.engines.inference.multi_zoom_plan import (
+    ZoomPass,
+    compute_zoom_passes,
+    engine_short_side,
+)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Constants matching defaults
@@ -481,3 +485,99 @@ def test_prompt_longest_name_first() -> None:
             assert p.text_prompt.index("street tree") < p.text_prompt.index("tree"), (
                 f"Longer name must come first: {p.text_prompt!r}"
             )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Engine short-side registry + overview self-downscale + overview_pass flag
+# (mz-overview-collapse fix)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.tier_a
+def test_engine_short_side_registry() -> None:
+    """Known engine types map to their short side; unknown falls back to 800."""
+    assert engine_short_side("grounded_sam2") == 800
+    assert engine_short_side("grounded_sam2_hf") == 1024
+    assert engine_short_side("nonexistent_engine") == 800
+
+
+@pytest.mark.tier_a
+def test_overview_self_downscale_when_native_larger() -> None:
+    """native_short_side > model_short_side → overview resize_factor < 1.0 (self-downscale)."""
+    passes = compute_zoom_passes(
+        class_sizes={"wheat": 0.1},
+        d_azim_rad=1.442283e-4,
+        range_near_m=1.51,
+        range_far_m=11.87,
+        model_short_side=800,
+        native_short_side=4000,
+    )
+    ov = passes[0]
+    assert not ov.needs_tiling
+    assert ov.resize_factor == 800 / 4000
+    assert ov.resize_factor < 1.0
+
+
+@pytest.mark.tier_a
+def test_overview_native_when_smaller_or_unset() -> None:
+    """native_short_side None or <= model → overview stays native (resize_factor == 1.0)."""
+    passes_unset = compute_zoom_passes(
+        class_sizes={"wheat": 0.1},
+        d_azim_rad=1.442283e-4,
+        range_near_m=1.51,
+        range_far_m=11.87,
+        model_short_side=800,
+    )
+    assert passes_unset[0].resize_factor == 1.0
+
+    passes_small = compute_zoom_passes(
+        class_sizes={"wheat": 0.1},
+        d_azim_rad=1.442283e-4,
+        range_near_m=1.51,
+        range_far_m=11.87,
+        model_short_side=800,
+        native_short_side=600,
+    )
+    assert passes_small[0].resize_factor == 1.0
+
+
+@pytest.mark.tier_a
+def test_overview_pass_disabled_omits_overview() -> None:
+    """overview_pass=False → no needs_tiling=False overview when tiled bands exist."""
+    passes = compute_zoom_passes(
+        class_sizes={"wheat": 0.1, "leaf": 0.2},
+        d_azim_rad=1.442283e-4,
+        range_near_m=1.51,
+        range_far_m=11.87,
+        overview_pass=False,
+    )
+    assert len(passes) >= 1
+    assert all(p.needs_tiling for p in passes), "overview_pass=False must drop the full-image pass"
+
+
+@pytest.mark.tier_a
+def test_overview_pass_disabled_degenerate_still_returns_one_pass() -> None:
+    """overview_pass=False + degenerate inputs → never returns an empty plan."""
+    passes = compute_zoom_passes(
+        class_sizes={"door": 1.0},
+        d_azim_rad=0.001,
+        range_near_m=0.0,
+        range_far_m=10.0,
+        overview_pass=False,
+    )
+    assert len(passes) == 1
+
+
+@pytest.mark.tier_a
+def test_degenerate_guard_logs_warning(caplog: pytest.LogCaptureFixture) -> None:
+    """Degenerate near-range fires a WARNING (operator visibility, not silent DEBUG)."""
+    with caplog.at_level(logging.WARNING, logger="tls2dseg.engines.inference.multi_zoom_plan"):
+        compute_zoom_passes(
+            class_sizes={"door": 1.0},
+            d_azim_rad=0.001,
+            range_near_m=0.0,
+            range_far_m=10.0,
+        )
+    warnings = [r for r in caplog.records if r.levelname == "WARNING"]
+    assert warnings, "degenerate guard must emit a WARNING"
+    assert any("SINGLE inference pass" in r.message for r in warnings)

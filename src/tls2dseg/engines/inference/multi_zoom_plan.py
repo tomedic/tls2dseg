@@ -27,6 +27,24 @@ logger = logging.getLogger("tls2dseg.engines.inference.multi_zoom_plan")
 # SAM2 internal resize cap (RESEARCH §DINO/SAM2 Internal Resize).
 _SAM2_TILE_CAP_PX = 1024
 
+# Per-engine GroundingDINO short-side input size (px). The overview pass
+# downscales the native panorama to this short side ourselves (Lanczos3) so the
+# inference engine never has to shrink a full-resolution image internally.
+# Keep this tier_a-importable: no torch / engine-class imports at module level.
+_ENGINE_SHORT_SIDE: dict[str, int] = {
+    "grounded_sam2": 800,
+    "grounded_sam2_hf": 1024,
+}
+_DEFAULT_SHORT_SIDE = 800
+
+
+def engine_short_side(engine_type: str) -> int:
+    """Return the GroundingDINO short-side input size for an inference engine.
+
+    Falls back to the default short side for unknown engine types.
+    """
+    return _ENGINE_SHORT_SIDE.get(engine_type, _DEFAULT_SHORT_SIDE)
+
 
 @dataclasses.dataclass(frozen=True)
 class ZoomPass:
@@ -57,6 +75,8 @@ def compute_zoom_passes(
     p_max_frac: float = 0.225,
     model_short_side: int = 800,
     max_zoom_passes: int = 6,
+    native_short_side: int | None = None,
+    overview_pass: bool = True,
 ) -> list[ZoomPass]:
     """Compute the minimal ZoomPass list covering all class footprints.
 
@@ -86,19 +106,37 @@ def compute_zoom_passes(
     """
     all_names = list(class_sizes.keys())
 
+    # Overview self-downscale: downscale the native panorama
+    # ourselves to the model short side rather than letting the inference engine
+    # shrink a full-resolution image internally. resize_factor < 1.0 makes the
+    # dispatcher run _lanczos3_resize AND _remap_to_native for this pass.
+    if native_short_side is not None and native_short_side > model_short_side:
+        overview_resize_factor = model_short_side / native_short_side
+    else:
+        overview_resize_factor = 1.0
+
     # Always-on full-image overview pass (D-B-05).
-    overview_pass = ZoomPass(
-        resize_factor=1.0,
+    overview = ZoomPass(
+        resize_factor=overview_resize_factor,
         tile_size_px=None,
         overlap_px=None,
         needs_tiling=False,
         class_names=tuple(all_names),
         text_prompt=_build_prompt(all_names),
     )
+    base_passes = [overview] if overview_pass else []
 
     if not class_sizes or d_azim_rad <= 0.0 or range_near_m <= 0.0:
-        logger.debug("Degenerate inputs: returning overview pass only")
-        return [overview_pass]
+        logger.warning(
+            "Multi-zoom degenerate inputs (class_sizes=%s, d_azim_rad=%.6g, range_near_m=%.6g): "
+            "running a SINGLE inference pass over the full-FoV image only (no per-band tiling). "
+            "A non-positive near range or missing class sizes disables band planning. "
+            "Set preprocessing.range_limits_m[0] >= 0.5 (or unset it to use range_percentiles).",
+            list(class_sizes.keys()),
+            d_azim_rad,
+            range_near_m,
+        )
+        return base_passes if base_passes else [overview]
 
     p_min = p_min_frac * model_short_side
     p_max = p_max_frac * model_short_side
@@ -199,7 +237,7 @@ def compute_zoom_passes(
         },
     )
 
-    return [overview_pass, *tiled_passes]
+    return [*base_passes, *tiled_passes]
 
 
 def _compute_pass_geometry(

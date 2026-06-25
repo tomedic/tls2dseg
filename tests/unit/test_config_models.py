@@ -366,3 +366,36 @@ def test_env_vars_override_yaml_but_cli_overrides_env(minimal_yaml_path: Path, m
         },
     )
     assert cfg_cli.inference.box_threshold == 0.40
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PreprocessingConfig.range_limits_m validator (mz-overview-collapse fix 1)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.tier_a
+def test_range_limits_m_rejects_near_below_half_meter() -> None:
+    """range_limits_m[0] < 0.5 raises ValidationError (degenerate zoom-plan near range)."""
+    with pytest.raises(ValidationError, match="near bound"):
+        PreprocessingConfig(output_resolution_m=0.01, range_limits_m=(0.0, 3.0))
+
+
+@pytest.mark.tier_a
+def test_range_limits_m_accepts_valid_near_bound() -> None:
+    """range_limits_m with near >= 0.5 and near < far is accepted."""
+    cfg = PreprocessingConfig(output_resolution_m=0.01, range_limits_m=(0.5, 3.0))
+    assert cfg.range_limits_m == (0.5, 3.0)
+
+
+@pytest.mark.tier_a
+def test_range_limits_m_rejects_far_not_greater_than_near() -> None:
+    """range_limits_m must satisfy near < far."""
+    with pytest.raises(ValidationError, match="near < far"):
+        PreprocessingConfig(output_resolution_m=0.01, range_limits_m=(3.0, 3.0))
+
+
+@pytest.mark.tier_a
+def test_range_limits_m_none_allowed() -> None:
+    """range_limits_m=None (use percentiles) stays valid."""
+    cfg = PreprocessingConfig(output_resolution_m=0.01, range_limits_m=None)
+    assert cfg.range_limits_m is None

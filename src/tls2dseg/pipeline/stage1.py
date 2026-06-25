@@ -59,7 +59,7 @@ def run_stage1(
     from tls2dseg.config.text import split_class_keys
     from tls2dseg.detections_3d import clean_pcd_instances_and_get_detections3d
     from tls2dseg.engines.inference.multi_zoom_dispatch import is_multi_zoom_active, run_multi_zoom
-    from tls2dseg.engines.inference.multi_zoom_plan import compute_zoom_passes
+    from tls2dseg.engines.inference.multi_zoom_plan import compute_zoom_passes, engine_short_side
     from tls2dseg.engines.inference.shared import (
         get_instance_and_semantic_mask_with_confidence,
         get_per_mask_depth_parallel,
@@ -83,6 +83,7 @@ def run_stage1(
 
     mz_cfg = cfg.inference.multi_zoom
     _mz_active = is_multi_zoom_active(mz_cfg)
+    _model_short_side = engine_short_side(cfg.inference.type)
 
     # Build class_sizes dict from prompt.sizes_m for compute_zoom_passes.
     # RunConfig validator guarantees sizes_m is present and length-matched when active.
@@ -265,7 +266,10 @@ def run_stage1(
                     range_far_m=_range_far_m,
                     p_min_frac=mz_cfg.footprint_band_frac[0],
                     p_max_frac=mz_cfg.footprint_band_frac[1],
+                    model_short_side=_model_short_side,
                     max_zoom_passes=mz_cfg.max_zoom_passes,
+                    native_short_side=int(min(image_j_numpy.shape[:2])),
+                    overview_pass=mz_cfg.overview_pass,
                 )
                 detections_2d = run_multi_zoom(
                     image_j_numpy,

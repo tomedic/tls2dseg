@@ -132,6 +132,18 @@ def _full_image_pass(class_names: tuple[str, ...]) -> ZoomPass:
     )
 
 
+def _overview_pass_downscaled(class_names: tuple[str, ...], resize_factor: float) -> ZoomPass:
+    """Overview (full-FoV, no tiling) pass that self-downscales (resize_factor < 1.0)."""
+    return ZoomPass(
+        resize_factor=resize_factor,
+        tile_size_px=None,
+        overlap_px=None,
+        needs_tiling=False,
+        class_names=class_names,
+        text_prompt=". ".join(class_names) + ".",
+    )
+
+
 def _tiled_pass(
     class_names: tuple[str, ...],
     resize_factor: float = 0.5,
@@ -400,3 +412,47 @@ def test_on_pass(monkeypatch: pytest.MonkeyPatch) -> None:
     # Exception in pass 1 did NOT break run_multi_zoom — combined result returned
     assert result is not None
     assert len(result.input_boxes) >= 1
+
+
+# ---------------------------------------------------------------------------
+# Test 7: downscaled overview pass — resize + remap-to-native both fire
+# (mz-overview-collapse fix 3)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.tier_a
+def test_overview_pass_downscale_and_remap(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A non-tiled overview pass with resize_factor < 1.0 downscales the native
+    image, feeds the downscaled image to the engine, and remaps detections back
+    to native coordinates (the bug: remap was skipped at resize_factor == 1.0).
+    """
+    monkeypatch.setattr(mzd_mod, "_lanczos3_resize", _numpy_resize)
+
+    resize_factor = 0.5
+    classes = ("chair",)
+    class_id_map = {"chair": 1, "background": 0}
+    ctx = _FakeCtx(class_id_map=class_id_map)
+    mz_cfg = _FakeMzCfg()
+
+    # Engine returns a bbox in DOWNSCALED coordinates; after remap it must double.
+    seen_shapes: list[tuple[int, ...]] = []
+
+    class _ShapeRecordingEngine:
+        def detect(self, image: np.ndarray, *, request: object) -> Detections2D:
+            seen_shapes.append(image.shape)
+            return _make_detections([[10, 10, 20, 20]], ["chair"], [1])
+
+    engine = _ShapeRecordingEngine()
+    passes = [_overview_pass_downscaled(classes, resize_factor)]
+    base_request = _make_request()
+    image_native = np.zeros((100, 200), dtype=np.float32)
+
+    result = run_multi_zoom(image_native, engine, base_request, passes, ctx, mz_cfg=mz_cfg)
+
+    # Engine saw the DOWNSCALED image (not the native one).
+    assert seen_shapes == [(50, 100)]
+    # Detection bbox remapped back to native: divided by resize_factor (x2).
+    assert np.allclose(result.input_boxes[0], [20, 20, 40, 40])
+    # Overview metadata reflects the self-downscale.
+    assert ctx.per_class_metadata["chair"]["resize_factor"] == resize_factor
+    assert ctx.per_class_metadata["chair"]["was_tiled"] is False

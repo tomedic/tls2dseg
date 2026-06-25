@@ -318,3 +318,17 @@ def test_typo_key_under_multi_zoom_raises_validation_error(tmp_path: Path) -> No
 
     with pytest.raises(ValidationError):
         load_config(yaml_path)
+
+
+@pytest.mark.tier_a
+def test_multi_zoom_overview_pass_default_true() -> None:
+    """MultiZoomConfig.overview_pass defaults to True (always-on overview)."""
+    mz = MultiZoomConfig()
+    assert mz.overview_pass is True
+
+
+@pytest.mark.tier_a
+def test_multi_zoom_overview_pass_toggle_false() -> None:
+    """MultiZoomConfig.overview_pass can be disabled."""
+    mz = MultiZoomConfig(overview_pass=False)
+    assert mz.overview_pass is False

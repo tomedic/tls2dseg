@@ -230,6 +230,24 @@ class PreprocessingConfig(BaseModel):
         description="Color each detected instance with a random RGB (visualization aid).",
     )
 
+    @field_validator("range_limits_m", mode="after")
+    @classmethod
+    def _validate_range_limits(cls, v: tuple[float, float] | None) -> tuple[float, float] | None:
+        if v is None:
+            return v
+        near, far = v
+        if near < 0.5:
+            raise ValueError(
+                f"range_limits_m[0] (near bound) must be >= 0.5 m, got {near}. "
+                "It also feeds the multi-zoom near range and must be strictly positive "
+                "and meaningful; a near bound of 0 collapses multi-zoom to a single "
+                "full-image pass. Use range_percentiles (leave range_limits_m unset) "
+                "for an automatic near bound."
+            )
+        if far <= near:
+            raise ValueError(f"range_limits_m must satisfy near < far, got near={near}, far={far}.")
+        return v
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # ProjectionConfig — spherical 2D projection from 3D
@@ -460,6 +478,16 @@ class MultiZoomConfig(BaseModel):
         False,
         json_schema_extra={"tag": "primary"},
         description=("Enable per-class adaptive multi-zoom. False (default) = single-zoom."),
+    )
+    # tag: tuning
+    overview_pass: bool = Field(
+        True,
+        json_schema_extra={"tag": "tuning"},
+        description=(
+            "Always run an extra full-FoV overview pass alongside the per-band tiled passes "
+            "(N+1 passes). False = tiled bands only. The overview pass catches objects that "
+            "fall outside every band and provides a safety net for the coarsest instances."
+        ),
     )
     # tag: tuning
     footprint_band_frac: tuple[float, float] = Field(
