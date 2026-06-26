@@ -117,6 +117,6 @@ jobs:
       - name: Install tls2dseg (no-deps) + test deps
         run: |
           pip install -e . --no-deps
-          pip install "pydantic-settings[yaml]>=2.14" "typer>=0.13" pytest numpy
+          pip install "pydantic-settings[yaml]>=2.14" "typer>=0.13" pytest numpy scipy
       - name: pytest -m tier_a
         run: python -m pytest -m tier_a -v

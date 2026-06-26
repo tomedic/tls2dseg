@@ -45,6 +45,7 @@ def tier_a(session: nox.Session) -> None:
         "typer>=0.13",
         "pytest",
         "numpy",
+        "scipy",
     )
     session.run("pytest", "-m", "tier_a", "-v", *session.posargs)
 
