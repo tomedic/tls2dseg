@@ -16,6 +16,14 @@ docs/
 *.jpeg
 *.jpg
 
+# Un-ignore committed fixture datasets under examples/data/ (dir chain first, then file patterns)
+!examples/data/
+!examples/data/office_small/
+!examples/data/mountains_small/
+!examples/data/**/*.e57
+!examples/data/**/*.ply
+!examples/data/**/*.csv
+
 
 # Tool caches
 .mypy_cache/

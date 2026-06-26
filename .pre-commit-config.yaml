@@ -10,7 +10,7 @@ repos:
 
     # Block large files (optional, if you still want size checks for other types)
     - id: check-added-large-files
-      args: ["--maxkb=2000"]
+      args: ["--maxkb=50000"]
       exclude: '^Docs/.*\.(jpg|jpeg)$'
 
 - repo: https://github.com/astral-sh/ruff-pre-commit
