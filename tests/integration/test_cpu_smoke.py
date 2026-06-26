@@ -1,36 +1,32 @@
 """CPU-04 end-to-end smoke — pipeline runs on CPU with no cuml, FakeInferenceEngine.
 
 Phase 3 plan 04 (Task 4); migrated to the Phase-4 engine abstraction by the
-260613-pre-phase5-fixes quick task. Locks the verbatim REQUIREMENTS.md CPU-04
-acceptance:
+260613-pre-phase5-fixes quick task; migrated to the Pipeline API (Phase 5) in
+Phase 7 plan 05.
+
+Locks the verbatim REQUIREMENTS.md CPU-04 acceptance:
 
     "Pipeline runs end-to-end on CPU on a laptop without RAPIDS / CUDA on a
      small fixture (slow OK; 'works' is the bar)."
 
 This is a ``tier_b_heavy`` test: it imports the full pipeline
-(``tls2dseg.pipeline.run.main``) which transitively imports pchandler/pc2img +
+(``tls2dseg.pipeline.Pipeline``) which transitively imports pchandler/pc2img +
 heavy ML deps (torch, transformers, sam2). Runs via ``nox -s tier_b_heavy``
 (delegates to the tls2dseg_2025 conda env).
 
 Engine boundary (Phase 4 migration): the smoke test injects a
 ``FakeInferenceEngine`` by monkeypatching ``tls2dseg.engines.build_inference_engine``
-(which ``pipeline.run.main`` calls to construct the inference engine from
-``cfg.inference.type``). This replaces the obsolete Phase-3 pattern of
-monkeypatching ``run_grounded_sam2`` / ``run_grounded_sam2_with_sahi`` — those
-procedural functions are no longer called by run.py after the 04-06 engine-dispatch
-rewire, so the old patches were silent no-ops and the real engine tried to
-``torch.load`` a fake checkpoint. Injecting the fake at the registry-builder
-boundary keeps the test from pulling SAM2/GroundingDINO weights.
+*before* constructing ``Pipeline`` (whose ``__init__`` calls the builder once).
+This prevents loading SAM2/GroundingDINO weights on the CPU path.
 
-The input directory is empty (no ``*.e57``), so the per-scan loop is skipped and
-the run exercises the CPU device path + context/run-dir layout + provenance dump
-without needing a real scan fixture.
+Input: ``examples/data/mountains_small/`` fixture (committed Phase 7 plan 01 —
+two ~3.5 MB Epoch_*.e57 files). The per-scan loop exercises real CPU projection
+with fake inference. An empty-dir test asserts the ValueError contract (D-09).
 """
 
 from __future__ import annotations
 
 import importlib.util
-import inspect
 import logging
 from pathlib import Path
 
@@ -55,21 +51,10 @@ pytestmark = [
         importlib.util.find_spec("torch") is None,
         reason="tier_b_heavy CPU smoke requires torch (heavy ML dep — install via project conda env)",
     ),
-    # PARKED (parking-lot 2026-06-13 'test_cpu_smoke real-scan fixture + main() zero-scan
-    # robustness'): the FakeInferenceEngine boundary below is migrated and correct, but a
-    # meaningful smoke run needs a tiny real-scan .e57 fixture so the pipeline actually
-    # processes data (real projection on CPU + fake inference). With the current empty-input
-    # dir, main() hits two pre-existing zero-scan bugs — vacuous have_processed_all
-    # (run.py:287, 0==0) routing into the resume branch + the unconditional stage-1 pickle
-    # read (run.py:520). Skip the whole module until that fixture + main() robustness land.
-    pytest.mark.skip(
-        reason=(
-            "test_cpu_smoke parked: needs a real-scan fixture + main() zero-scan robustness "
-            "(have_processed_all vacuous-true @run.py:287; stage-1 pickle read @run.py:520). "
-            "FakeInferenceEngine boundary is migrated and ready. See parking-lot 2026-06-13."
-        )
-    ),
 ]
+
+# Path to the committed mountains_small fixture (relative to repo root).
+_MOUNTAINS_FIXTURE = Path(__file__).parent.parent.parent / "examples" / "data" / "mountains_small"
 
 
 def _build_cpu_runtime():
@@ -87,17 +72,17 @@ def _build_cpu_runtime():
     )
 
 
-def _minimal_runconfig(tmp_path: Path):
-    """Build the smallest valid RunConfig + CPU-only runtime config."""
+def _minimal_runconfig(input_path: Path, tmp_path: Path):
+    """Build the smallest valid RunConfig pointing at the given input_path."""
     from tls2dseg.config import RunConfig
 
     yaml_text = f"""\
 mode: single-view
 io:
-  input_path: {tmp_path / "input"}
+  input_path: {input_path}
   output_dir: {tmp_path / "output"}
 prompt:
-  text: wheat
+  text: tree
 preprocessing:
   output_resolution_m: 0.05
 projection:
@@ -112,18 +97,15 @@ runtime:
   accept_cpu_fallback: true
 """
     cfg_dict = yaml.safe_load(yaml_text)
-    (tmp_path / "input").mkdir()
     return RunConfig(**cfg_dict)
 
 
 def _patch_fake_inference_engine(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Make ``pipeline.run.main`` construct a FakeInferenceEngine instead of SAM2.
+    """Replace the inference engine builder with FakeInferenceEngine.
 
-    ``run.py`` does ``from tls2dseg.engines import build_inference_engine`` inside
-    ``main()`` and calls it once to build the engine from ``cfg.inference.type``.
-    Patching the source attribute (not the run module) is what the function-local
-    import resolves at call time. The fake ignores the real engine kwargs
-    (checkpoint/model id/device) so no weights are loaded.
+    Must be applied BEFORE constructing Pipeline — Pipeline.__init__ calls
+    build_inference_engine once. The fake ignores checkpoint/model kwargs so
+    no weights are loaded.
     """
     monkeypatch.setattr(
         "tls2dseg.engines.build_inference_engine",
@@ -144,18 +126,18 @@ def test_cpu_smoke_runs_to_stage1_completion(
     Setup:
     * CPU-only Runtime (torch_cuda_available=False, cuml_available=False).
     * Inference engine faked at the build_inference_engine boundary (no SAM2 /
-      GroundingDINO weights pulled).
-    * Empty input dir → per-scan loop skipped (no real .e57 fixture needed).
+      GroundingDINO weights pulled). Patch applied before Pipeline() construction.
+    * mountains_small fixture as input — per-scan loop runs real CPU projection.
 
     Asserts:
-    * ``pipeline.run.main(cfg, ctx)`` does NOT raise on the CPU path.
+    * ``Pipeline(cfg, ctx).run()`` does NOT raise on the CPU path.
     * Run dir layout per D-A2-05 exists post-run.
     * ``ctx.device == 'cpu'`` (CPU-04 device resolution proof).
     """
-    from tls2dseg.pipeline import run as pipeline_run
+    from tls2dseg.pipeline import Pipeline
     from tls2dseg.runtime import build_context
 
-    cfg = _minimal_runconfig(tmp_path)
+    cfg = _minimal_runconfig(_MOUNTAINS_FIXTURE, tmp_path)
     ctx = build_context(cfg, _build_cpu_runtime())
 
     assert ctx.device == "cpu"
@@ -163,7 +145,7 @@ def test_cpu_smoke_runs_to_stage1_completion(
     _patch_fake_inference_engine(monkeypatch)
 
     with caplog.at_level(logging.WARNING):
-        pipeline_run.main(cfg, ctx)
+        Pipeline(cfg, ctx).run()
 
     # D-A2-05 layout post-run.
     assert ctx.run_info_dir.is_dir()
@@ -176,16 +158,16 @@ def test_cpu_smoke_warning_fires_exactly_once(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     """CPU-03 once-per-process warning emitted EXACTLY ONCE during a real-scan run."""
-    from tls2dseg.pipeline import run as pipeline_run
+    from tls2dseg.pipeline import Pipeline
     from tls2dseg.runtime import build_context
 
-    cfg = _minimal_runconfig(tmp_path)
+    cfg = _minimal_runconfig(_MOUNTAINS_FIXTURE, tmp_path)
     ctx = build_context(cfg, _build_cpu_runtime())
 
     _patch_fake_inference_engine(monkeypatch)
 
     with caplog.at_level(logging.WARNING):
-        pipeline_run.main(cfg, ctx)
+        Pipeline(cfg, ctx).run()
 
     cpu_warnings = [
         r
@@ -204,15 +186,15 @@ def test_cpu_smoke_writes_provenance(tmp_path: Path, monkeypatch: pytest.MonkeyP
 
     Defends against a regression where the CPU code path skips the provenance hook.
     """
-    from tls2dseg.pipeline import run as pipeline_run
+    from tls2dseg.pipeline import Pipeline
     from tls2dseg.runtime import build_context
 
-    cfg = _minimal_runconfig(tmp_path)
+    cfg = _minimal_runconfig(_MOUNTAINS_FIXTURE, tmp_path)
     ctx = build_context(cfg, _build_cpu_runtime())
 
     _patch_fake_inference_engine(monkeypatch)
 
-    pipeline_run.main(cfg, ctx)
+    Pipeline(cfg, ctx).run()
 
     config_yaml = ctx.run_info_dir / "config.yaml"
     assert config_yaml.is_file(), (
@@ -226,11 +208,22 @@ def test_cpu_smoke_writes_provenance(tmp_path: Path, monkeypatch: pytest.MonkeyP
     assert "mode" in loaded
 
 
-# Retained for reference: _pipeline_main_takes_cfg_ctx gated this module before
-# plan 03-06 landed main(cfg, ctx). main(cfg, ctx) is now the stable signature.
-def _pipeline_main_takes_cfg_ctx() -> bool:
-    from tls2dseg.pipeline import run as pipeline_run
+def test_zero_scan_input_raises(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Empty input directory raises ValueError — D-09 zero-scan robustness contract.
 
-    sig = inspect.signature(pipeline_run.main)
-    params = list(sig.parameters.keys())
-    return len(params) >= 2 and params[:2] == ["cfg", "ctx"]
+    Verifies that Pipeline.run() raises ValueError early (no vacuous resume from
+    stale checkpoints) when no scan files are found in the input directory.
+    """
+    from tls2dseg.pipeline import Pipeline
+    from tls2dseg.runtime import build_context
+
+    empty_input = tmp_path / "empty_input"
+    empty_input.mkdir()
+
+    cfg = _minimal_runconfig(empty_input, tmp_path)
+    ctx = build_context(cfg, _build_cpu_runtime())
+
+    _patch_fake_inference_engine(monkeypatch)
+
+    with pytest.raises(ValueError, match=r"No \.e57 files found"):
+        Pipeline(cfg, ctx).run()
