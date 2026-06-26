@@ -249,3 +249,29 @@ def test_write_report_round_trip(tmp_path: Path) -> None:
     assert "recall" in ds
     assert "correspondence_rate" in ds
     assert "fp_rate" in ds
+
+
+@pytest.mark.tier_a
+def test_write_report_merges_datasets_not_clobbers(tmp_path: Path) -> None:
+    """A second write_report call appends its dataset to the existing report (D-08).
+
+    Guards the combined-report contract: the two heavy tests write one dataset
+    each to the same path, and both must survive in the final report.
+    """
+    from tests.integration.scoring.report import write_report
+
+    write_report(
+        {"iou_thr": 0.3, "datasets": {"office_small": {"recall": 0.85}}},
+        tmp_path,
+    )
+    json_path, md_path = write_report(
+        {"iou_thr": 0.3, "datasets": {"mountains_small": {"recall": 0.72}}},
+        tmp_path,
+    )
+
+    data = json.loads(json_path.read_text())
+    assert set(data["datasets"]) == {"office_small", "mountains_small"}, (
+        "second write_report clobbered the first dataset instead of merging"
+    )
+    md_text = md_path.read_text()
+    assert "office_small" in md_text and "mountains_small" in md_text

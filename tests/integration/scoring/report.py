@@ -1,7 +1,8 @@
 """JSON + markdown report writer for tier_b_heavy fixture results.
 
-Writes to a fixed, overwritten path — not a committed golden snapshot (D-08).
-The report is informational; threshold gating lives in the heavy test itself.
+Writes to a fixed path, merging each dataset into any existing report so the
+two heavy tests produce one combined report — not a committed golden snapshot
+(D-08). The report is informational; threshold gating lives in the heavy test.
 
 Exports:
     write_report(metrics, out_dir) -> (json_path, md_path)
@@ -54,12 +55,23 @@ def write_report(metrics: dict, out_dir: Path) -> tuple[Path, Path]:
     json_path = out_dir / _JSON_NAME
     md_path = out_dir / _MD_NAME
 
-    # Write JSON (overwrite)
-    json_path.write_text(json.dumps(metrics, indent=2))
+    # Merge into any existing report so each heavy test contributes its own
+    # dataset instead of clobbering the others (D-08 combined report).
+    merged = metrics
+    if json_path.exists():
+        try:
+            existing = json.loads(json_path.read_text())
+        except (json.JSONDecodeError, OSError):
+            existing = {}
+        if isinstance(existing.get("datasets"), dict):
+            existing_datasets = dict(existing["datasets"])
+            existing_datasets.update(metrics.get("datasets", {}))
+            merged = {**metrics, "datasets": existing_datasets}
+
+    json_path.write_text(json.dumps(merged, indent=2))
     logger.info("Wrote heavy-test report: %s", json_path)
 
-    # Write markdown summary (overwrite)
-    md_path.write_text(_render_markdown(metrics))
+    md_path.write_text(_render_markdown(merged))
     logger.info("Wrote heavy-test report: %s", md_path)
 
     return json_path, md_path
@@ -71,8 +83,8 @@ def _render_markdown(metrics: dict) -> str:
         "# tier_b_heavy fixture report",
         "",
         f"Per-pair IoU match threshold (`iou_thr`): **{iou_thr}**  ",
-        "_Threshold gates (recall ≥0.70, correspondence ≥0.70, FP ≤0.30) are asserted_"
-        "_in the test; this report is informational only._",
+        "_Threshold gates (recall ≥0.70, correspondence ≥0.70, FP ≤0.30) are asserted "
+        "in the test; this report is informational only._",
         "",
     ]
 
