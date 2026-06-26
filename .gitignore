@@ -25,6 +25,10 @@ docs/
 !examples/data/**/*.csv
 
 
+# tier_b_heavy report output (D-08: overwritten each run; not a committed golden snapshot)
+tier_b_heavy_report.json
+tier_b_heavy_report.md
+
 # Tool caches
 .mypy_cache/
 .pytest_cache/
