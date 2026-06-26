@@ -42,7 +42,7 @@ inference:
   large_object_removal_threshold: 0.90         # tag: tuning
   partial_detection_edge_touching_threshold: 5 # tag: tuning
   sam_box_prompt_batch_size: 32                # tag: pipings
-  sam2_checkpoint: /scratch/projects/sam2/checkpoints/sam2.1_hiera_large.pt     # tag: pipings — set env var; never hardcode
+  sam2_checkpoint: ${SAM2_CHECKPOINT_PATH}     # tag: pipings — set env var; never hardcode
   type: grounded_sam2                          # tag: other — Phase 4 engine-abstraction discriminator
   object_detection_model_id: IDEA-Research/grounding-dino-base   # tag: other
   sam2_model_config: configs/sam2.1/sam2.1_hiera_l.yaml          # tag: other
