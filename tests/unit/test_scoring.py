@@ -216,6 +216,72 @@ def test_correspondence_rate_returns_matched_ious() -> None:
 
 
 # ---------------------------------------------------------------------------
+# correspondence_rate_permissive (many-to-one, low IoU)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.tier_a
+def test_correspondence_permissive_allows_many_to_one() -> None:
+    """Two scan-1 boxes both overlapping the SAME scan-2 box → permissive 1.0; Hungarian 0.5.
+
+    Scan-2 has a second, far box, so Hungarian's 1-to-1 assignment is forced to pair the
+    second scan-1 box with the far box (no match), whereas permissive lets both scan-1
+    boxes correspond to the single nearby scan-2 box.
+    """
+    from tests.integration.scoring.correspondence import (
+        correspondence_rate,
+        correspondence_rate_permissive,
+    )
+
+    b1 = np.array(
+        [
+            [0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            [0.05, 0.0, 0.0, 1.05, 1.0, 1.0],
+        ]
+    )
+    b2 = np.array(
+        [
+            [0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            [10.0, 10.0, 10.0, 11.0, 11.0, 11.0],
+        ]
+    )
+
+    perm_rate, perm_ious = correspondence_rate_permissive(b1, b2, bboxes_type="aabb", iou_thr=0.1)
+    assert perm_rate == pytest.approx(1.0)  # both scan-1 boxes correspond to the near scan-2 box
+    assert len(perm_ious) == 2
+
+    hung_rate, _ = correspondence_rate(b1, b2, bboxes_type="aabb", iou_thr=0.1)
+    assert hung_rate == pytest.approx(0.5)  # 1-to-1 leaves the second scan-1 box unmatched
+
+
+@pytest.mark.tier_a
+def test_correspondence_permissive_low_iou_threshold() -> None:
+    """A small overlap (IoU ~0.14) counts as a match at thr=0.1 but not at 0.3."""
+    from tests.integration.scoring.correspondence import correspondence_rate_permissive
+
+    b1 = np.array([[0.0, 0.0, 0.0, 1.0, 1.0, 1.0]])
+    b2 = np.array([[0.5, 0.0, 0.0, 1.5, 1.0, 1.0]])  # 50% x-overlap → IoU = 0.5/1.5 ≈ 0.33
+
+    rate_lo, _ = correspondence_rate_permissive(b1, b2, bboxes_type="aabb", iou_thr=0.1)
+    assert rate_lo == pytest.approx(1.0)
+
+    b3 = np.array([[0.8, 0.0, 0.0, 1.8, 1.0, 1.0]])  # 20% overlap → IoU = 0.2/1.8 ≈ 0.11
+    rate_hi, _ = correspondence_rate_permissive(b1, b3, bboxes_type="aabb", iou_thr=0.3)
+    assert rate_hi == pytest.approx(0.0)
+
+
+@pytest.mark.tier_a
+def test_correspondence_permissive_empty_inputs() -> None:
+    """Empty box sets return (0.0, []) without error."""
+    from tests.integration.scoring.correspondence import correspondence_rate_permissive
+
+    nonempty = np.array([[0.0, 0.0, 0.0, 1.0, 1.0, 1.0]])
+    empty = np.empty((0, 6))
+    assert correspondence_rate_permissive(empty, nonempty, bboxes_type="aabb") == (0.0, [])
+    assert correspondence_rate_permissive(nonempty, empty, bboxes_type="aabb") == (0.0, [])
+
+
+# ---------------------------------------------------------------------------
 # write_report round-trip
 # ---------------------------------------------------------------------------
 

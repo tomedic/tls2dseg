@@ -144,8 +144,11 @@ class Pipeline:
             self._inference_request,
         )
 
-    def stage2(self, stage1_result: Stage1Result) -> None:
-        """Cross-scan graph fusion and final merged PLY write (multi-view only)."""
+    def stage2(self, stage1_result: Stage1Result) -> object:
+        """Cross-scan graph fusion and final merged PLY write (multi-view only).
+
+        Returns the fused, labelled merged point cloud.
+        """
         from tls2dseg.pipeline.stage2 import run_stage2
 
-        run_stage2(self._cfg, self._ctx, self._fusion_engine, stage1_result)
+        return run_stage2(self._cfg, self._ctx, self._fusion_engine, stage1_result)

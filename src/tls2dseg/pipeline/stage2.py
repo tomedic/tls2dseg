@@ -6,6 +6,8 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 if TYPE_CHECKING:
+    from pchandler.geometry import PointCloudData
+
     from tls2dseg.config.models import RunConfig
     from tls2dseg.engines.protocols import FusionEngine
     from tls2dseg.pipeline.stage1 import Stage1Result
@@ -19,11 +21,13 @@ def run_stage2(
     ctx: RunContext,
     fusion_engine: FusionEngine,
     stage1_result: Stage1Result,
-) -> None:
+) -> PointCloudData:
     """Cross-scan graph fusion, label application, and merged PLY write (multi-view).
 
     Heavy imports (pchandler, detections_3d) live inside this function body
     so that importing tls2dseg.pipeline.stage2 is cheap (tier_a import-cost contract).
+
+    Returns the fused, labelled merged point cloud (also written to results/).
     """
     from pathlib import Path
 
@@ -86,3 +90,7 @@ def run_stage2(
     # 6. write one merged PLY to results/
     logger.info("Writing merged PLY to results/")
     save_segmented_pcd(data_folder_path, ctx.results_dir, pcd_merged, class_id_map)
+
+    # Return the fused, labelled point cloud so callers (e.g. the tier_b_heavy
+    # gate) can score the fused output, not just the on-disk PLY.
+    return pcd_merged

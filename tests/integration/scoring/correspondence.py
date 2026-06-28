@@ -56,20 +56,7 @@ def correspondence_rate(
     if n1 == 0 or n2 == 0:
         return 0.0, []
 
-    # Build cross-scan pair index grid
-    # Concatenate both sets so we can pass a single (N, *) array with offset indices
-    pairs = np.array([(i, n1 + j) for i in range(n1) for j in range(n2)], dtype=np.int64)
-
-    if bboxes_type == "obb":
-        centers = np.vstack([bboxes1[:, :3], bboxes2[:, :3]])
-        extents = np.vstack([bboxes1[:, 3:6], bboxes2[:, 3:6]])
-        quats = np.vstack([bboxes1[:, 6:10], bboxes2[:, 6:10]])
-        ious_flat = compute_obb_iou_naive(centers, extents, quats, pairs)
-    else:
-        aabb_all = np.vstack([bboxes1, bboxes2])
-        ious_flat = compute_aabb_iou_vectorized(aabb_all, pairs)
-
-    iou_matrix = ious_flat.reshape(n1, n2)
+    iou_matrix = _iou_matrix(bboxes1, bboxes2, bboxes_type)
 
     # Hungarian assignment: maximize IoU ↔ minimize negative IoU
     row_ind, col_ind = linear_sum_assignment(-iou_matrix)
@@ -82,3 +69,53 @@ def correspondence_rate(
 
     rate = len(matched_ious) / max(1, min(n1, n2))
     return rate, matched_ious
+
+
+def correspondence_rate_permissive(
+    bboxes1: np.ndarray,
+    bboxes2: np.ndarray,
+    bboxes_type: str = "obb",
+    iou_thr: float = 0.1,
+) -> tuple[float, list[float]]:
+    """Permissive cross-scan correspondence — many-to-one allowed.
+
+    A box in ``bboxes1`` corresponds if it overlaps *any* box in ``bboxes2`` with
+    3D-IoU >= ``iou_thr`` (no 1-to-1 constraint, so several scan-1 instances may
+    map to the same scan-2 instance). Tolerant of imperfect/duplicate detections.
+
+    Returns
+    -------
+    rate : float
+        (# bboxes1 with a match) / len(bboxes1).
+    matched_ious : list[float]
+        Best (row-max) IoU for each matched bboxes1 instance.
+    """
+    n1 = len(bboxes1)
+    n2 = len(bboxes2)
+    if n1 == 0 or n2 == 0:
+        return 0.0, []
+
+    iou_matrix = _iou_matrix(bboxes1, bboxes2, bboxes_type)
+    row_max = iou_matrix.max(axis=1)
+    matched_ious = [float(v) for v in row_max if v >= iou_thr]
+    rate = len(matched_ious) / max(1, n1)
+    return rate, matched_ious
+
+
+def _iou_matrix(bboxes1: np.ndarray, bboxes2: np.ndarray, bboxes_type: str) -> np.ndarray:
+    """(n1, n2) 3D-IoU matrix between two boxsets (shared by both matchers)."""
+    n1 = len(bboxes1)
+    n2 = len(bboxes2)
+    # Concatenate both sets so we can pass a single (N, *) array with offset indices
+    pairs = np.array([(i, n1 + j) for i in range(n1) for j in range(n2)], dtype=np.int64)
+
+    if bboxes_type == "obb":
+        centers = np.vstack([bboxes1[:, :3], bboxes2[:, :3]])
+        extents = np.vstack([bboxes1[:, 3:6], bboxes2[:, 3:6]])
+        quats = np.vstack([bboxes1[:, 6:10], bboxes2[:, 6:10]])
+        ious_flat = compute_obb_iou_naive(centers, extents, quats, pairs)
+    else:
+        aabb_all = np.vstack([bboxes1, bboxes2])
+        ious_flat = compute_aabb_iou_vectorized(aabb_all, pairs)
+
+    return ious_flat.reshape(n1, n2)
