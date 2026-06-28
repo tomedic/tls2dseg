@@ -14,6 +14,7 @@ from __future__ import annotations
 import csv
 import importlib.util
 import logging
+import tempfile
 from pathlib import Path
 
 import numpy as np
@@ -25,9 +26,10 @@ from tests.integration.scoring.report import write_report
 
 logger = logging.getLogger("tls2dseg.tests.integration.test_heavy_fixtures")
 
-# Report is written here — fixed overwritten path (D-08).
+# Report is written to a dedicated temp dir (outside the repo), stable across
+# both heavy tests so write_report merges them into one combined report (D-08).
 _REPO_ROOT = Path(__file__).parent.parent.parent
-_REPORT_DIR = _REPO_ROOT
+_REPORT_DIR = Path(tempfile.gettempdir()) / "tls2dseg_tier_b_heavy"
 
 # Threshold constants (D-06).
 _RECALL_THR = 0.70
@@ -163,15 +165,15 @@ def _fp_rate(
 
 @pytest.fixture(scope="module")
 def _office_heavy_config_path() -> Path:
-    path = _REPO_ROOT / "examples" / "configs" / "office_small_heavy.yaml"
-    assert path.is_file(), f"office_small_heavy.yaml not found at {path}"
+    path = _REPO_ROOT / "examples" / "configs" / "office_small.yaml"
+    assert path.is_file(), f"office_small.yaml not found at {path}"
     return path
 
 
 @pytest.fixture(scope="module")
 def _mountain_heavy_config_path() -> Path:
-    path = _REPO_ROOT / "examples" / "configs" / "mountain_small_heavy.yaml"
-    assert path.is_file(), f"mountain_small_heavy.yaml not found at {path}"
+    path = _REPO_ROOT / "examples" / "configs" / "mountain_small.yaml"
+    assert path.is_file(), f"mountain_small.yaml not found at {path}"
     return path
 
 
@@ -280,7 +282,8 @@ def test_office_small_heavy(_office_heavy_config_path: Path) -> None:
             }
         },
     }
-    write_report(metrics, _REPORT_DIR)
+    json_path, md_path = write_report(metrics, _REPORT_DIR)
+    logger.info("tier_b_heavy report written: %s | %s", json_path, md_path)
 
     # Assertions (D-06)
     assert total_cabinet >= 1, (
@@ -297,11 +300,11 @@ def test_office_small_heavy(_office_heavy_config_path: Path) -> None:
 
 
 def test_mountain_small_heavy(_mountain_heavy_config_path: Path) -> None:
-    """Single-view mountain fixture: recall/correspondence/FP gates + boulder consistency.
+    """Single-view mountain fixture: recall/correspondence/FP gates + rock consistency.
 
     Runs real GroundingDINO + SAM2 inference on examples/data/mountains_small/.
     Ground-truthed class: tree (7 reference rows).
-    Consistency-only class: boulder (D-07).
+    Consistency-only class: rock (D-07).
     Thresholds (D-06): recall ≥ 0.70, cross-scan corr ≥ 0.70, FP ≤ 0.30.
 
     Note: mountains_small has two epochs (Epoch_1.e57, Epoch_2.e57).
@@ -361,21 +364,21 @@ def test_mountain_small_heavy(_mountain_heavy_config_path: Path) -> None:
             corr_rate, matched_ious = correspondence_rate(bboxes_s1, bboxes_s2, bboxes_type, _IOU_THR)
             logger.info("Cross-epoch correspondence (tree): rate=%.3f  matched=%d", corr_rate, len(matched_ious))
 
-    # Consistency-only class: boulder (D-07)
-    boulder_counts = []
+    # Consistency-only class: rock (D-07)
+    rock_counts = []
     for d3d in per_scan:
         det_str = _det_classes_to_str(d3d.classes, id_to_cls)
-        boulder_counts.append(int(np.sum(det_str == "boulder")))
-    total_boulder = sum(boulder_counts)
-    logger.info("Boulder detections per scan: %s  total=%d", boulder_counts, total_boulder)
+        rock_counts.append(int(np.sum(det_str == "rock")))
+    total_rock = sum(rock_counts)
+    logger.info("Rock detections per scan: %s  total=%d", rock_counts, total_rock)
 
-    boulder_corr_pairs = 0
+    rock_corr_pairs = 0
     if len(per_scan) >= 2:
-        bboxes_b1 = _filter_cls(per_scan[0], "boulder")
-        bboxes_b2 = _filter_cls(per_scan[1], "boulder")
+        bboxes_b1 = _filter_cls(per_scan[0], "rock")
+        bboxes_b2 = _filter_cls(per_scan[1], "rock")
         if len(bboxes_b1) > 0 and len(bboxes_b2) > 0:
             _, b_ious = correspondence_rate(bboxes_b1, bboxes_b2, bboxes_type, _IOU_THR)
-            boulder_corr_pairs = len(b_ious)
+            rock_corr_pairs = len(b_ious)
 
     # Compile and write report — appended to existing datasets (D-08)
     metrics = {
@@ -389,21 +392,20 @@ def test_mountain_small_heavy(_mountain_heavy_config_path: Path) -> None:
                 "per_scan_fp_rates": fp_rates,
                 "matched_ious": matched_ious,
                 "consistency_only": {
-                    "boulder": {
-                        "detected": total_boulder,
-                        "consistent": boulder_corr_pairs >= 1,
+                    "rock": {
+                        "detected": total_rock,
+                        "consistent": rock_corr_pairs >= 1,
                     }
                 },
             }
         },
     }
-    write_report(metrics, _REPORT_DIR)
+    json_path, md_path = write_report(metrics, _REPORT_DIR)
+    logger.info("tier_b_heavy report written: %s | %s", json_path, md_path)
 
     # Assertions (D-06)
-    assert total_boulder >= 1, (
-        f"D-07: expected ≥1 boulder detection; got {total_boulder}. Check prompt or threshold settings."
-    )
-    assert boulder_corr_pairs >= 1, f"D-07: expected ≥1 cross-epoch boulder match; got {boulder_corr_pairs}."
+    assert total_rock >= 1, f"D-07: expected ≥1 rock detection; got {total_rock}. Check prompt or threshold settings."
+    assert rock_corr_pairs >= 1, f"D-07: expected ≥1 cross-epoch rock match; got {rock_corr_pairs}."
     assert recall >= _RECALL_THR, (
         f"Reference recall {recall:.3f} below threshold {_RECALL_THR}. See report for details."
     )

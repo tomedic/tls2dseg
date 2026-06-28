@@ -1,15 +1,17 @@
-# Single-view outdoor mountain fixture — small crop for tier_b_heavy gate.
-# Ground-truthed class: tree. Consistency-only class: boulder (D-07).
+# Single-view outdoor mountain scan — rock, stone, boulder, cliff, tree, pine.
+#
+# Note: mode=single-view captured but Phase 3 runs full pipeline; per-mode
+# dispatch lands in Phase 5 ORC-02 (D-A1-06). The fusion block is parsed but
+# ignored at runtime when mode=single-view (soft handling per D-A1-16).
 #
 # CFG-07 worked example. Set SAM2_CHECKPOINT_PATH before running, e.g.:
 #   export SAM2_CHECKPOINT_PATH=/path/to/sam2.1_hiera_large.pt
 # Field-order within each block: primary → tuning → pipings → other (D-A1-02).
-# `# tag:` comments mirror the field annotation (D-A1-04 4-tag vocabulary).
 
 mode: single-view            # tag: primary
 
 io:
-  input_path: ./examples/data/mountains_small/   # tag: primary
+  input_path: ./examples/data/mountains_small/  # tag: primary
   output_dir: ./examples/results/         # tag: primary
   resume_from_checkpoint: true            # tag: pipings
   save_intermediate: true                 # tag: pipings
@@ -18,7 +20,8 @@ io:
   run_id_strategy: timestamp_scanset      # tag: other
 
 prompt:
-  text: "tree. boulder"   # tag: primary
+  text: "tree. rock "   # tag: primary
+  sizes_m: [10.0, 5.0]    # tag: primary — one size per class token, in order; mandatory when multi_zoom.active: true
 
 preprocessing:
   output_resolution_m: 0.5       # tag: primary — typical outdoor scan voxel size; tune per dataset
@@ -42,30 +45,38 @@ inference:
   large_object_removal_threshold: 0.8         # tag: tuning
   partial_detection_edge_touching_threshold: 1 # tag: tuning
   sam_box_prompt_batch_size: 32                # tag: pipings
-  sam2_checkpoint: ${SAM2_CHECKPOINT_PATH}     # tag: pipings — set env var; never hardcode
+  sam2_checkpoint: /scratch/projects/sam2/checkpoints/sam2.1_hiera_large.pt     # tag: pipings — set env var; never hardcode
   type: grounded_sam2                          # tag: other — Phase 4 engine-abstraction discriminator
   object_detection_model_id: IDEA-Research/grounding-dino-base   # tag: other
   sam2_model_config: configs/sam2.1/sam2.1_hiera_l.yaml          # tag: other
   slicing:
     enabled: true                              # tag: tuning
     slice_width_height: [200, 200]             # tag: tuning
-    overlap_width_height: [0, 0]           # tag: tuning
+    overlap_width_height: [150, 150]           # tag: tuning
     iou_threshold: 0.80                        # tag: tuning
     overlap_filter_strategy: nms               # tag: other
     empty_slice_removal_threshold: 0.95        # tag: other
+  multi_zoom:
+    active: true                               # tag: primary — true = per-class adaptive multi-zoom; false = single-zoom (default)
+    footprint_band_frac: [0.075, 0.225]        # tag: tuning — target footprint as fraction of DINO short-side (800 px); 0 < p_min < p_max < 1; recommended default [0.075,0.225]
+    range_percentiles: [10.0, 90.0]            # tag: tuning — robust per-scan range bounds used when preprocessing.range_limits_m is null
+    cross_class_iou_threshold: 0.7             # tag: tuning — cross-class dedup IoU threshold [0, 1]
+    area_filter_px: null                       # tag: tuning — null = no bbox area filter (min_px, max_px)
+    ios_enabled: false                         # tag: tuning — same-class intersection-over-smaller dedup (D-D-03)
+    max_zoom_passes: 6                         # tag: tuning — cap on tiled zoom bands per scan
 
 d3d_extraction:
   bounding_box_type: obb        # tag: tuning
-  min_point_count: 50           # tag: tuning
+  min_point_count: 25           # tag: tuning
   centroid_type: bbox_c         # tag: other
   preprocess: true              # tag: other
 
-# Fusion block parsed but ignored at runtime for mode=single-view.
+# Fusion block parsed but ignored at runtime for mode=single-view (D-A1-16 soft handling).
 fusion:
   merge_inst_of_same_class_only: false       # tag: tuning
   sparse_connectivity_threshold: 1           # tag: tuning
   supporters_iou_threshold: 0.15             # tag: tuning
-  remove_outliers_by_support: true           # tag: tuning
+  remove_outliers_by_support: false           # tag: tuning
   outlier_detection_threshold: 0.01          # tag: tuning
   graph_clustering_method: hcs               # tag: tuning
   min_supporters: 1                          # tag: tuning
