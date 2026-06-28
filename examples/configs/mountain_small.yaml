@@ -1,12 +1,5 @@
-# Single-view outdoor mountain scan — rock, stone, boulder, cliff, tree, pine.
-#
-# Note: mode=single-view captured but Phase 3 runs full pipeline; per-mode
-# dispatch lands in Phase 5 ORC-02 (D-A1-06). The fusion block is parsed but
-# ignored at runtime when mode=single-view (soft handling per D-A1-16).
-#
-# CFG-07 worked example. Set SAM2_CHECKPOINT_PATH before running, e.g.:
-#   export SAM2_CHECKPOINT_PATH=/path/to/sam2.1_hiera_large.pt
-# Field-order within each block: primary → tuning → pipings → other (D-A1-02).
+# Single-view (multi-epoch) outdoor mountain scan — tree, rock (optional: stone, boulder, cliff).
+# Field-order within each block, # tags: primary → tuning → pipings → other.
 
 mode: single-view            # tag: primary
 
@@ -21,7 +14,7 @@ io:
 
 prompt:
   text: "tree. rock "   # tag: primary
-  sizes_m: [10.0, 5.0]    # tag: primary — one size per class token, in order; mandatory when multi_zoom.active: true
+  sizes_m: [10.0, 10.0]    # tag: primary — one size per class token, in order; mandatory when multi_zoom.active: true
 
 preprocessing:
   output_resolution_m: 0.5       # tag: primary — typical outdoor scan voxel size; tune per dataset
@@ -32,7 +25,7 @@ preprocessing:
   assign_random_color_per_instance: false  # tag: other
 
 projection:
-  features: [intensity, range]   # tag: primary — required, min length 1 (MODE-06)
+  features: [intensity, range]   # tag: primary — required, min length 1
   type: spherical                # tag: other — Phase 4 engine-abstraction discriminator
   image_width: scan_resolution   # tag: other
   scan_resolution: auto          # tag: other
@@ -40,9 +33,9 @@ projection:
   rasterization_method: nanconv  # tag: other
 
 inference:
-  box_threshold: 0.10                          # tag: tuning
-  text_threshold: 0.10                         # tag: tuning
-  large_object_removal_threshold: 0.8         # tag: tuning
+  box_threshold: 0.15                          # tag: tuning
+  text_threshold: 0.15                         # tag: tuning
+  large_object_removal_threshold: 0.7         # tag: tuning
   partial_detection_edge_touching_threshold: 1 # tag: tuning
   sam_box_prompt_batch_size: 32                # tag: pipings
   sam2_checkpoint: /scratch/projects/sam2/checkpoints/sam2.1_hiera_large.pt     # tag: pipings — set env var; never hardcode
@@ -62,7 +55,8 @@ inference:
     range_percentiles: [10.0, 90.0]            # tag: tuning — robust per-scan range bounds used when preprocessing.range_limits_m is null
     cross_class_iou_threshold: 0.7             # tag: tuning — cross-class dedup IoU threshold [0, 1]
     area_filter_px: null                       # tag: tuning — null = no bbox area filter (min_px, max_px)
-    ios_enabled: false                         # tag: tuning — same-class intersection-over-smaller dedup (D-D-03)
+    ios_enabled: false                         # tag: tuning — same-class intersection-over-smaller dedup
+    overview_pass: true                       # tag: tuning - running one extra inference pass on a coarse overview image of the whole RoI
     max_zoom_passes: 6                         # tag: tuning — cap on tiled zoom bands per scan
 
 d3d_extraction:

@@ -1,6 +1,5 @@
-# Multi-view indoor office small scan — plant, pot, cabinet, (bag?).
-
-# Field-order within each block, # tags: primary → tuning → pipings → other (D-A1-02).
+# Multi-view indoor office small scan — plant, cabinet, (optional: pot, bag).
+# Field-order within each block, # tags: primary → tuning → pipings → other.
 
 mode: multi-view             # tag: primary
 
@@ -26,7 +25,7 @@ preprocessing:
   assign_random_color_per_instance: false  # tag: other
 
 projection:
-  features: [intensity, range]   # tag: primary — required, min length 1 (MODE-06)
+  features: [intensity, range]   # tag: primary — required, min length 1
   type: spherical                # tag: other — Phase 4 engine-abstraction discriminator
   image_width: scan_resolution   # tag: other
   scan_resolution: auto          # tag: other
@@ -56,7 +55,8 @@ inference:
     range_percentiles: [10.0, 90.0]            # tag: tuning — robust per-scan range bounds used when preprocessing.range_limits_m is null
     cross_class_iou_threshold: 0.7             # tag: tuning — cross-class dedup IoU threshold [0, 1]
     area_filter_px: null                       # tag: tuning — null = no bbox area filter (min_px, max_px)
-    ios_enabled: false                         # tag: tuning — same-class intersection-over-smaller dedup (D-D-03)
+    ios_enabled: false                         # tag: tuning — same-class intersection-over-smaller dedup
+    overview_pass: true                       # tag: tuning - running one extra inference pass on a coarse overview image of the whole RoI
     max_zoom_passes: 6                         # tag: tuning — cap on tiled zoom bands per scan
 
 d3d_extraction:
@@ -66,10 +66,10 @@ d3d_extraction:
   preprocess: true              # tag: other
 
 fusion:
-  merge_inst_of_same_class_only: false       # tag: tuning
+  merge_inst_of_same_class_only: true       # tag: tuning
   sparse_connectivity_threshold: 1           # tag: tuning
   supporters_iou_threshold: 0.15             # tag: tuning
-  remove_outliers_by_support: false           # tag: tuning
+  remove_outliers_by_support: true           # tag: tuning
   outlier_detection_threshold: 0.001          # tag: tuning
   graph_clustering_method: hcs               # tag: tuning
   min_supporters: 1                          # tag: tuning
