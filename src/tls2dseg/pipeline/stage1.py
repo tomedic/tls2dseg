@@ -375,7 +375,10 @@ def run_stage1(
                 odir_d3d_ij = stage1_odir_partial / Path(f"d3d_ij_{pcd_ij_id}.pkl")
 
                 pcd_collection.seg_pcds[pcd_ij_id - 1] = pcd_ij
-                inst_count = np.unique(pcd_ij.scalar_fields["instances"]).size
+                # cleaned pcd carries no "instances" field when no instance survived
+                inst_count = (
+                    np.unique(pcd_ij.scalar_fields["instances"]).size if "instances" in pcd_ij.scalar_fields else 0
+                )
                 pcd_collection.pcd_n_instances[pcd_ij_id - 1] = inst_count
 
                 with open(odir_pcd_ij, "wb") as f:
@@ -442,7 +445,10 @@ def run_stage1(
 
             # single-view collection is sized one slot per scan (pcd_i_id-1)
             pcd_collection.seg_pcds[pcd_i_id - 1] = pcd_i_sv
-            inst_count = np.unique(pcd_i_sv.scalar_fields["instances"]).size
+            # cleaned pcd carries no "instances" field when no instance survived
+            inst_count = (
+                np.unique(pcd_i_sv.scalar_fields["instances"]).size if "instances" in pcd_i_sv.scalar_fields else 0
+            )
             pcd_collection.pcd_n_instances[pcd_i_id - 1] = inst_count
 
             with open(odir_pcd_sv, "wb") as f:

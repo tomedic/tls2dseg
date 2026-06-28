@@ -82,7 +82,7 @@ io:
   input_path: {input_path}
   output_dir: {tmp_path / "output"}
 prompt:
-  text: tree
+  text: fake_object
 preprocessing:
   output_resolution_m: 0.05
 projection:
@@ -134,7 +134,7 @@ def test_cpu_smoke_runs_to_stage1_completion(
     * Run dir layout per D-A2-05 exists post-run.
     * ``ctx.device == 'cpu'`` (CPU-04 device resolution proof).
     """
-    from tls2dseg.pipeline import Pipeline
+    from tls2dseg.pipeline.pipeline import Pipeline
     from tls2dseg.runtime import build_context
 
     cfg = _minimal_runconfig(_MOUNTAINS_FIXTURE, tmp_path)
@@ -158,7 +158,7 @@ def test_cpu_smoke_warning_fires_exactly_once(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     """CPU-03 once-per-process warning emitted EXACTLY ONCE during a real-scan run."""
-    from tls2dseg.pipeline import Pipeline
+    from tls2dseg.pipeline.pipeline import Pipeline
     from tls2dseg.runtime import build_context
 
     cfg = _minimal_runconfig(_MOUNTAINS_FIXTURE, tmp_path)
@@ -186,7 +186,7 @@ def test_cpu_smoke_writes_provenance(tmp_path: Path, monkeypatch: pytest.MonkeyP
 
     Defends against a regression where the CPU code path skips the provenance hook.
     """
-    from tls2dseg.pipeline import Pipeline
+    from tls2dseg.pipeline.pipeline import Pipeline
     from tls2dseg.runtime import build_context
 
     cfg = _minimal_runconfig(_MOUNTAINS_FIXTURE, tmp_path)
@@ -214,7 +214,7 @@ def test_zero_scan_input_raises(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
     Verifies that Pipeline.run() raises ValueError early (no vacuous resume from
     stale checkpoints) when no scan files are found in the input directory.
     """
-    from tls2dseg.pipeline import Pipeline
+    from tls2dseg.pipeline.pipeline import Pipeline
     from tls2dseg.runtime import build_context
 
     empty_input = tmp_path / "empty_input"
