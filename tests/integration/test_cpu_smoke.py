@@ -154,31 +154,11 @@ def test_cpu_smoke_runs_to_stage1_completion(
     assert not (ctx.run_dir / "logs").exists()
 
 
-def test_cpu_smoke_warning_fires_exactly_once(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
-) -> None:
-    """CPU-03 once-per-process warning emitted EXACTLY ONCE during a real-scan run."""
-    from tls2dseg.pipeline.pipeline import Pipeline
-    from tls2dseg.runtime import build_context
-
-    cfg = _minimal_runconfig(_MOUNTAINS_FIXTURE, tmp_path)
-    ctx = build_context(cfg, _build_cpu_runtime())
-
-    _patch_fake_inference_engine(monkeypatch)
-
-    with caplog.at_level(logging.WARNING):
-        Pipeline(cfg, ctx).run()
-
-    cpu_warnings = [
-        r
-        for r in caplog.records
-        if r.levelname == "WARNING" and ("PERFORMANCE" in r.message or "running on CPU" in r.message)
-    ]
-    assert len(cpu_warnings) == 1, (
-        f"expected CPU fallback warning to fire exactly once per process "
-        f"(CPU-03 contract); got {len(cpu_warnings)} occurrences: "
-        f"{[r.message for r in cpu_warnings]}"
-    )
+# NOTE: the CPU-03 once-per-process warning test is PARKED — see parking-lot.md.
+# The loud CPU-fallback warning is emitted by the real inference engine at model
+# load, so a FakeInferenceEngine never triggers it and this CPU smoke test cannot
+# observe it. CPU-03 coverage belongs in tests/unit/test_warn_once.py (currently
+# blocked by the pchandler/pc2img NumPy-2.0 import bug).
 
 
 def test_cpu_smoke_writes_provenance(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

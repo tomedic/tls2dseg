@@ -127,7 +127,14 @@ class Pipeline:
         return cls(cfg, ctx)
 
     def run(self) -> None:
-        """Run end-to-end; dispatches stage1 always, stage2 only in multi-view."""
+        """Run end-to-end; writes provenance, dispatches stage1 always, stage2 in multi-view.
+
+        Provenance (run_info/config.yaml etc.) is written here so it is produced for any
+        caller of the Pipeline API, not only the CLI (D-A2-07).
+        """
+        from tls2dseg.runtime.output_layout import write_provenance
+
+        write_provenance(self._ctx, self._cfg)
         result = self.stage1()
         if self._cfg.mode == "multi-view":
             self.stage2(result)

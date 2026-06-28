@@ -167,9 +167,10 @@ def run_cmd(
         log_file = str(ctx.run_info_dir / "run.log")
         configure_logging(level=log_level, per_package=cfg.logging.per_package, log_file=log_file)
 
-    write_provenance(ctx, cfg)
-
     if dry_run:
+        # The normal path's provenance is written by Pipeline.run(); dry-run never
+        # runs the pipeline, so write it here to keep the resolved config inspectable.
+        write_provenance(ctx, cfg)
         typer.echo(f"[dry-run] run_id={ctx.run_id}")
         typer.echo(f"[dry-run] mode={cfg.mode}")
         typer.echo(f"[dry-run] device={ctx.device}")
