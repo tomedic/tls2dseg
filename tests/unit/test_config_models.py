@@ -399,3 +399,27 @@ def test_range_limits_m_none_allowed() -> None:
     """range_limits_m=None (use percentiles) stays valid."""
     cfg = PreprocessingConfig(output_resolution_m=0.01, range_limits_m=None)
     assert cfg.range_limits_m is None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# drop_incomplete_slices field (Task 2)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.tier_a
+def test_slicing_config_drop_incomplete_slices_default_true() -> None:
+    """Test A: SlicingConfig.drop_incomplete_slices defaults True and carries tag=tuning."""
+    cfg = SlicingConfig()
+    assert cfg.drop_incomplete_slices is True
+    tag = SlicingConfig.model_fields["drop_incomplete_slices"].json_schema_extra
+    assert isinstance(tag, dict)
+    assert tag.get("tag") == "tuning"
+
+
+@pytest.mark.tier_a
+def test_slicing_config_drop_incomplete_slices_round_trip(minimal_yaml_path: Path) -> None:
+    """Test C: cli_overrides inference.slicing.drop_incomplete_slices=false threads through."""
+    from tls2dseg.config.loader import load_config
+
+    cfg = load_config(minimal_yaml_path, cli_overrides={"inference": {"slicing": {"drop_incomplete_slices": False}}})
+    assert cfg.inference.slicing.drop_incomplete_slices is False
