@@ -55,6 +55,7 @@ def _passes(
     p_max_frac: float = _P_MAX_FRAC,
     model_short_side: int = _MODEL_SHORT_SIDE,
     max_zoom_passes: int = 6,
+    native_short_side: int | None = None,
 ) -> list[ZoomPass]:
     return compute_zoom_passes(
         class_sizes=class_sizes,
@@ -65,6 +66,7 @@ def _passes(
         p_max_frac=p_max_frac,
         model_short_side=model_short_side,
         max_zoom_passes=max_zoom_passes,
+        native_short_side=native_short_side,
     )
 
 
@@ -581,3 +583,81 @@ def test_degenerate_guard_logs_warning(caplog: pytest.LogCaptureFixture) -> None
     warnings = [r for r in caplog.records if r.levelname == "WARNING"]
     assert warnings, "degenerate guard must emit a WARNING"
     assert any("SINGLE inference pass" in r.message for r in warnings)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Native-short-side bound: small-image collapse to non-tiled band pass
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+# mountains_small scan parameters (confirmed via static trace, see debug doc)
+_MNT_CLASS_SIZES = {"tree": 10.0, "rock": 10.0}
+_MNT_D_AZIM_RAD = 0.00007896
+_MNT_RANGE_NEAR = 2569.5
+_MNT_RANGE_FAR = 2624.0
+_MNT_NATIVE_SHORT_SIDE = 301  # native panorama is 586x301 px
+
+
+@pytest.mark.tier_a
+def test_small_image_band_collapses_to_nontiled(caplog: pytest.LogCaptureFixture) -> None:
+    """Test A: mountains_small-like inputs with tile >= native short side collapse
+    the band to a non-tiled full-image pass (needs_tiling=False)."""
+    passes = compute_zoom_passes(
+        class_sizes=_MNT_CLASS_SIZES,
+        d_azim_rad=_MNT_D_AZIM_RAD,
+        range_near_m=_MNT_RANGE_NEAR,
+        range_far_m=_MNT_RANGE_FAR,
+        model_short_side=800,
+        native_short_side=_MNT_NATIVE_SHORT_SIDE,
+        overview_pass=False,
+    )
+    # With overview off, the plan must still yield at least one pass carrying the band classes
+    assert len(passes) >= 1, "plan must not be empty with overview_pass=False"
+    full_image_passes = [p for p in passes if not p.needs_tiling]
+    assert full_image_passes, "band with tile >= native_short_side must collapse to needs_tiling=False"
+    collapsed = full_image_passes[0]
+    assert collapsed.tile_size_px is None
+    assert collapsed.overlap_px is None
+    assert "tree" in collapsed.class_names
+    assert "rock" in collapsed.class_names
+
+
+@pytest.mark.tier_a
+def test_small_image_band_collapse_emits_warning(caplog: pytest.LogCaptureFixture) -> None:
+    """Test B: band collapse due to tile >= native short side emits a WARNING."""
+    with caplog.at_level(logging.WARNING, logger="tls2dseg.engines.inference.multi_zoom_plan"):
+        compute_zoom_passes(
+            class_sizes=_MNT_CLASS_SIZES,
+            d_azim_rad=_MNT_D_AZIM_RAD,
+            range_near_m=_MNT_RANGE_NEAR,
+            range_far_m=_MNT_RANGE_FAR,
+            model_short_side=800,
+            native_short_side=_MNT_NATIVE_SHORT_SIDE,
+        )
+    warnings = [r for r in caplog.records if r.levelname == "WARNING"]
+    assert warnings, "band collapse must emit a WARNING"
+    assert any("too small to tile" in w.message.lower() or "full-image" in w.message.lower() for w in warnings), (
+        f"WARNING must mention image too small / full-image pass; got: {[w.message for w in warnings]}"
+    )
+
+
+@pytest.mark.tier_a
+def test_normal_band_stays_tiled_with_large_native() -> None:
+    """Test C (regression): normal case where tile < native_short_side keeps needs_tiling=True.
+
+    Oracle wheat/leaf with native_short_side=4000 (much larger than tile ~779) —
+    bands must stay tiled and the fix must not touch the footprint/band math.
+    """
+    passes = compute_zoom_passes(
+        class_sizes={"wheat": 0.1, "leaf": 0.2},
+        d_azim_rad=1.442283e-4,
+        range_near_m=1.51,
+        range_far_m=11.87,
+        model_short_side=800,
+        native_short_side=4000,
+    )
+    tiled = [p for p in passes if p.needs_tiling]
+    assert len(tiled) == 3, f"Oracle case must still have 3 tiled bands, got {len(tiled)}"
+    for p in tiled:
+        assert p.needs_tiling
+        assert p.tile_size_px is not None
