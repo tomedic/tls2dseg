@@ -14,7 +14,7 @@ io:
 
 prompt:
   text: "plant. cabinet"   # tag: primary
-  sizes_m: [0.1, 1.0]    # tag: primary — one size per class token, in order; mandatory when multi_zoom.active: true
+  sizes_m: [0.2, 1.5]    # tag: primary — one size per class token, in order; mandatory when multi_zoom.active: true
 
 preprocessing:
   output_resolution_m: 0.005      # tag: primary — typical indoor scan voxel size; tune per dataset
@@ -33,9 +33,9 @@ projection:
   rasterization_method: nanconv  # tag: other
 
 inference:
-  box_threshold: 0.15                          # tag: tuning
-  text_threshold: 0.15                         # tag: tuning
-  large_object_removal_threshold: 0.70         # tag: tuning
+  box_threshold: 0.2                          # tag: tuning
+  text_threshold: 0.2                         # tag: tuning
+  large_object_removal_threshold: 0.80         # tag: tuning
   partial_detection_edge_touching_threshold: 1 # tag: tuning
   sam_box_prompt_batch_size: 32                # tag: pipings
   sam2_checkpoint: /scratch/projects/sam2/checkpoints/sam2.1_hiera_large.pt     # tag: pipings — set env var; never hardcode
@@ -46,14 +46,15 @@ inference:
     enabled: true                              # tag: tuning
     slice_width_height: [200, 200]             # tag: tuning
     overlap_width_height: [150, 150]           # tag: tuning
-    iou_threshold: 0.60                        # tag: tuning
+    iou_threshold: 0.70                        # tag: tuning
     overlap_filter_strategy: nms               # tag: other
     empty_slice_removal_threshold: 0.95        # tag: other
+    drop_incomplete_slices: true               # tag: other
   multi_zoom:
     active: true                               # tag: primary — true = per-class adaptive multi-zoom; false = single-zoom (default)
     footprint_band_frac: [0.075, 0.225]        # tag: tuning — target footprint as fraction of DINO short-side (800 px); 0 < p_min < p_max < 1; recommended default [0.075,0.225]
     range_percentiles: [10.0, 90.0]            # tag: tuning — robust per-scan range bounds used when preprocessing.range_limits_m is null
-    cross_class_iou_threshold: 0.6             # tag: tuning — cross-class dedup IoU threshold [0, 1]
+    cross_class_iou_threshold: 0.70             # tag: tuning — cross-class dedup IoU threshold [0, 1]
     area_filter_px: null                       # tag: tuning — null = no bbox area filter (min_px, max_px)
     ios_enabled: false                         # tag: tuning — same-class intersection-over-smaller dedup
     overview_pass: true                       # tag: tuning - running one extra inference pass on a coarse overview image of the whole RoI
@@ -72,9 +73,9 @@ fusion:
   remove_outliers_by_support: true           # tag: tuning
   outlier_detection_threshold: 0.001          # tag: tuning
   graph_clustering_method: hcs               # tag: tuning
-  min_supporters: 1                          # tag: tuning
+  min_supporters: 2                          # tag: tuning
   leiden_resolution: 250.0                   # tag: tuning
-  small_cluster_removal_threshold: 1         # tag: tuning
+  small_cluster_removal_threshold: 2         # tag: tuning
   type: graph_cluster                        # tag: other
   sparse_connectivity_method: knn            # tag: other
   outlier_detection_method: negative_binomial  # tag: other

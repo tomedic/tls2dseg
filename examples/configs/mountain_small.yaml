@@ -49,6 +49,7 @@ inference:
     iou_threshold: 0.80                        # tag: tuning
     overlap_filter_strategy: nms               # tag: other
     empty_slice_removal_threshold: 0.95        # tag: other
+    drop_incomplete_slices: true               # tag: other
   multi_zoom:
     active: true                               # tag: primary — true = per-class adaptive multi-zoom; false = single-zoom (default)
     footprint_band_frac: [0.075, 0.225]        # tag: tuning — target footprint as fraction of DINO short-side (800 px); 0 < p_min < p_max < 1; recommended default [0.075,0.225]
