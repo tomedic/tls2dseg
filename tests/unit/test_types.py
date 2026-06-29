@@ -125,6 +125,7 @@ def test_inference_request_field_set() -> None:
         "partial_detection_edge_touching_threshold",
         "thread_workers",
         "empty_slice_removal_threshold",
+        "drop_incomplete_slices",
         "resize_factor",
         "is_full_image_pass",
         "pass_class_names",
