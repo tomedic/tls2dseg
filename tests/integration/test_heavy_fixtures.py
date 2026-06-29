@@ -283,6 +283,14 @@ def test_office_small_heavy(_office_heavy_config_path: Path) -> None:
     assert n_fused >= 1, (
         "Stage2 fusion produced no 3D instances — cross-scan correspondence was insufficient. See report."
     )
+    # Fused instance count must be close to the 8 reference plants, not the ~87
+    # broken value caused by n_scans collapsing to 1. Allows reasonable inference
+    # variance while firmly rejecting the pre-fix near-singleton cluster count.
+    assert 4 <= n_fused <= 20, (
+        f"Fused instance count {n_fused} outside expected band [4, 20]. "
+        f"Pre-fix broken value was ~87 (KNN budget starved by n_scans=1); "
+        f"expected ~8 (reference plant count). Regression detected."
+    )
     assert recall >= _RECALL_THR, (
         f"Fused-output recall {recall:.3f} below threshold {_RECALL_THR}. See report for details."
     )
