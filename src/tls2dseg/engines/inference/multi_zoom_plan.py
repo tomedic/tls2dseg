@@ -190,6 +190,28 @@ def compute_zoom_passes(
             target_effective=target_effective,
             model_short_side=model_short_side,
         )
+
+        if native_short_side is not None and tile_size_px >= native_short_side:
+            logger.warning(
+                "Band %d requested tile %d px >= native image short side %d px: "
+                "image is too small to tile for this band. "
+                "Running a full-image pass over the whole panorama instead.",
+                b,
+                tile_size_px,
+                native_short_side,
+            )
+            tiled_passes.append(
+                ZoomPass(
+                    resize_factor=1.0,
+                    tile_size_px=None,
+                    overlap_px=None,
+                    needs_tiling=False,
+                    class_names=tuple(members),
+                    text_prompt=_build_prompt(members),
+                )
+            )
+            continue
+
         overlap_px = round(ov_frac * tile_size_px)
 
         tiled_passes.append(
