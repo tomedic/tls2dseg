@@ -463,6 +463,15 @@ class SlicingConfig(BaseModel):
         json_schema_extra={"tag": "other"},
         description="Skip slices whose empty-pixel fraction exceeds this threshold.",
     )
+    # tag: tuning
+    drop_incomplete_slices: bool = Field(
+        True,
+        json_schema_extra={"tag": "tuning"},
+        description=(
+            "When true, SAHI border/clamped slices smaller than the requested tile are dropped "
+            "(current behaviour). When false, clamped edge and whole-image slices are still inferred."
+        ),
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -257,6 +257,7 @@ class GroundedSAM2HFEngine:
             "overlap_filter_strategy": request.overlap_filter_strategy,
             "empty_slice_removal_threshold": request.empty_slice_removal_threshold,
             "thread_workers": request.thread_workers,
+            "drop_incomplete_slices": request.drop_incomplete_slices,
         }
 
         text_prompt = request.text_prompt

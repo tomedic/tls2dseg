@@ -91,11 +91,10 @@ def check_if_img_slice_empty(image_slice: np.ndarray, slice_inference_parameters
 
 
 def check_if_img_slice_complete(image_slice: np.ndarray, slice_inference_parameters: dict) -> bool:
-    #   get real image slice height and width
+    if not slice_inference_parameters.get("drop_incomplete_slices", True):
+        return True
     slice_height, slice_width = image_slice.shape[:2]
-    #   get expected image slice height and width
     slice_height_expected, slice_width_expected = slice_inference_parameters["slice_width_height"]
-    #   if not matching -> exit
     return slice_height == slice_height_expected and slice_width == slice_width_expected
 
 

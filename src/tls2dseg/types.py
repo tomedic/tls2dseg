@@ -115,6 +115,7 @@ class InferenceRequest:
     partial_detection_edge_touching_threshold: int
     thread_workers: int
     empty_slice_removal_threshold: float
+    drop_incomplete_slices: bool = True
     resize_factor: float = 1.0
     is_full_image_pass: bool = False
     pass_class_names: tuple[str, ...] = ()

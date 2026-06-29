@@ -73,6 +73,7 @@ class Pipeline:
             partial_detection_edge_touching_threshold=cfg.inference.partial_detection_edge_touching_threshold,
             thread_workers=cfg.runtime.n_workers,
             empty_slice_removal_threshold=cfg.inference.slicing.empty_slice_removal_threshold,
+            drop_incomplete_slices=cfg.inference.slicing.drop_incomplete_slices,
         )
 
         image_generation_parameters: dict = {
