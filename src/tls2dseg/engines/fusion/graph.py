@@ -114,7 +114,9 @@ class GraphClusterFusionEngine:
 
         # 1. Merge per-scan Detections3D into a single flat collection
         detections_list = list(fusion_input.detections_list)
-        n_scans = len(detections_list)
+        # Use scan_ids for the true scan count; fall back to list length if empty.
+        _n_ids = int(fusion_input.scan_ids.shape[0])
+        n_scans = _n_ids if _n_ids > 0 else max(len(detections_list), 1)
         d3d_collection = merge_detections3d(detections_list)
         n_total = int(d3d_collection.pcd_ids.shape[0])
 
