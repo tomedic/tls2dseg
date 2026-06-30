@@ -21,7 +21,9 @@ Reference datasets: <PLACEHOLDER_DATASET_URL>
 | `input_path` | `Path` | *(required)* | Path to input point clouds (file or directory). | IOConfig |
 | `output_dir` | `Path` | *(required)* | Root directory under which per-run output dirs are created. | IOConfig |
 | `text` | `str` | *(required)* | Space-or-dot-separated open-vocab class prompt for Grounded-DINO. Auto-lowercased + trailing period appended (closes pipeline/run.py:170 TODO). | PromptConfig |
+| `sizes_m` | `list[float] \| None` | null | Representative physical size (m) per class token in `text`, in order. Required when multi-zoom is active; otherwise optional. | PromptConfig |
 | `output_resolution_m` | `float` | *(required)* | Voxel downsample resolution in meters. Must be set per dataset. | PreprocessingConfig |
+| `range_limits_m` | `tuple[float, float] \| None` | null | (min, max) range from scanner origin in meters. None = no limits. | PreprocessingConfig |
 | `roi_polygon_m` | `list[tuple[float, float]] \| None` | null | List of (x, y) vertices defining 2D ROI polygon in scanner-local meters. None = no ROI filter. Renamed from misleading 'roi_limits'. | PreprocessingConfig |
 | `features` | `list` | *(required)* | List of point cloud features projected to 2D image channels. Validated against the projection engine's known features (MODE-06). | ProjectionConfig |
 | `active` | `bool` | false | Enable per-class adaptive multi-zoom. False (default) = single-zoom. | MultiZoomConfig |
@@ -42,20 +44,13 @@ Reference datasets: <PLACEHOLDER_DATASET_URL>
 | `footprint_band_frac` | `tuple` | (0.075, 0.225) | Target footprint band as fraction of DINO short-side (800 px). p_min = detection-quality floor; p_max = containment ceiling (D-A-05). Must satisfy 0 < p_min < p_max < 1. | MultiZoomConfig |
 | `range_percentiles` | `tuple` | (10.0, 90.0) | Robust per-scan range bounds as percentiles (D-A-02). Used when preprocessing.range_limits_m is not set. | MultiZoomConfig |
 | `cross_class_iou_threshold` | `float` | 0.7 | IoU threshold for cross-class deduplication (MZ-06 / D-D-04). Overlapping detections of different classes above this threshold → keep higher-confidence one. | MultiZoomConfig |
+| `area_filter_px` | `tuple[int, int] \| None` | null | (min_px, max_px) area filter applied to detections. None = no area filter (D-CFG-03). | MultiZoomConfig |
 | `ios_enabled` | `bool` | false | Enable intersection-over-smaller (IoS) for same-class cross-scale dedup (D-D-03). IoS is restricted to same class to avoid killing nested objects. | MultiZoomConfig |
 | `max_zoom_passes` | `int` | 6 | Maximum number of tiled zoom bands. Caps the greedy interval-cover when the footprint span would require more bands; a warning is emitted and coarsest instances rely on the always-on overview pass. | MultiZoomConfig |
 | `box_threshold` | `float` | 0.1 | Grounded-DINO box confidence threshold. | InferenceSharedConfig |
 | `text_threshold` | `float` | 0.1 | Grounded-DINO text-similarity threshold. | InferenceSharedConfig |
 | `large_object_removal_threshold` | `float` | 0.9 | Drop detections whose bbox area exceeds this fraction of image area. | InferenceSharedConfig |
 | `partial_detection_edge_touching_threshold` | `int` | 5 | Pixel margin within which a bbox is treated as edge-touching (partial detection). | InferenceSharedConfig |
-| `box_threshold` | `float` | 0.1 | Grounded-DINO box confidence threshold. | GroundedSAM2Config |
-| `text_threshold` | `float` | 0.1 | Grounded-DINO text-similarity threshold. | GroundedSAM2Config |
-| `large_object_removal_threshold` | `float` | 0.9 | Drop detections whose bbox area exceeds this fraction of image area. | GroundedSAM2Config |
-| `partial_detection_edge_touching_threshold` | `int` | 5 | Pixel margin within which a bbox is treated as edge-touching (partial detection). | GroundedSAM2Config |
-| `box_threshold` | `float` | 0.1 | Grounded-DINO box confidence threshold. | GroundedSAM2HFConfig |
-| `text_threshold` | `float` | 0.1 | Grounded-DINO text-similarity threshold. | GroundedSAM2HFConfig |
-| `large_object_removal_threshold` | `float` | 0.9 | Drop detections whose bbox area exceeds this fraction of image area. | GroundedSAM2HFConfig |
-| `partial_detection_edge_touching_threshold` | `int` | 5 | Pixel margin within which a bbox is treated as edge-touching (partial detection). | GroundedSAM2HFConfig |
 | `bounding_box_type` | `Literal` | 'obb' | 3D bounding box type: OBB (oriented) or AABB (axis-aligned). | D3DExtractionConfig |
 | `min_point_count` | `int` | 50 | Drop instances with fewer points (renamed from min_d3d_pcd_point_count). | D3DExtractionConfig |
 | `merge_inst_of_same_class_only` | `bool` | false | Merge instances across scans only when they share the same class. | FusionConfig |
@@ -79,9 +74,7 @@ Reference datasets: <PLACEHOLDER_DATASET_URL>
 | `n_workers` | `int` | 12 | Parallel workers for stage-1 per-scan loop. | RuntimeConfig |
 | `accept_cpu_fallback` | `bool` | true | Allow loud CPU fallback when CUDA absent (CPU-03 contract). | RuntimeConfig |
 | `sam_box_prompt_batch_size` | `int` | 32 | SAM2 box-prompt batch size; GPU memory/throughput trade-off. | InferenceSharedConfig |
-| `sam_box_prompt_batch_size` | `int` | 32 | SAM2 box-prompt batch size; GPU memory/throughput trade-off. | GroundedSAM2Config |
 | `sam2_checkpoint` | `Path` | *(required)* | Path to the SAM2 checkpoint (.pt). Supports ${ENV_VAR} interpolation in YAML (e.g. '${SAM2_CHECKPOINT_PATH}'). Existence is checked lazily at runtime (NOT at validate-config time) per D-CD-05. | GroundedSAM2Config |
-| `sam_box_prompt_batch_size` | `int` | 32 | SAM2 box-prompt batch size; GPU memory/throughput trade-off. | GroundedSAM2HFConfig |
 
 ## other
 
@@ -103,14 +96,8 @@ Reference datasets: <PLACEHOLDER_DATASET_URL>
 | `object_detection_model_id` | `str` | 'IDEA-Research/grounding-dino-base' | HuggingFace model id for the object detection model (renamed from bbox_model_id). | InferenceSharedConfig |
 | `slicing` | `SlicingConfig` | SlicingConfig(enabled=True, slice_width_height=(200, 200), overlap_width_height=(150, 150), iou_threshold=0.8, nms_combine_class_agnostic=False, overlap_filter_strategy='nms', empty_slice_removal_threshold=0.95, drop_incomplete_slices=True) | SAHI-style sliced inference sub-block. | InferenceSharedConfig |
 | `multi_zoom` | `MultiZoomConfig` | MultiZoomConfig(active=False, overview_pass=True, footprint_band_frac=(0.075, 0.225), range_percentiles=(10.0, 90.0), cross_class_iou_threshold=0.7, area_filter_px=None, ios_enabled=False, max_zoom_passes=6) | Per-class adaptive multi-zoom inference sub-block. | InferenceSharedConfig |
-| `object_detection_model_id` | `str` | 'IDEA-Research/grounding-dino-base' | HuggingFace model id for the object detection model (renamed from bbox_model_id). | GroundedSAM2Config |
-| `slicing` | `SlicingConfig` | SlicingConfig(enabled=True, slice_width_height=(200, 200), overlap_width_height=(150, 150), iou_threshold=0.8, nms_combine_class_agnostic=False, overlap_filter_strategy='nms', empty_slice_removal_threshold=0.95, drop_incomplete_slices=True) | SAHI-style sliced inference sub-block. | GroundedSAM2Config |
-| `multi_zoom` | `MultiZoomConfig` | MultiZoomConfig(active=False, overview_pass=True, footprint_band_frac=(0.075, 0.225), range_percentiles=(10.0, 90.0), cross_class_iou_threshold=0.7, area_filter_px=None, ios_enabled=False, max_zoom_passes=6) | Per-class adaptive multi-zoom inference sub-block. | GroundedSAM2Config |
 | `type` | `Literal` | 'grounded_sam2' | Inference engine discriminator — selects GroundedSAM2Engine. | GroundedSAM2Config |
 | `sam2_model_config` | `str` | 'configs/sam2.1/sam2.1_hiera_l.yaml' | SAM2 model config file path (relative to SAM2 package install). | GroundedSAM2Config |
-| `object_detection_model_id` | `str` | 'IDEA-Research/grounding-dino-base' | HuggingFace model id for the object detection model (renamed from bbox_model_id). | GroundedSAM2HFConfig |
-| `slicing` | `SlicingConfig` | SlicingConfig(enabled=True, slice_width_height=(200, 200), overlap_width_height=(150, 150), iou_threshold=0.8, nms_combine_class_agnostic=False, overlap_filter_strategy='nms', empty_slice_removal_threshold=0.95, drop_incomplete_slices=True) | SAHI-style sliced inference sub-block. | GroundedSAM2HFConfig |
-| `multi_zoom` | `MultiZoomConfig` | MultiZoomConfig(active=False, overview_pass=True, footprint_band_frac=(0.075, 0.225), range_percentiles=(10.0, 90.0), cross_class_iou_threshold=0.7, area_filter_px=None, ios_enabled=False, max_zoom_passes=6) | Per-class adaptive multi-zoom inference sub-block. | GroundedSAM2HFConfig |
 | `type` | `Literal` | 'grounded_sam2_hf' | Inference engine discriminator — selects GroundedSAM2HFEngine. | GroundedSAM2HFConfig |
 | `sam2_hf_model_id` | `str` | 'facebook/sam2.1-hiera-large' | HuggingFace model id for the SAM2 model. Confirmed: Sam2Processor/Sam2Model under transformers 5.11.0 (ENG-05 probe). | GroundedSAM2HFConfig |
 | `centroid_type` | `Literal` | 'bbox_c' | Instance centroid method: points mean ('mean'), points median ('median'), or bbox centre ('bbox_c'). | D3DExtractionConfig |
@@ -118,5 +105,5 @@ Reference datasets: <PLACEHOLDER_DATASET_URL>
 | `type` | `Literal` | 'graph_cluster' | Fusion engine discriminator (Phase 4 ENG-* expansion slot). | FusionConfig |
 | `sparse_connectivity_method` | `Literal` | 'knn' | Cross-scan sparse connectivity construction method (KD-tree based). | FusionConfig |
 | `outlier_detection_method` | `Literal` | 'negative_binomial' | Statistical method for over-support outlier detection. | FusionConfig |
-| `per_package` | `dict` | PydanticUndefined | Per-package logger level overrides (e.g. {'pchandler': 'WARNING'}). Empty = no overrides. | LoggingConfig |
+| `per_package` | `dict` | {} | Per-package logger level overrides (e.g. {'pchandler': 'WARNING'}). Empty = no overrides. | LoggingConfig |
 | `log_to_file` | `bool` | true | Write {run_dir}/logs/run.log in addition to console. | LoggingConfig |
