@@ -87,10 +87,10 @@ def run_cmd(
         "--log-level",
         help="Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL).",
     ),
-    resume_from: Path | None = typer.Option(
-        None,
-        "--resume-from",
-        help="Resume from a specific run directory (overrides cfg.io.resume_from_checkpoint).",
+    resume: bool = typer.Option(
+        False,
+        "--resume/--no-resume",
+        help="Re-use partial state from the current run's intermediate/ directory.",
     ),
     run_id: str | None = typer.Option(
         None,
@@ -134,7 +134,7 @@ def run_cmd(
     io_overrides: dict[str, object] = {}
     if output_dir is not None:
         io_overrides["output_dir"] = output_dir
-    if resume_from is not None:
+    if resume:
         io_overrides["resume_from_checkpoint"] = True
     if io_overrides:
         cli_overrides["io"] = io_overrides
