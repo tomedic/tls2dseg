@@ -71,11 +71,16 @@ def _type_name(annotation: object) -> str:
 def _default_str(finfo: object) -> str:
     """Return the field default as a string, or '' if required."""
     import pydantic.fields as _pf
+    from pydantic_core import PydanticUndefined
 
     if not isinstance(finfo, _pf.FieldInfo):
         return ""
     if finfo.is_required():
         return "*(required)*"
+    if finfo.default is PydanticUndefined:
+        if finfo.default_factory is not None:
+            return repr(finfo.default_factory())
+        return ""
     default = finfo.default
     if default is None:
         return "null"
