@@ -50,10 +50,11 @@ dependencies = [
     "numpy ~= 1.26",
 
     # ---- Workspace-internal deps ----
-    # If pip's resolver tries to re-clone these git URLs even when an editable install
-    # exists locally, use `pip install -e . --no-deps` and verify `python -c "import pchandler, pc2img"`.
-    "pchandler @ git+ssh://git@github.com/gseg-ethz/PCHandler.git@develop/tomislav",
-    "pc2img    @ git+ssh://git@github.com/gseg-ethz/pc2img.git@develop/tomislav",
+    # Fill <PLACEHOLDER_REPO_URL> (e.g. github.com/your-org) and <PLACEHOLDER_REF>
+    # (semver tag, e.g. v0.1.0) once repos are public. Use `pip install -e . --no-deps`
+    # if you have local editable installs of pchandler/pc2img.
+    "pchandler @ git+https://<PLACEHOLDER_REPO_URL>/PCHandler.git@<PLACEHOLDER_REF>",
+    "pc2img @ git+https://<PLACEHOLDER_REPO_URL>/pc2img.git@<PLACEHOLDER_REF>",
 
     # ---- Config + CLI (Phase 3 CFG-01/05/06) ----
     # typer uses `>=` per RESEARCH.md Pitfall 8 (Typer's `~=` interpretation would block 0.14+).
@@ -78,7 +79,7 @@ dev = [
 tls2dseg = "tls2dseg.cli:app"
 
 [tool.hatch.metadata]
-allow-direct-references = true  # required to declare sam2/pchandler/pc2img as git+https / git+ssh URL deps
+allow-direct-references = true  # required to declare sam2/pchandler/pc2img as git+https URL deps
 
 [tool.hatch.version]
 source = "vcs"
