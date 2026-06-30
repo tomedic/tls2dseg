@@ -89,6 +89,25 @@ def test_generate_schema_doc_union_both_members_present() -> None:
     assert "sam2_hf_model_id" in doc, "GroundedSAM2HFConfig field 'sam2_hf_model_id' not found"
 
 
+@pytest.mark.tier_a
+def test_generate_schema_doc_no_duplicate_field_rows() -> None:
+    """Shared InferenceSharedConfig fields must appear exactly once (WR-02 lock-in)."""
+    from tls2dseg.config.schema_doc import generate_schema_doc
+
+    doc = generate_schema_doc()
+    assert doc.count("box_threshold") == 1, "box_threshold must appear exactly once (no inherited-field duplicates)"
+    assert doc.count("text_threshold") == 1, "text_threshold must appear exactly once"
+
+
+@pytest.mark.tier_a
+def test_generate_schema_doc_no_pydantic_undefined() -> None:
+    """No field default may render as the string 'PydanticUndefined' (WR-03 lock-in)."""
+    from tls2dseg.config.schema_doc import generate_schema_doc
+
+    doc = generate_schema_doc()
+    assert "PydanticUndefined" not in doc, "PydanticUndefined must not appear in generated schema doc"
+
+
 # ─── CLI test ────────────────────────────────────────────────────────────────
 
 
