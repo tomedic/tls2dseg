@@ -18,7 +18,7 @@ def doctor() -> dict[str, Any]:
     Returns
     -------
     dict[str, Any]
-        Keys: python, torch_cuda, rapids_cuml, libvips, sam2_checkpoint.
+        Keys: python, torch_cuda, rapids_cuml, libvips, pchandler, pc2img, sam2_checkpoint.
         Each value is a dict with status + detail + (where applicable) hint.
     """
     return {
@@ -26,6 +26,8 @@ def doctor() -> dict[str, Any]:
         "torch_cuda": _probe_torch_cuda(),
         "rapids_cuml": _probe_rapids(),
         "libvips": _probe_libvips(),
+        "pchandler": _probe_pchandler(),
+        "pc2img": _probe_pc2img(),
         "sam2_checkpoint": _probe_sam2_checkpoint(),
     }
 
@@ -42,7 +44,7 @@ def _probe_torch_cuda() -> dict[str, Any]:
         return {
             "status": "missing",
             "detail": "torch not installed",
-            "hint": "pip install torch (see tls2dseg install docs in Phase 8)",
+            "hint": "pip install torch — see README for install instructions",
         }
     try:
         import torch
@@ -94,6 +96,36 @@ def _probe_libvips() -> dict[str, Any]:
         }
     except Exception as e:  # best-effort per D-11; broad catch is intentional
         return {"status": "error", "detail": f"pyvips import failed: {e}"}
+
+
+def _probe_pchandler() -> dict[str, Any]:
+    if importlib.util.find_spec("pchandler") is None:
+        return {
+            "status": "missing",
+            "detail": "pchandler not installed",
+            "hint": "pip install pchandler — see README for install instructions",
+        }
+    try:
+        import pchandler
+
+        return {"status": "ok", "detail": f"pchandler {getattr(pchandler, '__version__', 'unknown')}"}
+    except Exception as e:  # best-effort per D-11; broad catch is intentional
+        return {"status": "error", "detail": f"pchandler import failed: {e}"}
+
+
+def _probe_pc2img() -> dict[str, Any]:
+    if importlib.util.find_spec("pc2img") is None:
+        return {
+            "status": "missing",
+            "detail": "pc2img not installed",
+            "hint": "pip install pc2img — see README for install instructions",
+        }
+    try:
+        import pc2img
+
+        return {"status": "ok", "detail": f"pc2img {getattr(pc2img, '__version__', 'unknown')}"}
+    except Exception as e:  # best-effort per D-11; broad catch is intentional
+        return {"status": "error", "detail": f"pc2img import failed: {e}"}
 
 
 # Search-path strategy for SAM2 checkpoint (D-09, D-11):
