@@ -1,17 +1,16 @@
 """Schema-documentation generator (DOC-02).
 
-Walks RunConfig + all 13 sub-models via ``model_fields``, reads the
-``json_schema_extra["tag"]`` annotation on every field, groups by tag
-(primary → tuning → pipings → other), and renders Markdown reference docs.
+Walks RunConfig + all sub-models listed in ``_SUB_MODELS`` via
+``model_fields``, reads the ``json_schema_extra["tag"]`` annotation on every
+field, groups by tag (primary → tuning → pipings → other), and renders
+Markdown reference docs.
 
-The discriminated InferenceConfig union (GroundedSAM2Config |
-GroundedSAM2HFConfig) is unpacked via ``typing.get_args()`` so fields from
-both members appear in the output.
+Engine config variants (GroundedSAM2Config, GroundedSAM2HFConfig) appear
+because they are listed explicitly in ``_SUB_MODELS`` — the discriminated
+InferenceConfig union type is not traversed at runtime.
 """
 
 from __future__ import annotations
-
-import typing
 
 from pydantic import BaseModel
 
@@ -60,16 +59,6 @@ def _is_model(tp: object) -> bool:
     return isinstance(tp, type) and issubclass(tp, BaseModel)
 
 
-def _iter_union_members(annotation: object) -> list[type]:
-    """Unpack Annotated[A | B, ...] → [A, B]; or [] if not a union."""
-    args = typing.get_args(annotation)
-    if not args:
-        return []
-    inner = args[0]
-    union_members = typing.get_args(inner)
-    return [m for m in union_members if isinstance(m, type)]
-
-
 def _type_name(annotation: object) -> str:
     """Return a compact human-readable name for a field annotation."""
     if annotation is None:
@@ -102,13 +91,15 @@ def _collect_fields(
 ) -> list[tuple[str, str, str, str, str, str]]:
     """Return list of (tag, field_name, type_str, default_str, description, source).
 
-    Recurses into nested BaseModel fields; unpacks the InferenceConfig
-    discriminated union via _iter_union_members.
-    Skips fields already seen (model_name, field_name) to avoid duplicates
-    from inheritance.
+    Emits only fields declared directly on *model* (not inherited); inherited
+    fields are documented when _SUB_MODELS reaches the base class directly.
+    Skips fields already seen (source_label, field_name).
     """
     rows: list[tuple[str, str, str, str, str, str]] = []
+    own_annotations = vars(model).get("__annotations__", {})
     for fname, finfo in model.model_fields.items():
+        if fname not in own_annotations:
+            continue
         key = (source_label, fname)
         if key in seen:
             continue
@@ -119,7 +110,8 @@ def _collect_fields(
 
         annotation = finfo.annotation
 
-        # Nested BaseModel — recurse but still render the parent field row.
+        # Nested BaseModel — emit a row for this container field; the sub-model's
+        # own fields are rendered when _SUB_MODELS reaches that model directly.
         if _is_model(annotation):
             rows.append(
                 (
@@ -131,31 +123,6 @@ def _collect_fields(
                     source_label,
                 )
             )
-            continue
-
-        # Discriminated union (InferenceConfig = Annotated[A | B, Field(...)]).
-        union_members = _iter_union_members(annotation)
-        if union_members:
-            for member in union_members:
-                if _is_model(member):
-                    member_label = member.__name__
-                    for sub_fname, sub_finfo in member.model_fields.items():
-                        sub_key = (member_label, sub_fname)
-                        if sub_key in seen:
-                            continue
-                        seen.add(sub_key)
-                        sub_extra = sub_finfo.json_schema_extra
-                        sub_tag = sub_extra.get("tag", "other") if isinstance(sub_extra, dict) else "other"
-                        rows.append(
-                            (
-                                sub_tag,
-                                sub_fname,
-                                _type_name(sub_finfo.annotation),
-                                _default_str(sub_finfo),
-                                sub_finfo.description or "",
-                                member_label,
-                            )
-                        )
             continue
 
         rows.append(
