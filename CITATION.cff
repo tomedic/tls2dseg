@@ -1,0 +1,12 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+type: software
+title: "tls2dseg: Open-vocabulary 3D instance segmentation of TLS point clouds via 2D foundation models"
+authors:
+  - family-names: "<PLACEHOLDER_FAMILY_NAME>"
+    given-names: "<PLACEHOLDER_GIVEN_NAME>"
+    orcid: "https://orcid.org/<PLACEHOLDER_ORCID>"
+repository-code: "https://github.com/<PLACEHOLDER_REPO_URL>"
+doi: "<PLACEHOLDER_DOI>"
+date-released: "<PLACEHOLDER_DATE>"
+license: GPL-3.0
