@@ -28,10 +28,24 @@ pre-push hook latency — without it, every push rebuilds the venv from scratch.
 """
 
 import os
+import tomllib
+from pathlib import Path
 
 import nox
 
 nox.options.reuse_venv = "yes"
+
+
+def _runtime_deps_without_workspace_placeholders() -> list[str]:
+    """[project.dependencies] minus the fill-in-the-blank <PLACEHOLDER_*> URL deps.
+
+    pchandler/pc2img ship as ``git+https://<PLACEHOLDER_*>`` until the repos flip
+    public, so they are uninstallable as written. tier_b_light installs them as
+    editable siblings instead, so they are dropped here. Real URL deps (sam2) and
+    all PyPI deps are kept.
+    """
+    data = tomllib.loads((Path(__file__).parent / "pyproject.toml").read_text())
+    return [d for d in data["project"]["dependencies"] if "<PLACEHOLDER" not in d]
 
 
 # D-A4-01: pytest flags MUST match the tier_a job in ci.yml exactly.
@@ -57,15 +71,17 @@ def tier_a(session: nox.Session) -> None:
 def tier_b_light(session: nox.Session) -> None:
     """Run tier_b_light tests — pchandler+pc2img with deps; torch allowed; no real model runs.
 
-    D-D-06 (Phase 4 plan 02): installs tls2dseg + PCHandler + pc2img WITH their
-    transitive dependencies (no ``--no-deps``) so that imports of
-    ``pc2img_utils``, ``pchandler``, etc. resolve correctly.  Previously
-    ``--no-deps`` was used, but that caused ``imageio`` and other transitive
-    deps to be missing, breaking tier_b_light test collection.
+    pchandler/pc2img are installed as editable siblings (the local-dev workflow),
+    NOT resolved from pyproject's ``git+https://<PLACEHOLDER_*>`` URLs, which are
+    uninstallable until the repos flip public. tls2dseg installs ``--no-deps`` so
+    pip never touches those placeholder URLs; its remaining runtime deps (PyPI +
+    real sam2 URL) are installed explicitly so ``imageio`` etc. resolve and test
+    collection works.
     """
-    session.install("-e", ".")  # installs tls2dseg WITH all its deps
-    session.install("-e", "../PCHandler")  # installs PCHandler WITH deps
-    session.install("-e", "../pc2img")  # installs pc2img WITH deps
+    session.install("-e", "../PCHandler")  # editable sibling, WITH deps
+    session.install("-e", "../pc2img")  # editable sibling, WITH deps
+    session.install("-e", ".", "--no-deps")  # tls2dseg only; skips placeholder URL deps
+    session.install(*_runtime_deps_without_workspace_placeholders())
     session.install("pytest")  # explicit in case not in transitive deps
     # manifold3d: CPU-only trimesh boolean backend so the OBB-boolean IoU
     # tests (TEST-06, test_bboxes_iou.py) execute instead of skip-guarding on
