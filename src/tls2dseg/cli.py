@@ -143,11 +143,13 @@ def run_cmd(
 
     # Load config — safe to import now; loader's DEBUG output reaches the
     # bootstrap_logger basicConfig handler.
+    from pydantic import ValidationError
+
     from tls2dseg.config.loader import load_config
 
     try:
         cfg = load_config(config, cli_overrides=cli_overrides)
-    except (FileNotFoundError, ValueError) as e:
+    except (FileNotFoundError, ValueError, ValidationError) as e:
         typer.echo(f"Config load error: {e}", err=True)
         raise typer.Exit(code=1) from e
 
