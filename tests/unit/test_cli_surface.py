@@ -137,7 +137,7 @@ def test_run_help_lists_all_eight_flags() -> None:
     expected_flags = [
         "--config",
         "--log-level",
-        "--resume-from",
+        "--resume",
         "--run-id",
         "--output-dir",
         "--mode",
