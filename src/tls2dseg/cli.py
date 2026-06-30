@@ -1,6 +1,6 @@
 """Typer-based CLI for tls2dseg (Phase 3 CFG-05 + CFG-06).
 
-Replaces the Phase-1 argparse stub. Surface (4 subcommands per D-A3-01):
+Replaces the Phase-1 argparse stub. Surface (5 subcommands per D-A3-01):
 
 * ``tls2dseg --version`` — prints semver and exits 0.
 * ``tls2dseg run --config <yaml>`` — load config, build runtime context, dump
@@ -8,6 +8,7 @@ Replaces the Phase-1 argparse stub. Surface (4 subcommands per D-A3-01):
 * ``tls2dseg validate-config <file>`` — load + validate without running.
   Exit 0 if valid, exit 1 with a field-level error to stderr if not (CFG-06).
 * ``tls2dseg doctor`` — Phase-1 diagnostics report (preserved verbatim).
+* ``tls2dseg schema [--output PATH]`` — print or write the config schema doc.
 
 Two-phase logging per RESEARCH §Pattern 8 + WARNING-5 fix:
 
@@ -232,6 +233,25 @@ def doctor_cmd() -> None:
 
     report = doctor()
     typer.echo(format_report(report))
+
+
+@app.command(name="schema")
+def schema_cmd(
+    output: Path | None = typer.Option(
+        None,
+        "--output",
+        "-o",
+        help="Write schema doc to file instead of stdout.",
+    ),
+) -> None:
+    """Generate YAML config schema docs grouped by tag (DOC-02)."""
+    from tls2dseg.config.schema_doc import generate_schema_doc
+
+    doc = generate_schema_doc()
+    if output:
+        output.write_text(doc, encoding="utf-8")
+    else:
+        typer.echo(doc)
 
 
 # NOTE: ``main()`` is preserved as a thin shim for backward-compat with any
