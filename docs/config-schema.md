@@ -21,7 +21,7 @@ A config is a tree of blocks. The ten top-level entries below are always present
 | `io` | Input/output: where scans are read from, where per-run output dirs are written, run-id naming, and what intermediate artifacts are kept. |
 | `prompt` | The open-vocabulary Grounded-DINO text prompt (the classes to detect) and the per-class physical sizes multi-zoom needs. |
 | `preprocessing` | Point-cloud conditioning before projection: output resolution (voxel size), optional range/ROI cropping, upside-down flip, and output colouring. |
-| `projection` | How the 3D cloud becomes a 2D spherical image the detector sees: which point features become image channels, image width, rasterization, rotation. |
+| `projection` | How the 3D cloud becomes a 2D image the detector sees: which point features become image channels, image width, rasterization, rotation. |
 | `inference` | The Grounded-DINO + SAM2 detection/segmentation step: engine choice, DINO/SAM thresholds, model ids, checkpoint, and the two sub-blocks below (`multi_zoom`, `slicing`). |
 | `d3d_extraction` | Stage-1 lift of 2D masks back to 3D per-scan instances: 3D bounding-box type, point-count filter, centroid method, per-instance cleanup. |
 | `fusion` | Stage-2 cross-scan graph fusion (multi-view only): how per-scan detections are linked, clustered, and outlier-filtered into merged instances. Parsed but ignored for `single-view`. |
@@ -52,7 +52,7 @@ Several blocks expose a `type` discriminator, a forward-compatibility slot so al
 - This document is **hand-maintained**. `tls2dseg schema` regenerates the flat per-tag tables from the pydantic models as a starting point; the overview sections above are authored by hand and should be preserved.
 
 ---
-
+# PARAMETERS:
 ## primary
 
 | Field | Type | Default | Description | Block |
