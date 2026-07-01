@@ -64,7 +64,7 @@ def _type_name(annotation: object) -> str:
     if annotation is None:
         return "Any"
     if hasattr(annotation, "__name__"):
-        return annotation.__name__  # type: ignore[union-attr]
+        return str(annotation.__name__)
     return str(annotation).replace("typing.", "").replace("tls2dseg.config.models.", "")
 
 
@@ -90,7 +90,7 @@ def _default_str(finfo: object) -> str:
 
 
 def _collect_fields(
-    model: type,
+    model: type[BaseModel],
     source_label: str,
     seen: set[tuple[str, str]],
 ) -> list[tuple[str, str, str, str, str, str]]:

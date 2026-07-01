@@ -8,11 +8,11 @@ dynamic = ["version"]
 requires-python = ">=3.11"
 readme = "README.md"
 
-description = "Open-vocabulary 3D instance and semantic segmentation of terrestrial laser scan point clouds via panoramic projections and 2D foundation models."
+description = "Open-vocabulary 3D segmentation for terrestrial laser scan point clouds via 2D foundation models."
 
 authors = [{name = "Tomislav Medic", email = "tmedic@ethz.ch"}, {name = "Claude Code", email = ""}]
 
-keywords = ["point-cloud", "tls", "lidar", "segmentation","instance","semantic","open-vocabulary","sam2", "remote-sensing", "laser scanning","geospatial","deep-learning"]
+keywords = ["point cloud", "tls", "lidar", "segmentation","instance","semantic","open-vocabulary","sam2", "remote-sensing", "laser scanning","geospatial","deep-learning"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
@@ -49,15 +49,12 @@ dependencies = [
     "networkx ~= 3.4",
     "numpy ~= 1.26",
 
-    # ---- Workspace-internal deps ----
-    # Fill <PLACEHOLDER_REPO_URL> (e.g. github.com/your-org) and <PLACEHOLDER_REF>
-    # (semver tag, e.g. v0.1.0) once repos are public. Use `pip install -e . --no-deps`
-    # if you have local editable installs of pchandler/pc2img.
+    # ---- Internal (home-brew @ GSEG) deps ----
+    # Use `pip install -e . --no-deps` if you have local editable installs of pchandler/pc2img.
     "pchandler @ git+https://<PLACEHOLDER_REPO_URL>/PCHandler.git@<PLACEHOLDER_REF>",
     "pc2img @ git+https://<PLACEHOLDER_REPO_URL>/pc2img.git@<PLACEHOLDER_REF>",
 
-    # ---- Config + CLI (Phase 3 CFG-01/05/06) ----
-    # typer uses `>=` per RESEARCH.md Pitfall 8 (Typer's `~=` interpretation would block 0.14+).
+    # ---- Config + CLI ----
     "pydantic ~= 2.8",
     "pydantic-settings[yaml] ~= 2.14",
     "typer >= 0.13",
@@ -79,7 +76,7 @@ dev = [
 tls2dseg = "tls2dseg.cli:app"
 
 [tool.hatch.metadata]
-allow-direct-references = true  # required to declare sam2/pchandler/pc2img as git+https URL deps
+allow-direct-references = true  # for sam2/pchandler/pc2img as git+https URL deps
 
 [tool.hatch.version]
 source = "vcs"
@@ -95,8 +92,16 @@ version-file = "src/tls2dseg/_version.py"
 [tool.hatch.build.targets.wheel]
 packages = ["src/tls2dseg"]
 
+# Ship the runnable example + config YAMLs + reference docs into the wheel (under
+# tls2dseg/), so pip-installed users have them. Fixture datasets (examples/data)
+# are intentionally NOT shipped — too large; they live in the repo.
+[tool.hatch.build.targets.wheel.force-include]
+"examples/api_usage.py" = "tls2dseg/examples/api_usage.py"
+"examples/configs" = "tls2dseg/examples/configs"
+"docs" = "tls2dseg/docs"
+
 [tool.hatch.build.targets.sdist]
-include = ["src/tls2dseg", "tests", "README.md", "LICENSE", "pyproject.toml"]
+include = ["src/tls2dseg", "tests", "README.md", "LICENSE", "pyproject.toml", "examples/api_usage.py", "examples/configs", "docs"]
 
 # ----------------------------------------------------------------------------
 # Ruff — lint + format
@@ -182,18 +187,11 @@ exclude = []
 # Per-module strictness ratchet. `tls2dseg.pipeline` (no wildcard) matches only
 # `pipeline/__init__.py`; pipeline.pipeline/stage1/stage2 are also held strict.
 [[tool.mypy.overrides]]
-module = ["tls2dseg.cli", "tls2dseg.diagnostics", "tls2dseg.types", "tls2dseg.pipeline", "tls2dseg.pipeline.pipeline", "tls2dseg.pipeline.stage1", "tls2dseg.pipeline.stage2", "tls2dseg.preprocessing.nms_combine"]
+module = ["tls2dseg.cli", "tls2dseg.diagnostics", "tls2dseg.types", "tls2dseg.pipeline", "tls2dseg.pipeline.pipeline", "tls2dseg.pipeline.stage1", "tls2dseg.pipeline.stage2", "tls2dseg.preprocessing.nms_combine", "tls2dseg.config.*", "tls2dseg.runtime.*"]
 disallow_untyped_defs = true
 disallow_incomplete_defs = true
 warn_return_any = true
 
-# Phase 3 NEW modules per Phase 1 D-06 per-module strictness ratchet.
-# `tls2dseg.config.*` + `tls2dseg.runtime.*` are greenfield in Phase 3 — ship at strict from day one.
-[[tool.mypy.overrides]]
-module = ["tls2dseg.config.*", "tls2dseg.runtime.*"]
-disallow_untyped_defs = true
-disallow_incomplete_defs = true
-warn_return_any = true
 
 # ----------------------------------------------------------------------------
 # Pytest — test runner config
@@ -203,9 +201,9 @@ minversion = "8.0"
 testpaths = ["tests"]
 pythonpath = ["src"]            # enables `from tls2dseg import ...` without editable install
 markers = [
-    "tier_a: lightweight, always-on, < 5 min, no GPU",
-    "tier_b_light: moderate fixtures, mocked/CPU inference",
-    "tier_b_heavy: real GPU / heavy deps / large fixtures",
+    "tier_a: lightweight, always-on, no heavy deps, no GPU",
+    "tier_b_light: lightweight, requires pc2img and pchandler, mocked or CPU inference",
+    "tier_b_heavy: real GPU, heavy deps, runs on real but small data (>50 MB per scan)",
     "gpu: requires CUDA",
     "cpu_only: explicitly CPU-only",
 ]

@@ -1,91 +1,91 @@
-# Multi-view indoor office small scan — plant, cabinet, (optional: pot, bag).
-# Field-order within each block, # tags: primary → tuning → pipings → other.
+# Multi-view indoor office_small dataset; 2 scans, example classes within the data — plant, cabinet, (optional: pot, bag).
+# Field-order within each block according to # tags: primary → tuning → pipings → other.
+# Only primary fields are mandatory; see docs/config-schema.md for more information.
 
 mode: multi-view             # tag: primary
 
 io:
   input_path: ./examples/data/office_small/   # tag: primary
   output_dir: ./examples/results/        # tag: primary
+  file_format: e57                       # tag: pipings - file format for input point clouds; currently only e57 is fully tested
+  save_intermediate: true                # tag: pipings - also save stage-1 visual intermediates (projection images, object-detection + SAM2 overlays, per-feature segmented clouds); resume checkpoints are always written
   resume_from_checkpoint: true           # tag: pipings
-  save_intermediate: true                # tag: pipings
-  file_format: e57                       # tag: other
-  save_d2d: false                        # tag: other
-  run_id_strategy: timestamp_scanset     # tag: other
+  run_id_strategy: timestamp_scanset     # tag: pipings - strategy for generating run_id and output_dir name
 
 prompt:
-  text: "plant. cabinet"   # tag: primary
-  sizes_m: [0.2, 1.5]    # tag: primary — one size per class token, in order; mandatory when multi_zoom.active: true
+  text: "plant. cabinet"   # tag: primary — text prompt for Grounded-SAM; each class string is separated by a period
+  sizes_m: [0.2, 1.5]    # tag: primary — one size per class, in order following the text prompt; mandatory when multi_zoom.active: true
 
 preprocessing:
-  output_resolution_m: 0.005      # tag: primary — typical indoor scan voxel size; tune per dataset
-  range_limits_m: null           # tag: primary — null = no range filter
-  roi_polygon_m: null            # tag: primary — null = no 2D ROI polygon
-  flip_upsidedown_scans_deg: null  # tag: tuning — null = no flip rotation
-  keep_confidences: false        # tag: other
-  assign_random_color_per_instance: false  # tag: other
+  output_resolution_m: 0.005      # tag: primary — desired resulting point cloud resolution
+  range_limits_m: null           # tag: other - setting range limits can drastically improve inference speed
+  roi_polygon_m: null            # tag: other - specify a 2D polygon in the XY plane to crop the point cloud to a region of interest (ROI), can drastically improve inference speed
+  flip_upsidedown_scans_deg: null  # tag: other - useful for scans that are upside down and RoI is directly underneath the scanner; specify the rotation angle in degrees (0-360)
+  keep_confidences: false        # tag: other - keep the per-point confidence values from the inference step in the final output point cloud (e.g. for custom postprocessing)
+  assign_random_color_per_instance: false  # tag: other - for visualization purposes (currently I rely on CloudCompare)
 
 projection:
-  features: [intensity, range]   # tag: primary — required, min length 1
-  type: spherical                # tag: other — Phase 4 engine-abstraction discriminator
-  image_width: scan_resolution   # tag: other
-  scan_resolution: auto          # tag: other
-  rotate_pcd: auto               # tag: other
-  rasterization_method: nanconv  # tag: other
+  type: spherical                # tag: other — projection type; currently only spherical is supported
+  features: [intensity, range]   # tag: other — currently both intensity and range are mandatory, can be extended by arbitrary point cloud ScalarFields and RGB values
+  image_width: scan_resolution   # tag: other — set image_width = scan_resolution for best results; can be overridden by specifying a fixed integer value (e.g. 1024)
+  scan_resolution: auto          # tag: other —  auto for automatic scan resolution estimation; can be overridden by specifying resolution manually
+  rotate_pcd: auto               # tag: other - auto rotates pcd to avoid cutting the scene where it is detail-dense; can be overridden by specifying a fixed rotation angle in degrees (0-360)
+  rasterization_method: nanconv  # tag: other - efficient default rasterization method; can be overridden by specifying a different method
 
 inference:
-  box_threshold: 0.2                          # tag: tuning
-  text_threshold: 0.2                         # tag: tuning
-  large_object_removal_threshold: 0.80         # tag: tuning
-  partial_detection_edge_touching_threshold: 1 # tag: tuning
-  sam_box_prompt_batch_size: 32                # tag: pipings
-  sam2_checkpoint: /scratch/projects/sam2/checkpoints/sam2.1_hiera_large.pt     # tag: pipings — set env var; never hardcode
-  type: grounded_sam2                          # tag: other — Phase 4 engine-abstraction discriminator
-  object_detection_model_id: IDEA-Research/grounding-dino-base   # tag: other
-  sam2_model_config: configs/sam2.1/sam2.1_hiera_l.yaml          # tag: other
-  slicing:
-    enabled: true                              # tag: tuning
-    slice_width_height: [200, 200]             # tag: tuning
-    overlap_width_height: [150, 150]           # tag: tuning
-    iou_threshold: 0.70                        # tag: tuning
-    overlap_filter_strategy: nms               # tag: other
-    empty_slice_removal_threshold: 0.95        # tag: other
-    drop_incomplete_slices: true               # tag: other
+  type: grounded_sam2                          # tag: other — inference engine type; grounded_sam2 is default
+  box_threshold: 0.2                          # tag: tuning - confidence threshold for box predictions
+  text_threshold: 0.2                         # tag: tuning - confidence threshold for box-text alignment
+  large_object_removal_threshold: 0.80         # tag: tuning - threshold for removing large objects, percentage of image area, > threshold is removed
+  partial_detection_edge_touching_threshold: 2 # tag: tuning - buffer zone in pixels for removing detections that touch the image edge (detections touching the buffer are assumed to be partial detections)
+  sam_box_prompt_batch_size: 32                # tag: pipings - batch size for SAM box prompt inference; can be tuned for speed vs. memory usage
+  object_detection_model_id: IDEA-Research/grounding-dino-base   # tag: pipings - huggingface model id for object detection
+  sam2_checkpoint: /scratch/projects/sam2/checkpoints/sam2.1_hiera_large.pt     # tag: pipings — set env var or path to SAM2 checkpoint, provided by SAM2 repo
+  sam2_model_config: configs/sam2.1/sam2.1_hiera_l.yaml          # tag: pipings - path to file provided by SAM2 repo
   multi_zoom:
-    active: true                               # tag: primary — true = per-class adaptive multi-zoom; false = single-zoom (default)
-    footprint_band_frac: [0.075, 0.225]        # tag: tuning — target footprint as fraction of DINO short-side (800 px); 0 < p_min < p_max < 1; recommended default [0.075,0.225]
+    active: true                               # tag: primary — true = per-class adaptive multi-zoom (default); uses auto estimated image slicing; false = manually adjusted single-zoom
+    footprint_band_frac: [0.075, 0.225]        # tag: tuning — allowed object footprint as fraction of the DINO input side (800 px); [0.075, 0.225] = 7.5%–22.5% of the side, i.e. 60–180 px in width/height
     range_percentiles: [10.0, 90.0]            # tag: tuning — robust per-scan range bounds used when preprocessing.range_limits_m is null
-    cross_class_iou_threshold: 0.70             # tag: tuning — cross-class dedup IoU threshold [0, 1]
-    area_filter_px: null                       # tag: tuning — null = no bbox area filter (min_px, max_px)
+    cross_class_iou_threshold: 0.70             # tag: tuning — cross-zoom cross-class dedup IoU threshold; different-class detections overlapping above this keep the higher-confidence one
     ios_enabled: false                         # tag: tuning — same-class intersection-over-smaller dedup
-    overview_pass: true                       # tag: tuning - running one extra inference pass on a coarse overview image of the whole RoI
-    max_zoom_passes: 6                         # tag: tuning — cap on tiled zoom bands per scan
+    overview_pass: true                       # tag: tuning - running one extra inference pass on a coarse overview image of the whole RoI (good for detecting large objects that are missed in the sliced zoom bands)
+    max_zoom_passes: 6                         # tag: other - cap on tiled zoom bands per scan (helps with memory usage and runtime)
+  slicing:
+    enabled: true                              # tag: other - relevant only when multi_zoom.active: false; then inference is done on a single zoom level with manually set parameters
+    slice_width_height: [200, 200]             # tag: tuning - relevant only when multi_zoom.active: false; then inference is done on a single zoom level with manually set parameters
+    overlap_width_height: [150, 150]           # tag: tuning - relevant only when multi_zoom.active: false; then inference is done on a single zoom level with manually set parameters
+    iou_threshold: 0.70                        # tag: tuning - defines the IoU threshold for merging overlapping slices
+    nms_combine_class_agnostic: false          # tag: tuning - single-view multi-feature NMS combine class semantics; false = class-aware (keep different-class overlaps), true = suppress all overlaps regardless of class
+    overlap_filter_strategy: nms               # tag: other - defines the strategy for filtering overlapping slices; nms = non-max suppression
+    empty_slice_removal_threshold: 0.95        # tag: other - removes slices that are mostly empty (if > threshold percent of pixels are empty); can speed up inference
+    drop_incomplete_slices: true               # tag: other - drop SAHI border/edge tiles smaller than the requested slice size (image-border clamped tiles); can speed up and drop questionable edge detections
 
 d3d_extraction:
-  bounding_box_type: obb        # tag: tuning
-  min_point_count: 50           # tag: tuning
-  centroid_type: bbox_c         # tag: other
-  preprocess: true              # tag: other
+  bounding_box_type: obb        # tag: other - oriented bounding box (obb) or axis-aligned bounding box (aabb)
+  min_point_count: 50           # tag: tuning - minimum number of points in a 3D detection to be considered valid
+  centroid_type: bbox_c         # tag: other - centroid type for 3D detection; bbox_c = center of bounding box
+  preprocess: true              # tag: other - whether to preprocess the point cloud before saving 3D detection instance; includes filtering (statistical outlier removal and dbscan)
 
 fusion:
-  merge_inst_of_same_class_only: true       # tag: tuning
-  sparse_connectivity_threshold: 3           # tag: tuning
-  supporters_iou_threshold: 0.15             # tag: tuning
-  remove_outliers_by_support: true           # tag: tuning
-  outlier_detection_threshold: 0.001          # tag: tuning
-  graph_clustering_method: hcs               # tag: tuning
-  min_supporters: 2                          # tag: tuning
-  leiden_resolution: 250.0                   # tag: tuning
-  small_cluster_removal_threshold: 2         # tag: tuning
-  type: graph_cluster                        # tag: other
-  sparse_connectivity_method: knn            # tag: other
-  outlier_detection_method: negative_binomial  # tag: other
+  type: graph_cluster                        # tag: other - fusion type; graph_cluster = default; can be extended to other methods
+  sparse_connectivity_method: knn            # tag: other - method for sparse connectivity graph; knn = k-nearest neighbors, radius = radius search
+  sparse_connectivity_threshold: 3           # tag: other - threshold for sparse connectivity graph; k = number of neighbors for knn, r = radius for radius search
+  graph_clustering_method: hcs               # tag: tuning - clustering methods; hcs = hierarchical clustering with support (default)
+  min_supporters: 2                          # tag: tuning - minimum number of supporting detections for a cluster to be considered valid (hcs only)
+  leiden_resolution: 250.0                   # tag: tuning - irrelevant for hcs; tune for leiden
+  supporters_iou_threshold: 0.15             # tag: tuning - minimum IoU threshold for two detections to be considered supporting each other (provides valid edges in the sparse connectivity graph)
+  remove_outliers_by_support: true           # tag: tuning - whether to remove detections that have too many supporters relative to other objects in the same cluster (helps remove outliers)
+  outlier_detection_method: negative_binomial  # tag: tuning - method for outlier detection
+  outlier_detection_threshold: 0.001          # tag: tuning - threshold for outlier detection, 0.001 corresponds to 0.1% of the detections being removed as outliers
+  small_cluster_removal_threshold: 2         # tag: tuning - threshold for keeping clusters with less than this number of detections
+  merge_inst_of_same_class_only: true       # tag: tuning - whether to merge instances of the same class only or allow merging of different classes (e.g. assumes partialy faulty classification)
 
 runtime:
-  device: auto                # tag: pipings
-  n_workers: 12               # tag: pipings
-  accept_cpu_fallback: true   # tag: pipings — CPU-03 loud-fallback contract
+  device: auto                # tag: pipings - auto = automatically select GPU if available, otherwise CPU
+  n_workers: 12               # tag: pipings - number of parallel workers, can be tuned for speed vs. memory usage
+  accept_cpu_fallback: true   # tag: pipings - if true, will fallback to CPU if GPU is not available; if false, will raise an error if GPU is not available
 
 logging:
-  level: INFO                 # tag: primary
-  per_package: {}             # tag: other — empty = no per-package silencing (LOG-03 conservative default)
+  level: INFO                 # tag: other - logging level; DEBUG, INFO, WARNING, ERROR, CRITICAL
+  per_package: {}             # tag: other - empty = no per-package silencing
   log_to_file: true           # tag: other

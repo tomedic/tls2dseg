@@ -16,21 +16,20 @@
 mode: multi-view             # tag: primary
 
 io:
-  input_path: ./examples/data/agricultural/  # tag: primary
+  input_path: /scratch/projects/tls2dseg/data/wheat_heads_test  # tag: primary
   output_dir: ./examples/results/             # tag: primary
   resume_from_checkpoint: true                # tag: pipings
   save_intermediate: true                     # tag: pipings
   file_format: e57                            # tag: other
-  save_d2d: false                             # tag: other
   run_id_strategy: timestamp_scanset          # tag: other
 
 prompt:
   text: "wheat. leaf"       # tag: primary
-  sizes_m: [0.05, 0.10]    # tag: primary — one size per class token, in order; mandatory when multi_zoom.active: true
+  sizes_m: [0.08, 0.08]    # tag: primary — one size per class token, in order; mandatory when multi_zoom.active: true
 
 preprocessing:
   output_resolution_m: 0.003     # tag: primary — sets 3D point density (does not set inference resolution in multi-zoom mode)
-  range_limits_m: null           # tag: primary — null = no range filter
+  range_limits_m: [0.5, 3.0]       # tag: primary — (near, far) range filter in m; near must be >= 0.5 (also feeds the multi-zoom near range)
   roi_polygon_m: null            # tag: primary — null = no 2D ROI polygon
   flip_upsidedown_scans_deg: null  # tag: tuning — null = no flip rotation
   keep_confidences: false        # tag: other
@@ -50,7 +49,7 @@ inference:
   large_object_removal_threshold: 0.30         # tag: tuning
   partial_detection_edge_touching_threshold: 5 # tag: tuning
   sam_box_prompt_batch_size: 32                # tag: pipings
-  sam2_checkpoint: ${SAM2_CHECKPOINT_PATH}     # tag: pipings — set env var; never hardcode
+  sam2_checkpoint: /scratch/projects/sam2/checkpoints/sam2.1_hiera_large.pt     # tag: pipings — set env var; never hardcode
   type: grounded_sam2                          # tag: other — Phase 4 engine-abstraction discriminator
   object_detection_model_id: IDEA-Research/grounding-dino-base   # tag: other
   sam2_model_config: configs/sam2.1/sam2.1_hiera_l.yaml          # tag: other
@@ -62,11 +61,10 @@ inference:
     overlap_filter_strategy: nms               # tag: other
     empty_slice_removal_threshold: 0.95        # tag: other
   multi_zoom:
-    active: true                               # tag: primary — true = per-class adaptive multi-zoom; false = single-zoom (default)
-    footprint_band_frac: [0.075, 0.225]        # tag: tuning — target footprint as fraction of DINO short-side (800 px); 0 < p_min < p_max < 1
+    active: false                               # tag: primary — true = per-class adaptive multi-zoom; false = single-zoom (default)
+    footprint_band_frac: [0.075, 0.225]        # tag: tuning — target footprint as fraction of DINO short-side (800 px); 0 < p_min < p_max < 1; recommended default [0.075,0.225]
     range_percentiles: [10.0, 90.0]            # tag: tuning — robust per-scan range bounds used when preprocessing.range_limits_m is null
     cross_class_iou_threshold: 0.7             # tag: tuning — cross-class dedup IoU threshold [0, 1]
-    area_filter_px: null                       # tag: tuning — null = no bbox area filter (min_px, max_px)
     ios_enabled: false                         # tag: tuning — same-class intersection-over-smaller dedup (D-D-03)
     max_zoom_passes: 6                         # tag: tuning — cap on tiled zoom bands per scan
 

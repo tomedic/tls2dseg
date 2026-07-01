@@ -1,29 +1,22 @@
-"""nox session definitions for tls2dseg local automation.
+"""nox session definitions for tls2dseg local testing automation.
 
-Sessions:
-  - tier_a:      lightweight, no-GPU, no-pchandler/pc2img. Mirrors ci.yml `tier_a` job EXACTLY.
-  - tier_b_light: moderate, requires pchandler + pc2img via local editable installs.
-
-Single-source-of-truth rule (Phase 3 D-A4-01):
-  The pytest flags in each nox session below MUST match the corresponding job in
-  ``tls2dseg/.github/workflows/ci.yml``. If the flags change in one place, update
-  both atomically. The Phase 3 CICD-01 invariant is that
-  ``pytest -m tier_a -v`` runs identically locally and in cloud CI.
+Test sessions:
+  - tier_a: lightweight, no-GPU, no heavy dependencies (e.g. pchandler/pc2img).
+             Locally mirrors Github Actions (.github/workflows/ci.yml).
+  - tier_b_light: lightweight, but requires pchandler + pc2img, does not require GPU.
+  - tier_b_heavy: moderate, heavy dependancies (PyTorch) + GPU use.
 
 Local usage:
-  - ``nox -s tier_a``         # run the same suite as cloud CI
-  - ``nox -s tier_b_light``    # run the broader local suite (requires PCHandler + pc2img siblings)
+  - ``nox -s tier_a``
+  - ``nox -s tier_b_light``
+  - ``nox -s tier_b_heavy``
 
 This file is also the binding point for the Claude Code PreToolUse hook
-(``.claude/settings.json`` at the workspace root): the hook runs
-``nox -s tier_b_light`` before any ``git push`` to gate the push on a green local
-suite (D-A4-03 Layer 1b — best-effort soft gate; the binding floor is GitHub
-branch protection on the cloud CI tier_a check, configured by the user as a
-one-time manual step).
+(``.claude/settings.json`` at the workspace root): the hook runs all three
+test sessions before any ``git push`` to gate the push on a green local test suite.
 
-Reuse-venv: ``nox.options.reuse_venv = "yes"`` at module level is the verified
-canonical form per Phase 3 RESEARCH §Pattern 10 (verified 2026-06-09 against
-nox docs). Equivalent to ``--reuse-existing-venvs`` on the CLI. Critical for
+Reuse-venv: ``nox.options.reuse_venv = "yes"``.
+Equivalent to ``--reuse-existing-venvs`` on the CLI. Critical for
 pre-push hook latency — without it, every push rebuilds the venv from scratch.
 """
 
@@ -48,7 +41,7 @@ def _runtime_deps_without_workspace_placeholders() -> list[str]:
     return [d for d in data["project"]["dependencies"] if "<PLACEHOLDER" not in d]
 
 
-# D-A4-01: pytest flags MUST match the tier_a job in ci.yml exactly.
+# pytest flags MUST match the tier_a job in ci.yml exactly.
 # Update both atomically if flags change.
 @nox.session(python="3.11", name="tier_a")
 def tier_a(session: nox.Session) -> None:
@@ -64,9 +57,8 @@ def tier_a(session: nox.Session) -> None:
     session.run("pytest", "-m", "tier_a", "-v", *session.posargs)
 
 
-# D-A4-01: pytest flags MUST match any future tier_b_light cloud-CI job in ci.yml
-# exactly. Today tier_b_light is local-only (CICD-02 deferred to Phase 7 per
-# D-A4-02), so this session's flags are the authoritative source.
+# pytest flags MUST match any future tier_b_light cloud-CI job in ci.yml
+# exactly. Today tier_b_light is local-only
 @nox.session(python="3.11", name="tier_b_light")
 def tier_b_light(session: nox.Session) -> None:
     """Run tier_b_light tests — pchandler+pc2img with deps; torch allowed; no real model runs.
@@ -90,11 +82,10 @@ def tier_b_light(session: nox.Session) -> None:
     session.run("pytest", "-m", "tier_b_light", "-v", *session.posargs)
 
 
-# tier_b_heavy: real models / GPU / cudf / large fixtures. Unlike tier_a and
-# tier_b_light (isolated CPU venvs), this session uses NO isolated venv and
-# delegates to a project conda env that already has torch+CUDA+cudf+sam2 plus the
-# editable pchandler/pc2img installs. `nox` need NOT be installed in that conda env
-# — nox stays the orchestrator in the base env and shells into the conda env via
+# tier_b_heavy: real models / GPU / cudf / large fixtures. This session uses NO isolated
+# venv and delegates to a project conda env that already has torch+CUDA+cudf+sam2 plus the
+# editable pchandler/pc2img installs (development env). `nox` need NOT be installed in
+# that conda env — nox stays the orchestrator in the base env and shells into the conda env via
 # `conda run`. Override the env name with TLS2DSEG_HEAVY_CONDA_ENV.
 @nox.session(venv_backend="none", name="tier_b_heavy")
 def tier_b_heavy(session: nox.Session) -> None:

@@ -1,12 +1,25 @@
 cff-version: 1.2.0
-message: "If you use this software, please cite it as below."
+message: "If you use this software, please cite both the software and the paper listed in preferred-citation."
 type: software
-title: "tls2dseg: Open-vocabulary 3D instance segmentation of TLS point clouds via 2D foundation models"
+title: "tls2dseg: Open-vocabulary 3D segmentation for TLS point clouds via 2D foundation models"
 authors:
-  - family-names: "<PLACEHOLDER_FAMILY_NAME>"
-    given-names: "<PLACEHOLDER_GIVEN_NAME>"
-    orcid: "https://orcid.org/<PLACEHOLDER_ORCID>"
-repository-code: "https://github.com/<PLACEHOLDER_REPO_URL>"
-doi: "<PLACEHOLDER_DOI>"
-date-released: "<PLACEHOLDER_DATE>"
-license: GPL-3.0
+  - family-names: "Medic"
+    given-names: "Tomislav"
+    orcid: "https://orcid.org/0000-0001-6332-5783"
+repository-code: "https://github.com/tomedic/tls2dseg"
+url: "https://github.com/tomedic/tls2dseg"
+doi: "to-be-added"
+date-released: "2026-07-01"
+license: "GPL-3.0-or-later"
+
+preferred-citation:
+  type: article
+  authors:
+    - family-names: "Medic"
+      given-names: "Tomislav"
+    - family-names: "Nan"
+      given-names: "Liangliang"
+  title: "In-Field 3D Wheat Head Instance Segmentation From TLS Point Clouds Using Deep Learning Without Manual Labels"
+  doi: "10.48550/arXiv.2603.14309"
+  url: "https://arxiv.org/abs/2603.14309"
+  year: 2026

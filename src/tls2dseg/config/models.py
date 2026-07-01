@@ -79,24 +79,22 @@ class IOConfig(BaseModel):
     save_intermediate: bool = Field(
         True,
         json_schema_extra={"tag": "pipings"},
-        description="Persist stage-1 partials to intermediate/stage_1_partial/.",
+        description=(
+            "Persist stage-1 visual intermediates under intermediate/ (projection images, "
+            "object-detection + SAM2 overlays, mask JSON, per-feature segmented clouds). "
+            "The stage_1_partial/ resume checkpoints are always written regardless."
+        ),
     )
-    # tag: other
+    # tag: pipings
     file_format: Literal["e57"] = Field(
         "e57",
-        json_schema_extra={"tag": "other"},
+        json_schema_extra={"tag": "pipings"},
         description="Input point cloud file format. Only e57 supported in v1.",
     )
-    # tag: other
-    save_d2d: bool = Field(
-        False,
-        json_schema_extra={"tag": "other"},
-        description="Save 2D detections (debug aid).",
-    )
-    # tag: other
+    # tag: pipings
     run_id_strategy: Literal["timestamp", "timestamp_scanset"] = Field(
         "timestamp_scanset",
-        json_schema_extra={"tag": "other"},
+        json_schema_extra={"tag": "pipings"},
         description="How to construct the per-run dir name (D-A2-06).",
     )
 
@@ -196,25 +194,25 @@ class PreprocessingConfig(BaseModel):
         json_schema_extra={"tag": "primary"},
         description="Voxel downsample resolution in meters. Must be set per dataset.",
     )
-    # tag: primary
+    # tag: other
     range_limits_m: tuple[float, float] | None = Field(
         None,
-        json_schema_extra={"tag": "primary"},
+        json_schema_extra={"tag": "other"},
         description="(min, max) range from scanner origin in meters. None = no limits.",
     )
-    # tag: primary
+    # tag: other
     roi_polygon_m: list[tuple[float, float]] | None = Field(
         None,
-        json_schema_extra={"tag": "primary"},
+        json_schema_extra={"tag": "other"},
         description=(
             "List of (x, y) vertices defining 2D ROI polygon in scanner-local meters. "
             "None = no ROI filter. Renamed from misleading 'roi_limits'."
         ),
     )
-    # tag: tuning
+    # tag: other
     flip_upsidedown_scans_deg: float | None = Field(
         None,
-        json_schema_extra={"tag": "tuning"},
+        json_schema_extra={"tag": "other"},
         description="Rotation about x-axis (degrees) to flip upside-down scans. None = no flip.",
     )
     # tag: other
@@ -267,11 +265,11 @@ class ProjectionConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    # tag: primary
+    # tag: other
     features: list[Literal["intensity", "range", "rgb"]] = Field(
         ...,
         min_length=1,
-        json_schema_extra={"tag": "primary"},
+        json_schema_extra={"tag": "other"},
         description=(
             "List of point cloud features projected to 2D image channels. "
             "Validated against the projection engine's known features (MODE-06)."
@@ -416,10 +414,10 @@ class SlicingConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    # tag: tuning
+    # tag: other
     enabled: bool = Field(
         True,
-        json_schema_extra={"tag": "tuning"},
+        json_schema_extra={"tag": "other"},
         description="Run SAHI-style sliced inference (replaces legacy 'with_slice_inference').",
     )
     # tag: tuning
@@ -463,10 +461,10 @@ class SlicingConfig(BaseModel):
         json_schema_extra={"tag": "other"},
         description="Skip slices whose empty-pixel fraction exceeds this threshold.",
     )
-    # tag: tuning
+    # tag: other
     drop_incomplete_slices: bool = Field(
         True,
-        json_schema_extra={"tag": "tuning"},
+        json_schema_extra={"tag": "other"},
         description=(
             "When true, SAHI border/clamped slices smaller than the requested tile are dropped "
             "(current behaviour). When false, clamped edge and whole-image slices are still inferred."
@@ -503,8 +501,8 @@ class MultiZoomConfig(BaseModel):
         (0.075, 0.225),
         json_schema_extra={"tag": "tuning"},
         description=(
-            "Target footprint band as fraction of DINO short-side (800 px). "
-            "p_min = detection-quality floor; p_max = containment ceiling (D-A-05). "
+            "Target footprint band as fraction of the DINO input side (800 px). "
+            "p_min = detection-quality floor; p_max = containment ceiling. "
             "Must satisfy 0 < p_min < p_max < 1."
         ),
     )
@@ -529,12 +527,6 @@ class MultiZoomConfig(BaseModel):
         ),
     )
     # tag: tuning
-    area_filter_px: tuple[int, int] | None = Field(
-        None,
-        json_schema_extra={"tag": "tuning"},
-        description=("(min_px, max_px) area filter applied to detections. None = no area filter (D-CFG-03)."),
-    )
-    # tag: tuning
     ios_enabled: bool = Field(
         False,
         json_schema_extra={"tag": "tuning"},
@@ -543,11 +535,11 @@ class MultiZoomConfig(BaseModel):
             "(D-D-03). IoS is restricted to same class to avoid killing nested objects."
         ),
     )
-    # tag: tuning
+    # tag: other
     max_zoom_passes: int = Field(
         6,
         gt=0,
-        json_schema_extra={"tag": "tuning"},
+        json_schema_extra={"tag": "other"},
         description=(
             "Maximum number of tiled zoom bands. Caps the greedy interval-cover when the "
             "footprint span would require more bands; a warning is emitted and coarsest "
@@ -608,10 +600,10 @@ class InferenceSharedConfig(BaseModel):
         json_schema_extra={"tag": "pipings"},
         description="SAM2 box-prompt batch size; GPU memory/throughput trade-off.",
     )
-    # tag: other (renamed from bbox_model_id per D-A1-13)
+    # tag: pipings (renamed from bbox_model_id per D-A1-13)
     object_detection_model_id: str = Field(
         "IDEA-Research/grounding-dino-base",
-        json_schema_extra={"tag": "other"},
+        json_schema_extra={"tag": "pipings"},
         description="HuggingFace model id for the object detection model (renamed from bbox_model_id).",
     )
     # tag: — (nested sub-block — has its own field tags)
@@ -650,10 +642,10 @@ class GroundedSAM2Config(InferenceSharedConfig):
             "(NOT at validate-config time) per D-CD-05."
         ),
     )
-    # tag: other (renamed from hyphenated sam2-model-config per D-A1-03)
+    # tag: pipings (renamed from hyphenated sam2-model-config per D-A1-03)
     sam2_model_config: str = Field(
         "configs/sam2.1/sam2.1_hiera_l.yaml",
-        json_schema_extra={"tag": "other"},
+        json_schema_extra={"tag": "pipings"},
         description="SAM2 model config file path (relative to SAM2 package install).",
     )
 
@@ -702,10 +694,10 @@ class D3DExtractionConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    # tag: tuning
+    # tag: other
     bounding_box_type: Literal["obb", "aabb"] = Field(
         "obb",
-        json_schema_extra={"tag": "tuning"},
+        json_schema_extra={"tag": "other"},
         description="3D bounding box type: OBB (oriented) or AABB (axis-aligned).",
     )
     # tag: tuning (renamed from min_d3d_pcd_point_count per D-A1-15)
@@ -749,10 +741,10 @@ class FusionConfig(BaseModel):
         json_schema_extra={"tag": "tuning"},
         description="Merge instances across scans only when they share the same class.",
     )
-    # tag: tuning
+    # tag: other
     sparse_connectivity_threshold: int | float = Field(
         1,
-        json_schema_extra={"tag": "tuning"},
+        json_schema_extra={"tag": "other"},
         description=(
             "Per-method threshold: 'knn' → k (int), 'radius' → distance in m (float). "
             "Semantics depends on sparse_connectivity_method."
@@ -815,10 +807,10 @@ class FusionConfig(BaseModel):
         json_schema_extra={"tag": "other"},
         description="Cross-scan sparse connectivity construction method (KD-tree based).",
     )
-    # tag: other
+    # tag: tuning
     outlier_detection_method: Literal["iqr", "mad", "percentile", "negative_binomial"] = Field(
         "negative_binomial",
-        json_schema_extra={"tag": "other"},
+        json_schema_extra={"tag": "tuning"},
         description="Statistical method for over-support outlier detection.",
     )
 
@@ -836,10 +828,10 @@ class LoggingConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    # tag: primary
+    # tag: other
     level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = Field(
         "INFO",
-        json_schema_extra={"tag": "primary"},
+        json_schema_extra={"tag": "other"},
         description="Default log level for the tls2dseg.* logger hierarchy.",
     )
     # tag: other
@@ -852,7 +844,7 @@ class LoggingConfig(BaseModel):
     log_to_file: bool = Field(
         True,
         json_schema_extra={"tag": "other"},
-        description="Write {run_dir}/logs/run.log in addition to console.",
+        description="Write {run_dir}/run_info/run.log in addition to console.",
     )
 
 

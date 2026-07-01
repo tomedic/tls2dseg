@@ -16,11 +16,10 @@ io:
   resume_from_checkpoint: true                # tag: pipings
   save_intermediate: true                     # tag: pipings
   file_format: e57                            # tag: other
-  save_d2d: false                             # tag: other
   run_id_strategy: timestamp_scanset          # tag: other
 
 prompt:
-  text: "wheat. wheat head. wheat ear. wheat stalk. leaf. stem."   # tag: primary
+  text: "wheat. leaf"   # tag: primary
 
 preprocessing:
   output_resolution_m: 0.003     # tag: primary — wheat-heads scan resolution (run.py:127); tune per dataset

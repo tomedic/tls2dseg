@@ -1,34 +1,37 @@
 # tls2dseg
 
-Open-vocabulary 3D instance and semantic segmentation of terrestrial laser scan (TLS) point clouds
-via panoramic projections and 2D foundation models.
+Open-vocabulary 3D segmentation for terrestrial laser scan (TLS) point clouds
+via 2D foundation models.
 
 ## What it does
 
-`tls2dseg` takes registered `.e57` (or `.ply` / `.las` / `.laz`) scans and a plain-language list
-of objects to find, then produces per-instance, per-class segmented point clouds in 3D. The core
-idea: project each scan onto a 2D spherical panoramic image, run Grounded-DINO + SAM2 on that
-image to detect and segment objects, then lift the 2D masks back to 3D points. In multi-view mode
-a second cross-scan graph-fusion stage merges detections across all co-registered scans into a
-unified labelled cloud.
+`tls2dseg` takes registered `.e57` (or `.ply` / `.las` / `.laz`) scans and a `text prompt` as a plain-language list
+of objects to find, then produces per-instance, per-class segmented point clouds in 3D.
+The core idea: project each scan onto an image (default: 2D spherical panoramic image from the original
+viewpoints at high resolution), run inference (deafault: Grounded-DINO + SAM2) on those images to detect and segment objects,
+then lift the 2D masks back to 3D points. In `multi-view` mode, `stage2` of the pipeline runs cross-scan
+multi-view label-fusion (default: using view-consensus graph-based approach inspired by MaskClustering
+algorithm) and merges detections across all co-registered scans into a unified labelled point cloud.
 
-The tool is configured entirely through a YAML file — no source-code edits required.
+The tool is configured entirely through a YAML file and runs over CLI or a function call. No source-code edits required.
+The tool is build to be plug-n-play easily modifiable and support different projection, inference and label-fusion engines.
 
 ## Key Features
 
-- **Spherical panoramic projection** — rasterizes TLS point clouds to panoramic images using
-  `pc2img` (rasterization methods: `nanconv`, `raw`, `bary_delaunay`, `bary_knn`).
-- **Open-vocabulary detection + segmentation** — Grounded-DINO for text-prompted bounding boxes;
-  SAM2 for per-instance masks; works with any natural-language object-class description.
-- **Per-class adaptive multi-zoom inference** — each object class is inferred at the zoom level
-  where it occupies the detector's sweet spot, derived from its approximate physical size in
-  metres. Replaces a single manually-tuned zoom with an automatic per-class schedule.
-- **Two pipeline modes** — `single-view` processes N independent scans independently;
-  `multi-view` runs cross-scan graph fusion (stage 2) to merge detections into one unified cloud.
-- **Cross-scan graph fusion** — sparse KNN connectivity, 3D-IoU edge weights, and Leiden/HCS
+- **Spherical panoramic projection** — auto-detects scan-resolution, efficiently rasterizes TLS point clouds to full-resolution panoramic images using `pc2img` (default rasterization method: `nanconv`), rasterization of different `feature` images (default: `range`, `intensity`), auto HQ image re-scaling (`lancoz3`) befor inference.
+- **Open-vocabulary detection + segmentation** — Grounded-DINO (HuggingFace API) for text-prompted bounding boxes / object detection;
+  SAM2 for per-instance masks (choice: HuggingFace or original SAM2 GitHub implementation); works with any natural-language object-class description. Uses SAHI (Slicing Aided Hyper Inference) to assure HQ segmentation results for small objects.
+- **Per-class adaptive multi-zoom inference** — each object class is inferred at auto-estimated image zoom levels
+  where the objects' pixel-size corresponds to the detector's sweet spot. This is derived from per-class approximate physical size in
+  metres (mandatory input `sizes_m`) and per-scan interval of measured ranges/distances. This is default which replaces an optional single manually-tuned zoom.
+- **Two pipeline modes** — `single-view` processes N scans independently (good for TLS time series from a single-viewpoint);
+  `multi-view` runs cross-scan multi-view label-fusion (`stage2`) to merge detections into one unified cloud.
+- **Multi-veiw label-fusion** — efficient implementation based on graphs with sparse KNN connectivity, 3D-IoU refined connectivity, view-consensus based edge weights and clustering using a engine (default: `hcs` based on MaskClustering),
   graph clustering merge redundant detections across scan stations.
-- **Checkpoint resume** — stage-1 per-(scan, feature) `.pkl` checkpoints allow a long run to
-  restart from the last completed pair without repeating inference.
+- **Large point clouds** — reasonably compute-efficient (partially paralellized, single GPU bottleneck), tested on a set of 16x 2-4GB heavy TLS point clouds, each producing panoramic images of up to 20,000 x 40,000 pixels.
+- **Filters and outlier removals** — a number of methods are implemented to filter out unlikely segmentation results. Turning knobs for all filters are exposed to end-users over the config YAML file.
+- **pchandler and pc2img** relies on 2 home-brewed forks of GSEG@ETHZ-developed public repos for point cloud processing (has a small impact on the installation procedure)
+
 
 ## Installation
 
@@ -36,27 +39,15 @@ The tool is configured entirely through a YAML file — no source-code edits req
 
 - Python 3.11
 - System library: `libvips` (required by `pyvips`)
-- NVIDIA GPU is strongly recommended; CPU-only mode works but is much slower.
+- NVIDIA GPU is strongly recommended; CPU-only mode should work, but is barely usable (I used it for testing).
 
 ```bash
 # System deps (Debian/Ubuntu)
 sudo apt-get install -y libvips-dev git
 
 # Install tls2dseg
-# Fill <PLACEHOLDER_REPO_URL> (e.g. github.com/your-user) and <PLACEHOLDER_REF>
-# (a semver tag such as v0.1.0) once the repos are public.
-pip install "git+https://<PLACEHOLDER_REPO_URL>/tls2dseg.git@<PLACEHOLDER_REF>"
+pip install "git+https://github.com/tomedic/tls2dseg.git"
 ```
-
-`pchandler` and `pc2img` are declared as direct dependencies and will be pulled automatically. If
-you already have local editable installs of those repos active, use `--no-deps` to skip them:
-
-```bash
-pip install --no-deps "git+https://<PLACEHOLDER_REPO_URL>/tls2dseg.git@<PLACEHOLDER_REF>"
-```
-
-> **Tip:** Use a semver git tag (`v0.1.0`) as `<PLACEHOLDER_REF>`, not a branch name. Branch refs
-> produce a non-parseable version string and trigger the `0.0.0` fallback.
 
 **SAM2 checkpoint (required for the default `grounded_sam2` engine):**
 
@@ -72,7 +63,7 @@ inference:
 ```
 
 Alternatively, switch to `inference.type: grounded_sam2_hf` to use the HuggingFace Hub engine,
-which downloads the checkpoint automatically on first run (see §Architecture).
+which downloads the checkpoint automatically on first run (see §Architecture). **Important**: I have noticed some reduction in masks quality when using HuggingFace API (investigating the cause is pending).
 
 **Verify the installation:**
 
@@ -85,11 +76,12 @@ imports, and reports the status of each.
 
 ## Quickstart
 
-The `examples/` directory ships with a small multi-view indoor office dataset (`office_small`) and
-a ready-to-run config:
+The `examples/` directory ships with a small multi-view indoor office dataset (`office_small`), single-view outdoor mountains dataset (`mountains_small`) and ready-to-run corresponding config files:
 
 ```bash
 tls2dseg run --config examples/configs/office_small.yaml
+or
+tls2dseg run --config examples/configs/mountain_small.yaml
 ```
 
 The four primary fields to adjust for your own data:
@@ -106,7 +98,7 @@ prompt:
   sizes_m: [0.2, 1.5]      # approximate size in metres per class (for multi-zoom)
 
 preprocessing:
-  output_resolution_m: 0.005   # 3D voxel size; typical indoor = 0.005; outdoor = 0.01–0.05
+  output_resolution_m: 0.005   # desired resulting point cloud resolution
 ```
 
 **Where results land:**
@@ -115,21 +107,22 @@ Every run creates a timestamped directory under `output_dir/<run_id>/`:
 
 ```
 <run_id>/
-├── run_info/
-│   ├── run.log                  # structured run log
-│   ├── provenance.json          # git sha, config snapshot, timing
-│   └── class_names_id_map.txt   # class name → integer id map
+├── run_info/                    # run.log, config.yaml + context.yaml (resolved config/run snapshot), git.txt, env.txt
 ├── intermediate/
-│   └── stage_1_partial/
-│       ├── pcd_ij_<N>.pkl       # per-(scan, feature) point cloud checkpoint
-│       └── d3d_ij_<N>.pkl       # per-(scan, feature) Detections3D checkpoint
+│   ├── stage_1_partial/         # per-(scan, feature) resume checkpoints: pcd_ij_<N>.pkl + d3d_ij_<N>.pkl (always written)
+│   └── ...                      # extra visual intermediates only when save_intermediate: true — see note below
 └── results/
-    └── <scan_folder_name>_segmented.ply   # final merged cloud (multi-view)
-    # or: <scan_name>_segmented.ply per input scan (single-view)
+    ├── <scan_name>_segmented.ply        # single-view: one file per input scan
+    │                                    #   or <scan_folder_name>_segmented.ply — multi-view: one merged cloud
+    └── class_names_id_map.txt           # class name → integer id map
 ```
 
-See [`docs/output-contract.md`](docs/output-contract.md) for the full per-mode artifact contract,
-including the `save_intermediate` option for per-feature intermediate clouds.
+See [`docs/output-contract.md`](docs/output-contract.md) for the full per-mode artifact contract.
+When `save_intermediate: true`, stage 1 additionally writes visual intermediates under `intermediate/`:
+projection images (`images/`), per-scan per-feature object-detection overlays (`object_detection/`) and
+SAM2 mask overlays (`sam2/`), RLE mask JSON (`masks_json/`), and per-feature segmented point clouds
+(`segmented_point_clouds/`). For example, `intermediate/sam2/` shows — per scan and per feature — the
+detected object boxes with their SAM2 masks overlaid on the projected image.
 
 To validate a config without running inference:
 
@@ -137,20 +130,19 @@ To validate a config without running inference:
 tls2dseg validate-config examples/configs/office_small.yaml
 ```
 
-## Configuration
+## Configuration (config YAML)
 
-`tls2dseg` is configured entirely through YAML. Every field carries one of four tags that indicate
+`tls2dseg` is configured entirely through config YAML files. Every field carries one of four tags that indicate
 how relevant it is to a typical user:
 
 | Tag | Meaning |
 |-----|---------|
 | `primary` | Fields you almost always need to set for your own dataset |
-| `tuning` | Fields that directly affect segmentation quality (thresholds, zoom parameters) |
-| `pipings` | Infrastructure knobs (device, workers, checkpoint resume, logging) |
-| `other` | Rarely touched; engine-type discriminators and internal options |
+| `tuning` | Fields that directly affect segmentation quality (thresholds, zoom parameters), defaults should work reasonably well |
+| `pipings` | Infrastructure knobs (inference device GPU/CPU, #CPU workers, checkpoint resume, logging, ...) |
+| `other` | Did not know where to put them, might have an impact on segmentation results, but are not obvious tuning parameters |
 
-The example configs in `examples/configs/` list fields within each block in `primary → tuning →
-pipings → other` order and include the tag as an inline comment.
+The example configs in `examples/configs/` include the tags as inline comments.
 
 For the full field reference grouped by tag, see [`docs/config-schema.md`](docs/config-schema.md).
 Regenerate it whenever models change:
@@ -161,12 +153,13 @@ tls2dseg schema --output docs/config-schema.md
 
 ## Datasets
 
-Reference datasets used for development and validation will be made available at:
+Small example datasets "office_small" and "mountains_small" are shipped with this software (2x2 scans, together < 100 MB) within `./examples/data/`.
 
-`<PLACEHOLDER_DATASET_URL>`
+The dataset used in the paper ...
 
-The three reference datasets cover: an indoor office scene (multi-view), an outdoor agricultural
-field (multi-view), and a mountain forest (single-view).
+Medic, T., & Nan, L. (2026). *In-Field 3D Wheat Head Instance Segmentation From TLS Point Clouds Using Deep Learning Without Manual Labels*. arXiv:2603.14309. https://doi.org/10.48550/arXiv.2603.14309
+
+... is available upon request (email: tmedic@ethz.ch).
 
 ## Python API
 
@@ -203,29 +196,26 @@ The pipeline is built around three engine `Protocol`s (defined in `engines/proto
 
 | Protocol | Role | Default implementation |
 |----------|------|----------------------|
-| `ProjectionEngine` | Rasterizes a point cloud to panoramic feature images | `SphericalProjectionEngine` (`spherical`) |
-| `InferenceEngine` | Runs 2D detection + segmentation on a single image | `GroundedSAM2Engine` (`grounded_sam2`) |
-| `FusionEngine` | Cross-scan graph clustering for multi-view mode (stage 2) | `GraphClusterFusionEngine` (`graph_cluster`) |
+| `ProjectionEngine` | Rasterizes a point cloud to feature images | `SphericalProjectionEngine` (`spherical`) |
+| `InferenceEngine` | Runs 2D detection + segmentation on images | `GroundedSAM2Engine` (`grounded_sam2`) |
+| `FusionEngine` | Cross-scan multi-view label-fusion (stage 2) | `GraphClusterFusionEngine` (`graph_cluster`) |
 
 Each Protocol has a corresponding dict registry in `engines/__init__.py` (e.g.
 `INFERENCE_ENGINES["grounded_sam2"] = GroundedSAM2Engine`). To add a new engine: implement the
 Protocol, add an entry to the registry, and select it by name via the config `type` field. See
-[`CONTRIBUTING.md`](CONTRIBUTING.md) for the step-by-step guide.
+[`CONTRIBUTING.md`](CONTRIBUTING.md) for more info.
 
-**SAM2 inference engine default (D-07):**
+**SAM2 inference engine default:**
 
 The default is `inference.type: grounded_sam2` — the direct `sam2` package with a local `.pt`
-checkpoint. It produces better-quality masks on average. The trade-off is a one-time manual
-checkpoint download (see §Installation).
-
-To switch to the HuggingFace Hub engine, which downloads the checkpoint automatically on first run
-at the cost of slightly softer masks:
+checkpoint. To switch to the HuggingFace Hub engine, which downloads the checkpoint automatically on first run adjust config YAML fields to:
 
 ```yaml
 inference:
   type: grounded_sam2_hf
   sam2_hf_model_id: facebook/sam2.1-hiera-large
 ```
+**Important:** Hugging face implementation might be producing lower quality masks (I need to further investigate this).
 
 ## License and Citation
 
@@ -233,11 +223,12 @@ inference:
 requirement follows from runtime dependencies `leidenalg` (GPL-3.0) and `igraph` (GPL-2.0+) used
 in the cross-scan fusion stage.
 
-If you use this software in your research, please cite:
+If you use this software in your research, please cite both the software and the accompanying paper:
 
-```
-Medic, T. (PLACEHOLDER_YEAR). tls2dseg: PLACEHOLDER_PAPER_TITLE.
-PLACEHOLDER_JOURNAL. https://doi.org/PLACEHOLDER_DOI
-```
+### Software
 
-For BibTeX and other citation formats, see [`CITATION.cff`](CITATION.cff).
+Please use the citation information provided by the `CITATION.cff` file or the “Cite this repository” button on GitHub.
+
+### Paper
+
+Medic, T., & Nan, L. (2026). *In-Field 3D Wheat Head Instance Segmentation From TLS Point Clouds Using Deep Learning Without Manual Labels*. arXiv:2603.14309. https://doi.org/10.48550/arXiv.2603.14309

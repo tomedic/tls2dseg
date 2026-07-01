@@ -408,12 +408,12 @@ def test_range_limits_m_none_allowed() -> None:
 
 @pytest.mark.tier_a
 def test_slicing_config_drop_incomplete_slices_default_true() -> None:
-    """Test A: SlicingConfig.drop_incomplete_slices defaults True and carries tag=tuning."""
+    """Test A: SlicingConfig.drop_incomplete_slices defaults True and carries tag=other."""
     cfg = SlicingConfig()
     assert cfg.drop_incomplete_slices is True
     tag = SlicingConfig.model_fields["drop_incomplete_slices"].json_schema_extra
     assert isinstance(tag, dict)
-    assert tag.get("tag") == "tuning"
+    assert tag.get("tag") == "other"
 
 
 @pytest.mark.tier_a

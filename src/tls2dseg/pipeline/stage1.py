@@ -134,7 +134,6 @@ def run_stage1(
     task_parameters: dict = {
         "task": "object_detection",
         "n_workers": ctx.n_workers,
-        "save_d2d": cfg.io.save_d2d,
     }
 
     if save_intermediate_results:

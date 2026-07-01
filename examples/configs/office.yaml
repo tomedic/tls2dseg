@@ -13,7 +13,6 @@ io:
   resume_from_checkpoint: true           # tag: pipings
   save_intermediate: true                # tag: pipings
   file_format: e57                       # tag: other
-  save_d2d: false                        # tag: other
   run_id_strategy: timestamp_scanset     # tag: other
 
 prompt:

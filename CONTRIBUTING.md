@@ -11,11 +11,7 @@ calls without knowing which concrete engine is behind it.
 |----------|---------------|------|
 | `ProjectionEngine` | `project(pcd, *, features, resolution, ...)` | Rasterizes a point cloud to a list of per-feature panoramic images |
 | `InferenceEngine` | `detect(image, *, request)` | Runs Grounded-DINO + SAM2 (or equivalent) on one image; returns `Detections2D` |
-| `FusionEngine` | `fuse(fusion_input)` | Runs cross-scan graph clustering on a complete `FusionInput`; returns `FusionResult` |
-
-Heavy imports (torch, sam2, pyvips, igraph) belong **inside the engine's
-`__init__`**, not at module level. This keeps `import tls2dseg.engines` fast
-and tier_a tests GPU-free (D-A-05).
+| `FusionEngine` | `fuse(fusion_input)` | Runs cross-scans graph clustering on a complete `FusionInput`; returns `FusionResult` |
 
 ## Dict registries
 
@@ -61,28 +57,10 @@ name is not found.
 4. **Select it at runtime.** Set `inference.type: my_engine` (or
    `projection.type` / `fusion.type`) in the YAML config.
 
-## FakeEngine convention (tier_a tests)
-
-`tier_a` tests must not import torch, sam2, pchandler, or pyvips. Fake engines
-satisfy the Protocol while staying lightweight:
-
-```python
-class FakeInferenceEngine:
-    """Tier-A stand-in for InferenceEngine — returns empty Detections2D."""
-
-    def detect(self, image, *, request):
-        from tls2dseg.types import Detections2D
-        return Detections2D.empty()
-```
-
-Place `FakeEngine` classes in `tests/fakes/` (or inline in the test module for
-simple cases). Use `monkeypatch` or dependency injection to substitute them for
-the real engine in tests marked `@pytest.mark.tier_a`.
 
 ## SAM2 default-engine note
 
 The default `inference.type: grounded_sam2` (direct `sam2` package + local
 checkpoint) is documented in README §Architecture and Extending. If you are
-adding an alternative inference engine, follow the same Protocol, register it
-with a unique key, and add a FakeEngine in the test suite. See the
-`GroundedSAM2Engine` and `GroundedSAM2HFEngine` implementations for reference.
+adding an alternative inference engine, follow the same Protocol and register it
+with a unique key. See the `GroundedSAM2Engine` and `GroundedSAM2HFEngine` implementations for reference.
