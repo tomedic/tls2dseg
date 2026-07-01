@@ -1,7 +1,11 @@
 # tls2dseg
 
+<p align="center"><img src="docs/images/tls2dseg_logo.png" alt="tls2dseg logo" width="320"></p>
+
 Open-vocabulary 3D segmentation for terrestrial laser scan (TLS) point clouds
 via 2D foundation models.
+
+<p align="center"><img src="docs/images/Graphical%20Abstract.png" alt="tls2dseg pipeline graphical abstract: TLS point cloud to 2D projection, Grounded-DINO + SAM2 inference, 2D-to-3D mask lift, cross-scan fusion"></p>
 
 ## What it does
 
@@ -101,7 +105,23 @@ preprocessing:
   output_resolution_m: 0.005   # desired resulting point cloud resolution
 ```
 
-**Where results land:**
+## Datasets
+
+Small example datasets "office_small" and "mountains_small" are shipped with this software (2x2 scans, together < 100 MB) within `./examples/data/`.
+
+The dataset used in the paper ...
+
+Medic, T., & Nan, L. (2026). *In-Field 3D Wheat Head Instance Segmentation From TLS Point Clouds Using Deep Learning Without Manual Labels*. arXiv:2603.14309. https://doi.org/10.48550/arXiv.2603.14309
+
+... is available upon request (email: tmedic@ethz.ch).
+
+![Wheat-head instance segmentation result on the paper's TLS dataset (Medic & Nan 2026)](docs/images/wheat_segmented.jpg)
+
+## Where results land
+
+![office_small segmented result — per-instance 3D segmentation of the indoor office scene](docs/images/office_small_segmented.png)
+
+![mountains_small segmented result — per-class 3D segmentation of the outdoor mountains scene](docs/images/mountain_small_segmented.png)
 
 Every run creates a timestamped directory under `output_dir/<run_id>/`:
 
@@ -150,16 +170,6 @@ Regenerate it whenever models change:
 ```bash
 tls2dseg schema --output docs/config-schema.md
 ```
-
-## Datasets
-
-Small example datasets "office_small" and "mountains_small" are shipped with this software (2x2 scans, together < 100 MB) within `./examples/data/`.
-
-The dataset used in the paper ...
-
-Medic, T., & Nan, L. (2026). *In-Field 3D Wheat Head Instance Segmentation From TLS Point Clouds Using Deep Learning Without Manual Labels*. arXiv:2603.14309. https://doi.org/10.48550/arXiv.2603.14309
-
-... is available upon request (email: tmedic@ethz.ch).
 
 ## Python API
 
