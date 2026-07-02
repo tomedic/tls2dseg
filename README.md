@@ -26,14 +26,14 @@ The tool is build to be plug-n-play easily modifiable and support different proj
   SAM2 for per-instance masks (choice: HuggingFace or original SAM2 GitHub implementation); works with any natural-language object-class description. Uses SAHI (Slicing Aided Hyper Inference) to assure HQ segmentation results for small objects.
 - **Per-class adaptive multi-zoom inference** — each object class is inferred at auto-estimated image zoom levels
   where the objects' pixel-size corresponds to the detector's sweet spot. This is derived from per-class approximate physical size in
-  metres (mandatory input `sizes_m`) and per-scan interval of measured ranges/distances. This is default which replaces an optional single manually-tuned zoom.
+  metres (mandatory input `sizes_m`) and per-scan interval of measured ranges/distances (auto estimated). This is default which replaces an optional single manually-tuned zoom.
 - **Two pipeline modes** — `single-view` processes N scans independently (good for TLS time series from a single-viewpoint);
   `multi-view` runs cross-scan multi-view label-fusion (`stage2`) to merge detections into one unified cloud.
 - **Multi-veiw label-fusion** — efficient implementation based on graphs with sparse KNN connectivity, 3D-IoU refined connectivity, view-consensus based edge weights and clustering using a engine (default: `hcs` based on MaskClustering),
   graph clustering merge redundant detections across scan stations.
-- **Large point clouds** — reasonably compute-efficient (partially paralellized, single GPU bottleneck), tested on a set of 16x 2-4GB heavy TLS point clouds, each producing panoramic images of up to 20,000 x 40,000 pixels.
+- **Large point clouds** — reasonably compute-efficient (partially paralellized, single GPU bottleneck), tested on a set of 16x 2-4GB heavy TLS point clouds, each producing panoramic images of up to 20,000 x 40,000 pixels (this run took several hours).
 - **Filters and outlier removals** — a number of methods are implemented to filter out unlikely segmentation results. Turning knobs for all filters are exposed to end-users over the config YAML file.
-- **pchandler and pc2img** relies on 2 home-brewed forks of GSEG@ETHZ-developed public repos for point cloud processing (has a small impact on the installation procedure)
+- **pchandler and pc2img** relies on 2 home-brewed forks of GSEG@ETHZ-developed public repos for point cloud processing (has a small impact on the installation procedure): `pchandler` (https://github.com/gseg-ethz/PCHandler/tree/develop/tomislav) and `pc2img` (https://github.com/gseg-ethz/pc2img/tree/develop/tomislav)
 
 
 ## Installation
@@ -49,7 +49,7 @@ The tool is build to be plug-n-play easily modifiable and support different proj
 sudo apt-get install -y libvips-dev git
 
 # Install tls2dseg
-pip install "git+https://github.com/tomedic/tls2dseg.git"
+pip install "git+https://github.com/tomedic/tls2dseg.git" (v0.1.0)
 ```
 
 **SAM2 checkpoint (required for the default `grounded_sam2` engine):**
@@ -236,6 +236,18 @@ inference:
   sam2_hf_model_id: facebook/sam2.1-hiera-large
 ```
 **Important:** Hugging face implementation might be producing lower quality masks (I need to further investigate this).
+
+
+## Related and prior works
+
+* **[MaskClustering](https://github.com/PKU-EPIC/MaskClustering)** — *View Consensus based Mask Graph Clustering for Open-Vocabulary 3D Instance Segmentation*.
+
+* **[Grounding DINO](https://github.com/IDEA-Research/GroundingDINO)** — *Marrying DINO with Grounded Pre-Training for Open-Set Object Detection*.
+
+* **[Grounded-Segment-Anything / Grounded-SAM](https://github.com/IDEA-Research/Grounded-Segment-Anything)** — *Assembling Open-World Models for Diverse Visual Tasks*.
+
+* **[Segment Anything Model 2 / SAM 2](https://github.com/facebookresearch/sam2)** — Meta’s successor to SAM, extending promptable segmentation to both images and videos.
+
 
 ## License and Citation
 

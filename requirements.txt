@@ -9,8 +9,8 @@
 
 # ---- git+https workspace deps ----
 sam-2 @ git+https://github.com/facebookresearch/sam2.git@2b90b9f
-pchandler @ git+https://<PLACEHOLDER_REPO_URL>/PCHandler.git@<PLACEHOLDER_REF>
-pc2img @ git+https://<PLACEHOLDER_REPO_URL>/pc2img.git@<PLACEHOLDER_REF>
+pchandler @ git+https://github.com/gseg-ethz/PCHandler.git@develop/tomislav
+pc2img @ git+https://github.com/gseg-ethz/pc2img.git@develop/tomislav
 
 # ---- ML / vision foundation models ----
 torch~=2.7

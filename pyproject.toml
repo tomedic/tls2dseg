@@ -53,8 +53,8 @@ dependencies = [
 
     # ---- Internal (home-brew @ GSEG) deps ----
     # Use `pip install -e . --no-deps` if you have local editable installs of pchandler/pc2img.
-    "pchandler @ git+https://<PLACEHOLDER_REPO_URL>/PCHandler.git@<PLACEHOLDER_REF>",
-    "pc2img @ git+https://<PLACEHOLDER_REPO_URL>/pc2img.git@<PLACEHOLDER_REF>",
+    "pchandler @ git+https://github.com/gseg-ethz/PCHandler.git@develop/tomislav",
+    "pc2img @ git+https://github.com/gseg-ethz/pc2img.git@develop/tomislav",
 
     # ---- Config + CLI ----
     "pydantic ~= 2.8",
