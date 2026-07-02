@@ -29,16 +29,32 @@ import nox
 nox.options.reuse_venv = "yes"
 
 
-def _runtime_deps_without_workspace_placeholders() -> list[str]:
-    """[project.dependencies] minus the fill-in-the-blank <PLACEHOLDER_*> URL deps.
+_EDITABLE_SIBLINGS = {"pchandler", "pc2img"}
 
-    pchandler/pc2img ship as ``git+https://<PLACEHOLDER_*>`` until the repos flip
-    public, so they are uninstallable as written. tier_b_light installs them as
-    editable siblings instead, so they are dropped here. Real URL deps (sam2) and
-    all PyPI deps are kept.
+
+def _requirement_dist_name(req: str) -> str:
+    """Leading distribution name of a requirement string, lowercased.
+
+    Robust to ``name @ url``, ``name[extra] ~= 1.0``, ``name>=1.0`` forms:
+    takes the token up to the first whitespace / ``@`` / ``[`` / version
+    operator character.
+    """
+    name = req.strip().lower()
+    for i, ch in enumerate(name):
+        if ch in " \t@[<>=!~":
+            return name[:i]
+    return name
+
+
+def _runtime_deps_excluding_editable_siblings() -> list[str]:
+    """[project.dependencies] minus pchandler/pc2img.
+
+    tier_b_light installs pchandler/pc2img as editable siblings, so they are
+    excluded from the pip-resolved runtime deps to avoid double-installing them
+    from git. Real URL deps (sam2) and all PyPI deps are kept.
     """
     data = tomllib.loads((Path(__file__).parent / "pyproject.toml").read_text())
-    return [d for d in data["project"]["dependencies"] if "<PLACEHOLDER" not in d]
+    return [d for d in data["project"]["dependencies"] if _requirement_dist_name(d) not in _EDITABLE_SIBLINGS]
 
 
 # pytest flags MUST match the tier_a job in ci.yml exactly.
@@ -63,17 +79,16 @@ def tier_a(session: nox.Session) -> None:
 def tier_b_light(session: nox.Session) -> None:
     """Run tier_b_light tests — pchandler+pc2img with deps; torch allowed; no real model runs.
 
-    pchandler/pc2img are installed as editable siblings (the local-dev workflow),
-    NOT resolved from pyproject's ``git+https://<PLACEHOLDER_*>`` URLs, which are
-    uninstallable until the repos flip public. tls2dseg installs ``--no-deps`` so
-    pip never touches those placeholder URLs; its remaining runtime deps (PyPI +
-    real sam2 URL) are installed explicitly so ``imageio`` etc. resolve and test
-    collection works.
+    pchandler/pc2img are installed as editable siblings (the local-dev workflow)
+    rather than resolved from pyproject's git URLs. tls2dseg installs ``--no-deps``
+    so pip never re-resolves the siblings from git; its remaining runtime deps
+    (PyPI + real sam2 URL) are installed explicitly so ``imageio`` etc. resolve
+    and test collection works.
     """
     session.install("-e", "../PCHandler")  # editable sibling, WITH deps
     session.install("-e", "../pc2img")  # editable sibling, WITH deps
-    session.install("-e", ".", "--no-deps")  # tls2dseg only; skips placeholder URL deps
-    session.install(*_runtime_deps_without_workspace_placeholders())
+    session.install("-e", ".", "--no-deps")  # tls2dseg only; siblings stay editable
+    session.install(*_runtime_deps_excluding_editable_siblings())
     session.install("pytest")  # explicit in case not in transitive deps
     # manifold3d: CPU-only trimesh boolean backend so the OBB-boolean IoU
     # tests (TEST-06, test_bboxes_iou.py) execute instead of skip-guarding on

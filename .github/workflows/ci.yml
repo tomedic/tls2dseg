@@ -120,3 +120,20 @@ jobs:
           pip install "pydantic-settings[yaml]>=2.14" "typer>=0.13" pytest numpy scipy
       - name: pytest -m tier_a
         run: python -m pytest -m tier_a -v
+
+  # Verifies the now-public workspace dependency install path resolves + imports
+  # in a clean env, WITHOUT pulling tls2dseg's heavy stack (torch/sam2/pyvips).
+  workspace-deps-smoke:
+    name: workspace deps install + import smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install open3d runtime system libs
+        run: sudo apt-get update && sudo apt-get install -y libgl1 libgomp1
+      - name: pip install pchandler + pc2img from git
+        run: pip install "pchandler @ git+https://github.com/gseg-ethz/PCHandler.git@develop/tomislav" "pc2img @ git+https://github.com/gseg-ethz/pc2img.git@develop/tomislav"
+      - name: import smoke
+        run: python -c "import pchandler, pc2img"
