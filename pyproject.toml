@@ -29,7 +29,7 @@ dependencies = [
     # ---- ML / vision foundation models ----
     "torch ~= 2.7",
     "transformers ~= 5.1",
-    "supervision ~= 0.25",
+    "supervision ~= 0.25.0",
     "sam-2 @ git+https://github.com/facebookresearch/sam2.git@2b90b9f",
 
     # ---- Image processing ----
@@ -48,6 +48,7 @@ dependencies = [
     "igraph ~= 0.11",
     "leidenalg ~= 0.10",
     "trimesh ~= 4.6",
+    "manifold3d ~= 3.0",  # trimesh mesh-boolean backend for OBB 3D-IoU (stage-2 fusion)
     "networkx ~= 3.4",
     "numpy ~= 1.26",
 

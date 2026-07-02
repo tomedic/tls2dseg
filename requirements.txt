@@ -15,7 +15,7 @@ pc2img @ git+https://github.com/gseg-ethz/pc2img.git@develop/tomislav
 # ---- ML / vision foundation models ----
 torch~=2.7
 transformers~=5.1
-supervision~=0.25
+supervision~=0.25.0
 
 # ---- Image processing ----
 opencv-python~=4.11
@@ -33,6 +33,7 @@ joblib~=1.4
 igraph~=0.11
 leidenalg~=0.10
 trimesh~=4.6
+manifold3d~=3.0
 networkx~=3.4
 numpy~=1.26
 
