@@ -9,6 +9,7 @@ profile_out/
 examples/data/
 examples/results/
 docs/
+gt/
 !docs/*.md
 
 # Datasets and large files
