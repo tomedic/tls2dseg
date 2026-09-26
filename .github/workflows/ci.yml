@@ -131,7 +131,7 @@ jobs:
         with:
           python-version: "3.11"
       - name: Install open3d runtime system libs
-        run: sudo apt-get update && sudo apt-get install -y libgl1 libgomp1
+        run: sudo apt-get update && sudo apt-get install -y libgl1 libegl1 libgomp1
       - name: pip install pchandler + pc2img from git
         run: pip install "pchandler @ git+https://github.com/gseg-ethz/PCHandler.git@develop/tomislav" "pc2img @ git+https://github.com/gseg-ethz/pc2img.git@develop/tomislav"
       - name: import smoke
