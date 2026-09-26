@@ -68,6 +68,9 @@ Repository = "https://github.com/tomedic/tls2dseg"
 Issues     = "https://github.com/tomedic/tls2dseg/issues"
 
 [project.optional-dependencies]
+label = [
+    "napari[pyqt5] >= 0.5, < 0.7",  # `tls2dseg label` ground-truth labeling GUI
+]
 dev = [
     "ruff == 0.15.14",
     "mypy == 1.20.2",

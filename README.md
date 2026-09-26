@@ -210,6 +210,20 @@ pipeline.stage2(stage1_result)
 See [`examples/api_usage.py`](examples/api_usage.py) for a complete runnable example on
 `office_small`.
 
+## Creating ground-truth labels
+
+`tls2dseg label` is an interactive tool (napari) for labelling a few scans as evaluation targets. You
+draw class-labelled boxes on the scan's spherical image, SAM2 turns each box into a mask, and you
+correct masks with a brush. The result is saved as 2D ground truth (COCO JSON + instance PNG) and as
+a per-point labelled PLY in the same frame and format as the pipeline results.
+
+```bash
+pip install "tls2dseg[label]"
+tls2dseg label --config examples/configs/office_small.yaml --scan examples/data/office_small/Scan_1.e57 --out gt/
+```
+
+See [`docs/labeling.md`](docs/labeling.md) for key bindings, output format and tips.
+
 ## Architecture and Extending
 
 The pipeline is built around three engine `Protocol`s (defined in `engines/protocols.py`):

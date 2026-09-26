@@ -256,6 +256,92 @@ def schema_cmd(
         typer.echo(doc)
 
 
+@app.command(name="label")
+def label_cmd(
+    scan: Path | None = typer.Option(
+        None,
+        "--scan",
+        help="Scan (.e57) to open; can also be picked in the tool.",
+    ),
+    scan_index: int = typer.Option(0, "--scan-index", help="Scan index inside a multi-scan .e57."),
+    classes: str | None = typer.Option(
+        None,
+        "--classes",
+        help="Class names, comma- or period-separated (default: prompt.text of --config).",
+    ),
+    config: Path | None = typer.Option(
+        None,
+        "--config",
+        "-c",
+        help="Pipeline YAML supplying projection settings, SAM2 checkpoint and classes.",
+    ),
+    out: Path = typer.Option(Path("gt"), "--out", "-o", help="Ground-truth output root directory."),
+    sam2_checkpoint: Path | None = typer.Option(None, "--sam2-checkpoint", help="SAM2 checkpoint (.pt)."),
+    sam2_model_config: str | None = typer.Option(None, "--sam2-model-config", help="SAM2 model config."),
+    device: str = typer.Option("auto", "--device", help="auto | cpu | cuda (SAM2 device)."),
+) -> None:
+    """Interactively label boxes + SAM2 masks on a scan and export 2D/3D ground truth."""
+    import importlib.util
+    import re
+
+    if importlib.util.find_spec("napari") is None:
+        typer.echo('The labeling tool needs napari: pip install "tls2dseg[label]"', err=True)
+        raise typer.Exit(code=1)
+
+    from tls2dseg.config.models import GroundedSAM2Config
+
+    projection_params: dict[str, object] = {}
+    class_names: list[str] = []
+    checkpoint: Path | None = None
+    model_config: str = GroundedSAM2Config.model_fields["sam2_model_config"].default
+    if config is not None:
+        from pydantic import ValidationError
+
+        from tls2dseg.config.loader import load_config
+        from tls2dseg.config.text import split_class_keys
+
+        try:
+            cfg = load_config(config)
+        except (FileNotFoundError, ValueError, ValidationError) as e:
+            typer.echo(f"Config load error: {e}", err=True)
+            raise typer.Exit(code=1) from e
+        projection_params = {
+            "image_width": cfg.projection.image_width,
+            "scan_resolution": cfg.projection.scan_resolution,
+            "rotate_pcd": cfg.projection.rotate_pcd,
+            "rasterization_method": cfg.projection.rasterization_method,
+        }
+        class_names = split_class_keys(cfg.prompt.text)
+        checkpoint = getattr(cfg.inference, "sam2_checkpoint", None)
+        model_config = getattr(cfg.inference, "sam2_model_config", model_config)
+
+    if classes is not None:
+        class_names = [c.strip() for c in re.split(r"[,.]", classes) if c.strip()]
+    if not class_names:
+        typer.echo("No classes: pass --classes or a --config with prompt.text", err=True)
+        raise typer.Exit(code=1)
+    checkpoint = sam2_checkpoint or checkpoint
+    model_config = sam2_model_config or model_config
+
+    if device == "auto":
+        import torch
+
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    from tls2dseg.labeling.app import run_app
+
+    run_app(
+        class_names=class_names,
+        out_dir=out,
+        projection_params=projection_params,
+        sam2_checkpoint=str(checkpoint) if checkpoint else None,
+        sam2_model_config=model_config,
+        device=device,
+        scan_path=scan,
+        scan_index=scan_index,
+    )
+
+
 # NOTE: ``main()`` is preserved as a thin shim for backward-compat with any
 # importers using ``from tls2dseg.cli import main`` (e.g. external scripts).
 # The Phase 3 entry point swap goes to ``app`` (HYGN-09).
