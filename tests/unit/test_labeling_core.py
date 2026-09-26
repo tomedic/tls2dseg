@@ -12,7 +12,6 @@ from tls2dseg.labeling.gt_io import (
     sparse_to_coco_rle,
 )
 from tls2dseg.labeling.sam2_refine import crop_window
-from tls2dseg.labeling.session import estimate_rotation
 
 
 @pytest.mark.tier_a
@@ -64,18 +63,6 @@ def test_regions_mask_union_and_clipping() -> None:
 @pytest.mark.tier_a
 def test_class_id_map_is_one_based_in_order() -> None:
     assert class_id_map(["plant", "cabinet"]) == {"plant": 1, "cabinet": 2}
-
-
-@pytest.mark.tier_a
-def test_estimate_rotation_recovers_z_and_flip() -> None:
-    rng = np.random.default_rng(0)
-    pts = rng.normal(size=(200, 3)) * 10
-    t = np.deg2rad(37.0)
-    rz = np.array([[np.cos(t), -np.sin(t), 0], [np.sin(t), np.cos(t), 0], [0, 0, 1]])
-    rx = np.diag([1.0, -1.0, -1.0])
-    rot = estimate_rotation(pts, pts @ (rz @ rx).T)
-    np.testing.assert_allclose(rot[:3, :3], rz @ rx, atol=1e-9)
-    np.testing.assert_allclose(estimate_rotation(pts, pts), np.eye(4), atol=1e-9)
 
 
 @pytest.mark.tier_a

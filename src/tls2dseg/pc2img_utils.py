@@ -71,10 +71,10 @@ def pc2img_run(
     return images_i
 
 
-def rotate_pcd_around_z(pcd: PointCloudData, theta_deg: float = 0.0) -> None:
-    theta = np.deg2rad(theta_deg)  # Convert degrees to radians
-
-    rotation_matrix = np.array(
+def rotation_matrix_z(theta_deg: float) -> np.ndarray:
+    """4x4 homogeneous rotation about +Z by ``theta_deg`` degrees."""
+    theta = np.deg2rad(theta_deg)
+    return np.array(
         [
             [np.cos(theta), -np.sin(theta), 0, 0],
             [np.sin(theta), np.cos(theta), 0, 0],
@@ -82,7 +82,23 @@ def rotate_pcd_around_z(pcd: PointCloudData, theta_deg: float = 0.0) -> None:
             [0, 0, 0, 1],
         ]
     )
-    pcd.transform(rotation_matrix)
+
+
+def rotation_matrix_x(alpha_deg: float) -> np.ndarray:
+    """4x4 homogeneous rotation about +X by ``alpha_deg`` degrees."""
+    alpha = np.deg2rad(alpha_deg)
+    return np.array(
+        [
+            [1, 0, 0, 0],
+            [0, np.cos(alpha), -np.sin(alpha), 0],
+            [0, np.sin(alpha), np.cos(alpha), 0],
+            [0, 0, 0, 1],
+        ]
+    )
+
+
+def rotate_pcd_around_z(pcd: PointCloudData, theta_deg: float = 0.0) -> None:
+    pcd.transform(rotation_matrix_z(theta_deg))
     return None
 
 
@@ -100,18 +116,7 @@ def check_was_scanner_upsidedown(pcd, threshold_deg=10) -> bool:
 
 
 def rotate_pcd_around_x(pcd: PointCloudData, alpha_deg: float = 180.0) -> None:
-    alpha = np.deg2rad(alpha_deg)  # Convert degrees to radians
-
-    rotation_matrix = np.array(
-        [
-            [1, 0, 0, 0],
-            [0, np.cos(alpha), -np.sin(alpha), 0],
-            [0, np.sin(alpha), np.cos(alpha), 0],
-            [0, 0, 0, 1],
-        ]
-    )
-
-    pcd.transform(rotation_matrix)
+    pcd.transform(rotation_matrix_x(alpha_deg))
     return None
 
 

@@ -81,6 +81,7 @@ class Pipeline:
             "scan_resolution": cfg.projection.scan_resolution,
             "rotate_pcd": cfg.projection.rotate_pcd,
             "rasterization_method": cfg.projection.rasterization_method,
+            "flip_upsidedown_scans_deg": cfg.preprocessing.flip_upsidedown_scans_deg,
             "features": list(cfg.projection.features),
             "output_resolution": cfg.preprocessing.output_resolution_m,
         }

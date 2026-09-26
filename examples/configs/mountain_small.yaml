@@ -20,7 +20,7 @@ preprocessing:
   output_resolution_m: 0.5        # tag: primary — desired resulting point cloud resolution
   range_limits_m: null           # tag: other - setting range limits can drastically improve inference speed
   roi_polygon_m: null            # tag: other - specify a 2D polygon in the XY plane to crop the point cloud to a region of interest (ROI), can drastically improve inference speed
-  flip_upsidedown_scans_deg: null  # tag: other - useful for scans that are upside down and RoI is directly underneath the scanner; specify the rotation angle in degrees (0-360)
+  flip_upsidedown_scans_deg: null  # tag: other - for upside-down scans (RoI near the zenith, where the spherical image is most distorted): x-axis rotation in degrees, e.g. 90, moving the RoI into the low-distortion horizon band
   keep_confidences: false        # tag: other - keep the per-point confidence values from the inference step in the final output point cloud (e.g. for custom postprocessing)
   assign_random_color_per_instance: false  # tag: other - for visualization purposes (currently I rely on CloudCompare)
 
