@@ -310,6 +310,7 @@ def label_cmd(
             "scan_resolution": cfg.projection.scan_resolution,
             "rotate_pcd": cfg.projection.rotate_pcd,
             "rasterization_method": cfg.projection.rasterization_method,
+            "flip_upsidedown_scans_deg": cfg.preprocessing.flip_upsidedown_scans_deg,
         }
         class_names = split_class_keys(cfg.prompt.text)
         checkpoint = getattr(cfg.inference, "sam2_checkpoint", None)

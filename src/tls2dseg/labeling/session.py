@@ -54,6 +54,7 @@ def default_projection_params() -> dict:
         "scan_resolution": fields["scan_resolution"].default,
         "rotate_pcd": fields["rotate_pcd"].default,
         "rasterization_method": fields["rasterization_method"].default,
+        "flip_upsidedown_scans_deg": None,
     }
 
 
@@ -65,23 +66,6 @@ def e57_scan_count(scan_path: Path) -> int:
         return int(e57.scan_count)
     finally:
         e57.close()
-
-
-def estimate_rotation(before: np.ndarray, after: np.ndarray) -> np.ndarray:
-    """Best-fit rotation about the origin mapping ``before`` onto ``after`` (Kabsch), as 4x4."""
-    u, _, vt = np.linalg.svd(before.T @ after)
-    d = np.sign(np.linalg.det(vt.T @ u.T))
-    r = vt.T @ np.diag([1.0, 1.0, d]) @ u.T
-    rot = np.eye(4)
-    rot[:3, :3] = r
-    return rot
-
-
-def _absolute_xyz(pcd: Any, idx: np.ndarray) -> np.ndarray:
-    xyz = np.asarray(pcd.xyz[idx], dtype=np.float64)
-    if pcd.global_coordinate_shift is not None:
-        xyz = xyz + pcd.global_coordinate_shift
-    return xyz
 
 
 def load_scan(
@@ -100,7 +84,6 @@ def load_scan(
     from pchandler.data_io import load_e57
 
     from tls2dseg.engines import build_projection_engine
-    from tls2dseg.pc2img_utils import check_was_scanner_upsidedown
 
     scan_path = Path(scan_path)
     scan_count = e57_scan_count(scan_path)
@@ -114,28 +97,21 @@ def load_scan(
     logger.info("Loading scan %d of %s", scan_index, scan_path)
     pcd = load_e57(scan_path, point_cloud_index=scan_index, stay_prcs=False, save_prcs_info=True)
 
-    probe = np.linspace(0, pcd.nbPoints - 1, num=min(pcd.nbPoints, 2000)).astype(np.int64)
-    xyz_before = _absolute_xyz(pcd, probe)
-    flipped = bool(check_was_scanner_upsidedown(pcd))
-
     engine = build_projection_engine("spherical", image_generation_parameters=dict(params), pcd_path=scan_path)
     results = engine.project(pcd, features=list(features), resolution=(0, 0), skip_image_reduction=True)
 
-    # project() rotates the cloud in place without updating tmat_socs2prcs.
-    rotation = estimate_rotation(xyz_before, _absolute_xyz(pcd, probe))
-    if not np.allclose(rotation, np.eye(4), atol=1e-9):
-        logger.info("Projection rotated the scan; the rotation is compensated on 3D export")
+    rotation = results[0].socs_rotation
 
     images = {r.feature_name: np.asarray(r.image, dtype=np.float16) for r in results}
     h, w = next(iter(images.values())).shape
     logger.info("Projected %s: %d x %d px, features=%s", scan_path.name, w, h, list(images))
 
-    rot_z = rotation @ np.diag([1.0, -1.0, -1.0, 1.0]) if flipped else rotation
+    # rotation = Rz(theta) @ Rx(flip); Rx keeps the x-axis, so column 0 is (cos theta, sin theta, 0).
     d_azim_rad = float(results[0].d_azim_rad)
     pinned = {
         **params,
         "image_width": int(w),
-        "rotate_pcd": round(float(np.rad2deg(np.arctan2(rot_z[1, 0], rot_z[0, 0]))), 6),
+        "rotate_pcd": round(float(np.rad2deg(np.arctan2(rotation[1, 0], rotation[0, 0]))), 6),
         "scan_resolution": float(np.rad2deg(d_azim_rad)),
     }
 
