@@ -48,7 +48,6 @@ def run_stage2(
         "roi_limits": cfg.preprocessing.roi_polygon_m,
         "keep_confidences": cfg.preprocessing.keep_confidences,
         "assign_random_color_per_instance": cfg.preprocessing.assign_random_color_per_instance,
-        "flip_upsidedown_scans": cfg.preprocessing.flip_upsidedown_scans_deg or False,
     }
     task_parameters: dict = {
         "task": "object_detection",

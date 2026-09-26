@@ -74,12 +74,19 @@ class ProjectionResult:
         2-D float32 rasterised spherical image; shape (H, W).
     path : Path
         Filesystem path where the image was / will be written.
+    d_azim_rad : float
+        Angular pixel size along azimuth, in radians.
+    socs_rotation : np.ndarray
+        4x4 rotation that projection applied in place to the scanner-frame cloud
+        (upside-down flip, then azimuth-seam rotation). Lifted clouds must be
+        transformed by its inverse before ``toggle_socs2prcs``.
     """
 
     feature_name: str
     image: np.ndarray
     path: Path
     d_azim_rad: float = 0.0
+    socs_rotation: np.ndarray = dataclasses.field(default_factory=lambda: np.eye(4))
 
 
 @dataclasses.dataclass(frozen=True, slots=True)

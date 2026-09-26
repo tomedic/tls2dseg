@@ -35,6 +35,12 @@ class Stage1Result:
     n_scans: int
 
 
+def _unrotate_socs(pcd: Any, socs_rotation: np.ndarray) -> None:
+    """Undo the projection-time rotation of a lifted scanner-frame cloud (before ``toggle_socs2prcs``)."""
+    if not np.allclose(socs_rotation, np.eye(4)):
+        pcd.transform(np.linalg.inv(socs_rotation))
+
+
 def run_stage1(
     cfg: RunConfig,
     ctx: RunContext,
@@ -123,7 +129,6 @@ def run_stage1(
         "roi_limits": cfg.preprocessing.roi_polygon_m,
         "keep_confidences": cfg.preprocessing.keep_confidences,
         "assign_random_color_per_instance": cfg.preprocessing.assign_random_color_per_instance,
-        "flip_upsidedown_scans": cfg.preprocessing.flip_upsidedown_scans_deg or False,
     }
     d3d_parameters: dict = {
         "bounding_box_type": cfg.d3d_extraction.bounding_box_type,
@@ -218,6 +223,7 @@ def run_stage1(
             resolution=(0, 0),
             skip_image_reduction=_mz_active,
         )
+        socs_rotation = projection_results[0].socs_rotation
 
         # Per-scan robust range bounds for zoom-pass planning
         if _mz_active:
@@ -333,6 +339,7 @@ def run_stage1(
                     gc.collect()
                     pcd_feat = remove_unclassified_points(pcd_feat, task_parameters)
                     pcd_feat = remove_small_instances(pcd_feat, min_pts=50)
+                    _unrotate_socs(pcd_feat, socs_rotation)
                     pcd_feat = toggle_socs2prcs(pcd_feat)
                     apply_robust_sor_filter(pcd_feat, k_neighbors=50, std_ratio=2)
                     save_segmented_pcd_ij(
@@ -360,6 +367,7 @@ def run_stage1(
                 pcd_ij = remove_unclassified_points(pcd_ij, task_parameters)
                 pcd_ij = remove_small_instances(pcd_ij, min_pts=50)
 
+                _unrotate_socs(pcd_ij, socs_rotation)
                 pcd_ij = toggle_socs2prcs(pcd_ij)
                 apply_robust_sor_filter(pcd_ij, k_neighbors=50, std_ratio=2)
 
@@ -431,6 +439,7 @@ def run_stage1(
             pcd_i_sv = remove_unclassified_points(pcd_i_sv, task_parameters)
             pcd_i_sv = remove_small_instances(pcd_i_sv, min_pts=50)
 
+            _unrotate_socs(pcd_i_sv, socs_rotation)
             pcd_i_sv = toggle_socs2prcs(pcd_i_sv)
             apply_robust_sor_filter(pcd_i_sv, k_neighbors=50, std_ratio=2)
 

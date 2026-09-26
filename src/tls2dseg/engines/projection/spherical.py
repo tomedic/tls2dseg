@@ -204,6 +204,8 @@ class SphericalProjectionEngine:
         # Heavy imports live here — never at module level (D-A-05 absolute contract).
         from pathlib import Path
 
+        import numpy as np
+
         from tls2dseg.pc2img_utils import (
             check_was_scanner_upsidedown,
             compute_image_dimensions,
@@ -213,6 +215,8 @@ class SphericalProjectionEngine:
             resolve_rotate_pcd_parameter,
             resolve_scanning_resolution_parameter,
             rotate_pcd_around_x,
+            rotation_matrix_x,
+            rotation_matrix_z,
         )
         from tls2dseg.types import ProjectionResult
 
@@ -233,12 +237,19 @@ class SphericalProjectionEngine:
         d_azim_rad, d_elev_rad = resolve_scanning_resolution_parameter(pcd, params)
 
         # --- Step 2: optional upside-down flip ---
-        if check_was_scanner_upsidedown(pcd):
-            rotate_pcd_around_x(pcd, alpha_deg=180.0)
-            logger.debug("Scanner was upside-down — applied 180° X-axis rotation.")
+        # An upside-down scanner likely has its RoI near the zenith, where the
+        # spherical projection is most distorted; tilting by the configured angle
+        # (e.g. 90°) moves it into the low-distortion horizon band.
+        socs_rotation = np.eye(4)
+        flip_deg = params.get("flip_upsidedown_scans_deg")
+        if flip_deg and check_was_scanner_upsidedown(pcd):
+            rotate_pcd_around_x(pcd, alpha_deg=float(flip_deg))
+            socs_rotation = rotation_matrix_x(float(flip_deg))
+            logger.info("Scanner was upside-down — applied %.1f° X-axis rotation.", float(flip_deg))
 
         # --- Step 3: rotate to azimuth gap ---
-        resolve_rotate_pcd_parameter(pcd, params)
+        theta_deg = resolve_rotate_pcd_parameter(pcd, params)
+        socs_rotation = rotation_matrix_z(theta_deg) @ socs_rotation
 
         # --- Step 4: image dimensions from post-rotation FoV ---
         image_width, image_height = compute_image_dimensions(pcd, params, d_azim_rad, d_elev_rad)
@@ -257,7 +268,13 @@ class SphericalProjectionEngine:
         for feature_name, image, path in images_raw:
             path_obj = Path(path) if isinstance(path, str) else path
             results.append(
-                ProjectionResult(feature_name=feature_name, image=image, path=path_obj, d_azim_rad=d_azim_rad)
+                ProjectionResult(
+                    feature_name=feature_name,
+                    image=image,
+                    path=path_obj,
+                    d_azim_rad=d_azim_rad,
+                    socs_rotation=socs_rotation,
+                )
             )
 
         return results
